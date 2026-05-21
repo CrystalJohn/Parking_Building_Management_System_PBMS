@@ -1,0 +1,137 @@
+import { Routes, Route, Navigate } from 'react-router-dom'
+import RequireAuth from '../components/auth/RequireAuth'
+
+// Auth
+import Login from '../pages/auth/Login'
+
+// Staff
+import Gate from '../pages/staff/Gate'
+import LostTicket from '../pages/staff/LostTicket'
+
+// Manager
+import Dashboard from '../pages/manager/Dashboard'
+import Reports from '../pages/manager/Reports'
+import Config from '../pages/manager/Config'
+
+// Admin
+import Users from '../pages/admin/Users'
+
+// Driver
+import DriverHome from '../pages/driver/Home'
+import Reservations from '../pages/driver/Reservations'
+import History from '../pages/driver/History'
+
+/**
+ * Central route configuration for the Parking Building Management System.
+ *
+ * Route protection is handled by <RequireAuth> which:
+ *  - Redirects unauthenticated users to /login
+ *  - Redirects authenticated users with the wrong role to their default home
+ *
+ * Role hierarchy:
+ *  admin   → /admin/*
+ *  manager → /manager/*
+ *  staff   → /staff/*
+ *  driver  → /driver/*
+ */
+export default function AppRoutes() {
+  return (
+    <Routes>
+      {/* Public */}
+      <Route path="/login" element={<Login />} />
+
+      {/* Staff routes */}
+      <Route
+        path="/staff/gate"
+        element={
+          <RequireAuth allowedRoles={['staff']}>
+            <Gate />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/staff/lost-ticket"
+        element={
+          <RequireAuth allowedRoles={['staff']}>
+            <LostTicket />
+          </RequireAuth>
+        }
+      />
+
+      {/* Manager routes */}
+      <Route
+        path="/manager/dashboard"
+        element={
+          <RequireAuth allowedRoles={['manager']}>
+            <Dashboard />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/manager/reports"
+        element={
+          <RequireAuth allowedRoles={['manager']}>
+            <Reports />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/manager/config"
+        element={
+          <RequireAuth allowedRoles={['manager']}>
+            <Config />
+          </RequireAuth>
+        }
+      />
+
+      {/* Admin routes */}
+      <Route
+        path="/admin/users"
+        element={
+          <RequireAuth allowedRoles={['admin']}>
+            <Users />
+          </RequireAuth>
+        }
+      />
+
+      {/* Driver routes */}
+      <Route
+        path="/driver/home"
+        element={
+          <RequireAuth allowedRoles={['driver']}>
+            <DriverHome />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/driver/reservations"
+        element={
+          <RequireAuth allowedRoles={['driver']}>
+            <Reservations />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/driver/history"
+        element={
+          <RequireAuth allowedRoles={['driver']}>
+            <History />
+          </RequireAuth>
+        }
+      />
+
+      {/* Fallback — redirect root to login */}
+      <Route path="/" element={<Navigate to="/login" replace />} />
+
+      {/* 404 catch-all */}
+      <Route
+        path="*"
+        element={
+          <div className="min-h-screen flex items-center justify-center">
+            <p className="text-gray-500">404 — Trang không tồn tại</p>
+          </div>
+        }
+      />
+    </Routes>
+  )
+}
