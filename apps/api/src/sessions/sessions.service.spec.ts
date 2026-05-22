@@ -1,8 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException, NotFoundException } from '@nestjs/common';
-import { VehicleType, Zone, SlotStatus, SessionStatus } from '@prisma/client';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { VehicleType, Zone, SlotStatus, SessionStatus, PaymentMethod } from '@prisma/client';
 import { SessionsService } from './sessions.service';
 import { AllocationService } from '../slots/allocation.service';
+import { FeesService } from '../fees/fees.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -72,12 +73,13 @@ describe('SessionsService', () => {
   let service: SessionsService;
   let prisma: {
     user: { findUnique: jest.Mock };
-    parkingSession: { create: jest.Mock; findUnique: jest.Mock; findMany: jest.Mock };
+    parkingSession: { create: jest.Mock; findUnique: jest.Mock; findMany: jest.Mock; findFirst: jest.Mock };
     slot: { update: jest.Mock };
     $transaction: jest.Mock;
     $queryRaw: jest.Mock;
   };
   let allocationService: { allocate: jest.Mock };
+  let feesService: { calculate: jest.Mock; preview: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
@@ -86,6 +88,7 @@ describe('SessionsService', () => {
         create: jest.fn(),
         findUnique: jest.fn(),
         findMany: jest.fn(),
+        findFirst: jest.fn(),
       },
       slot: { update: jest.fn() },
       $transaction: jest.fn(),
@@ -93,12 +96,14 @@ describe('SessionsService', () => {
     };
 
     allocationService = { allocate: jest.fn() };
+    feesService = { calculate: jest.fn(), preview: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SessionsService,
         { provide: PrismaService, useValue: prisma },
         { provide: AllocationService, useValue: allocationService },
+        { provide: FeesService, useValue: feesService },
       ],
     }).compile();
 
@@ -324,6 +329,309 @@ describe('SessionsService', () => {
           orderBy: { checkInTime: 'asc' },
         }),
       );
+    });
+  });
+
+  // ── checkOut (15.1–15.3) ──────────────────────────────────────────────────
+
+  describe('checkOut', () => {
+    const staffId = 'staff-uuid';
+    const sessionWithSlot = {
+      ...makeSession(),
+      slot: {
+        ...makeSlot(),
+        floor: makeFloor(),
+      },
+    };
+
+    const mockBreakdown = {
+      sessionId: 'session-uuid-1',
+      vehicleType: VehicleType.car,
+      checkInTime: new Date('2024-01-01T08:00:00Z'),
+      checkOutTime: new Date('2024-01-01T10:30:00Z'),
+      durationMs: 9000000,
+      durationHours: 2.5,
+      roundedHours: 3,
+      hourlyRate: 8000,
+      baseFee: 24000,
+      isOvertime: false,
+      overtimePenalty: 0,
+      isLostTicket: false,
+      lostTicketPenalty: 0,
+      totalFee: 24000,
+    };
+
+    it('throws BadRequestException when neither sessionId nor licensePlate provided (15.1)', async () => {
+      await expect(service.checkOut({}, staffId)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('looks up session by sessionId (QR scan) (15.1)', async () => {
+      prisma.parkingSession.findFirst.mockResolvedValue(sessionWithSlot);
+      feesService.calculate.mockResolvedValue(mockBreakdown);
+
+      const result = await service.checkOut({ sessionId: 'session-uuid-1' }, staffId);
+
+      expect(prisma.parkingSession.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { status: 'active', id: 'session-uuid-1' },
+        }),
+      );
+      expect(result.session.id).toBe('session-uuid-1');
+      expect(result.breakdown).toEqual(mockBreakdown);
+    });
+
+    it('looks up session by licensePlate (15.1)', async () => {
+      prisma.parkingSession.findFirst.mockResolvedValue(sessionWithSlot);
+      feesService.calculate.mockResolvedValue(mockBreakdown);
+
+      const result = await service.checkOut({ licensePlate: '59A-12345' }, staffId);
+
+      expect(prisma.parkingSession.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { status: 'active', licensePlate: '59A-12345' },
+        }),
+      );
+      expect(result.session.licensePlate).toBe('59A-12345');
+    });
+
+    it('throws NotFoundException when no active session found', async () => {
+      prisma.parkingSession.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.checkOut({ licensePlate: '00X-00000' }, staffId),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('returns fee breakdown from FeesService (15.2)', async () => {
+      prisma.parkingSession.findFirst.mockResolvedValue(sessionWithSlot);
+      feesService.calculate.mockResolvedValue(mockBreakdown);
+
+      const result = await service.checkOut({ sessionId: 'session-uuid-1' }, staffId);
+
+      expect(feesService.calculate).toHaveBeenCalledWith(
+        sessionWithSlot,
+        false,
+        expect.any(Date),
+      );
+      expect(result.breakdown.totalFee).toBe(24000);
+    });
+
+    it('logs warning when overtime detected (15.3)', async () => {
+      prisma.parkingSession.findFirst.mockResolvedValue(sessionWithSlot);
+      feesService.calculate.mockResolvedValue({
+        ...mockBreakdown,
+        isOvertime: true,
+        overtimePenalty: 50000,
+        roundedHours: 25,
+        totalFee: 250000,
+      });
+
+      const loggerSpy = jest.spyOn((service as any).logger, 'warn');
+
+      await service.checkOut({ sessionId: 'session-uuid-1' }, staffId);
+
+      expect(loggerSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Overtime detected'),
+      );
+    });
+
+    it('returns session and slot info in response', async () => {
+      prisma.parkingSession.findFirst.mockResolvedValue(sessionWithSlot);
+      feesService.calculate.mockResolvedValue(mockBreakdown);
+
+      const result = await service.checkOut({ sessionId: 'session-uuid-1' }, staffId);
+
+      expect(result.session).toHaveProperty('id');
+      expect(result.session).toHaveProperty('licensePlate');
+      expect(result.session).toHaveProperty('vehicleType');
+      expect(result.session).toHaveProperty('checkInTime');
+      expect(result.slot).toHaveProperty('code');
+      expect(result.slot).toHaveProperty('floor');
+    });
+  });
+
+  // ── confirmPayment (15.4–15.6) ────────────────────────────────────────────
+
+  describe('confirmPayment', () => {
+    const staffId = 'staff-uuid';
+    const sessionWithSlot = {
+      ...makeSession(),
+      slotId: 1,
+      slot: {
+        ...makeSlot(),
+        floor: makeFloor(),
+      },
+    };
+
+    const mockBreakdown = {
+      sessionId: 'session-uuid-1',
+      vehicleType: VehicleType.car,
+      checkInTime: new Date('2024-01-01T08:00:00Z'),
+      checkOutTime: new Date('2024-01-01T10:30:00Z'),
+      durationMs: 9000000,
+      durationHours: 2.5,
+      roundedHours: 3,
+      hourlyRate: 8000,
+      baseFee: 24000,
+      isOvertime: false,
+      overtimePenalty: 0,
+      isLostTicket: false,
+      lostTicketPenalty: 0,
+      totalFee: 24000,
+    };
+
+    beforeEach(() => {
+      prisma.parkingSession.findUnique.mockResolvedValue(sessionWithSlot);
+      feesService.calculate.mockResolvedValue(mockBreakdown);
+
+      // Transaction executes callback
+      prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          parkingSession: {
+            update: jest.fn().mockResolvedValue({ ...sessionWithSlot, status: 'completed' }),
+          },
+          payment: {
+            create: jest.fn().mockResolvedValue({
+              id: 'payment-uuid-1',
+              sessionId: 'session-uuid-1',
+              amount: 24000,
+              method: PaymentMethod.cash,
+              paidAt: new Date('2024-01-01T10:30:00Z'),
+              receivedBy: staffId,
+            }),
+          },
+          slot: { update: jest.fn().mockResolvedValue({ id: 1, status: 'available' }) },
+        };
+        return fn(tx);
+      });
+    });
+
+    it('throws NotFoundException when session not found', async () => {
+      prisma.parkingSession.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.confirmPayment('nonexistent', {}, staffId),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws ConflictException when session is already completed', async () => {
+      prisma.parkingSession.findUnique.mockResolvedValue({
+        ...sessionWithSlot,
+        status: SessionStatus.completed,
+      });
+
+      await expect(
+        service.confirmPayment('session-uuid-1', {}, staffId),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('calculates fee with lost ticket flag (15.4)', async () => {
+      const lostBreakdown = {
+        ...mockBreakdown,
+        isLostTicket: true,
+        lostTicketPenalty: 100000,
+        totalFee: 124000,
+      };
+      feesService.calculate.mockResolvedValue(lostBreakdown);
+
+      const result = await service.confirmPayment(
+        'session-uuid-1',
+        { isLostTicket: true },
+        staffId,
+      );
+
+      expect(feesService.calculate).toHaveBeenCalledWith(
+        sessionWithSlot,
+        true,
+        expect.any(Date),
+      );
+      expect(result.receipt.breakdown.isLostTicket).toBe(true);
+      expect(result.receipt.breakdown.lostTicketPenalty).toBe(100000);
+    });
+
+    it('creates Payment record and releases slot in transaction (15.4, 15.5)', async () => {
+      let txCalls: { sessionUpdate: unknown; paymentCreate: unknown; slotUpdate: unknown } | null = null;
+
+      prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          parkingSession: {
+            update: jest.fn().mockImplementation((args) => {
+              txCalls = txCalls || {} as any;
+              (txCalls as any).sessionUpdate = args;
+              return Promise.resolve({ ...sessionWithSlot, status: 'completed' });
+            }),
+          },
+          payment: {
+            create: jest.fn().mockImplementation((args) => {
+              txCalls = txCalls || {} as any;
+              (txCalls as any).paymentCreate = args;
+              return Promise.resolve({
+                id: 'payment-uuid-1',
+                sessionId: 'session-uuid-1',
+                amount: 24000,
+                method: PaymentMethod.cash,
+                paidAt: new Date(),
+                receivedBy: staffId,
+              });
+            }),
+          },
+          slot: {
+            update: jest.fn().mockImplementation((args) => {
+              txCalls = txCalls || {} as any;
+              (txCalls as any).slotUpdate = args;
+              return Promise.resolve({ id: 1, status: 'available' });
+            }),
+          },
+        };
+        return fn(tx);
+      });
+
+      await service.confirmPayment('session-uuid-1', {}, staffId);
+
+      // Session marked completed with fees
+      expect((txCalls as any).sessionUpdate.data.status).toBe('completed');
+      expect((txCalls as any).sessionUpdate.data.isPaid).toBe(true);
+      expect((txCalls as any).sessionUpdate.data.feeAmount).toBe(24000);
+      expect((txCalls as any).sessionUpdate.data.checkedOutById).toBe(staffId);
+
+      // Payment created
+      expect((txCalls as any).paymentCreate.data.sessionId).toBe('session-uuid-1');
+      expect((txCalls as any).paymentCreate.data.amount).toBe(24000);
+      expect((txCalls as any).paymentCreate.data.method).toBe(PaymentMethod.cash);
+      expect((txCalls as any).paymentCreate.data.receivedBy).toBe(staffId);
+
+      // Slot released
+      expect((txCalls as any).slotUpdate.data.status).toBe('available');
+      expect((txCalls as any).slotUpdate.where.id).toBe(1);
+    });
+
+    it('returns receipt with full breakdown (15.6)', async () => {
+      const result = await service.confirmPayment('session-uuid-1', {}, staffId);
+
+      expect(result.receipt).toHaveProperty('sessionId', 'session-uuid-1');
+      expect(result.receipt).toHaveProperty('licensePlate', '59A-12345');
+      expect(result.receipt).toHaveProperty('vehicleType', VehicleType.car);
+      expect(result.receipt).toHaveProperty('checkInTime');
+      expect(result.receipt).toHaveProperty('checkOutTime');
+      expect(result.receipt).toHaveProperty('durationHours', 3);
+      expect(result.receipt.breakdown).toHaveProperty('hourlyRate', 8000);
+      expect(result.receipt.breakdown).toHaveProperty('baseFee', 24000);
+      expect(result.receipt.breakdown).toHaveProperty('totalFee', 24000);
+      expect(result.receipt.payment).toHaveProperty('id', 'payment-uuid-1');
+      expect(result.receipt.payment).toHaveProperty('method', PaymentMethod.cash);
+    });
+
+    it('uses provided payment method', async () => {
+      // PaymentMethod only has 'cash' for now, but test the pass-through
+      const result = await service.confirmPayment(
+        'session-uuid-1',
+        { method: PaymentMethod.cash },
+        staffId,
+      );
+
+      expect(result.receipt.payment.method).toBe(PaymentMethod.cash);
     });
   });
 });

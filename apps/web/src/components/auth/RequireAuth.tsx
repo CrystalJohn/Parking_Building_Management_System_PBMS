@@ -2,6 +2,7 @@ import { Navigate, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { getToken, getUser } from '../../lib/auth'
 import type { AuthUser } from '../../lib/auth'
+import AuthenticatedLayout from '../layout/AuthenticatedLayout'
 
 interface RequireAuthProps {
   /** Child routes/components to render when access is granted */
@@ -38,7 +39,7 @@ export default function RequireAuth({ children, allowedRoles }: RequireAuthProps
     return <Navigate to={defaultHomeForRole(user.role)} replace />
   }
 
-  return <>{children}</>
+  return <AuthenticatedLayout>{children}</AuthenticatedLayout>
 }
 
 /** Returns the default landing page for each role. */

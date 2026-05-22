@@ -148,9 +148,9 @@ Hệ thống quản lý tòa nhà đỗ xe đa tầng, xử lý:
 
 | Role | Phone | Password |
 |------|-------|----------|
-| Admin | `0900000001` | `admin123` |
-| Manager | `0900000002` | `manager123` |
-| Staff | `0900000003` | `staff123` |
+| Admin | `0900000001` | `password123` |
+| Manager | `0900000002` | `password123` |
+| Staff | `0900000003` | `password123` |
 
 ### API Endpoints chính
 

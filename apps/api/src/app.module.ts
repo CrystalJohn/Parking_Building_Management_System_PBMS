@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { SlotsModule } from './slots/slots.module';
 import { SessionsModule } from './sessions/sessions.module';
+import { FeesModule } from './fees/fees.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { SessionsModule } from './sessions/sessions.module';
     UsersModule,
     SlotsModule,
     SessionsModule,
+    FeesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

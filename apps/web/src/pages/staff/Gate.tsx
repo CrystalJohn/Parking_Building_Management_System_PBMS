@@ -37,7 +37,9 @@ function extractError(err: unknown): { message: string; isFull: boolean } {
     const raw = data?.message
     const text = Array.isArray(raw) ? raw.join(', ') : raw
     if (status === 409) {
-      return { message: text ?? 'Bãi đã đầy', isFull: true }
+      // Distinguish between "building full" and "duplicate plate" conflicts
+      const isDuplicate = text && /đang có phiên|already|duplicate/i.test(text)
+      return { message: text ?? 'Bãi đã đầy', isFull: !isDuplicate }
     }
     if (status === 404) {
       return { message: text ?? 'Không tìm thấy phiên gửi xe', isFull: false }

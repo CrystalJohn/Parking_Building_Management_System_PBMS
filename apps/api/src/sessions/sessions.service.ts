@@ -1,19 +1,25 @@
 import {
   Injectable,
+  BadRequestException,
   ConflictException,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
-import { VehicleType } from '@prisma/client';
+import { VehicleType, PaymentMethod } from '@prisma/client';
 import * as QRCode from 'qrcode';
 import { PrismaService } from '../prisma/prisma.service';
 import { AllocationService } from '../slots/allocation.service';
-import { CheckInDto } from './dto';
+import { FeesService, FeeBreakdown } from '../fees/fees.service';
+import { CheckInDto, CheckOutDto, ConfirmPaymentDto } from './dto';
 
 @Injectable()
 export class SessionsService {
+  private readonly logger = new Logger(SessionsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly allocationService: AllocationService,
+    private readonly feesService: FeesService,
   ) {}
 
   /**
@@ -30,6 +36,21 @@ export class SessionsService {
    * Req 1.1–1.5, 3.6
    */
   async checkIn(dto: CheckInDto, staffId: string) {
+    // Check for duplicate active session with same license plate
+    const existingSession = await this.prisma.parkingSession.findFirst({
+      where: {
+        licensePlate: dto.licensePlate,
+        status: 'active',
+      },
+      select: { id: true, licensePlate: true },
+    });
+
+    if (existingSession) {
+      throw new ConflictException(
+        `Biển số ${dto.licensePlate} đang có phiên gửi xe chưa check-out`,
+      );
+    }
+
     // Resolve registered driver (optional)
     let driverId: string | null = null;
     if (dto.driverPhone) {
@@ -126,6 +147,188 @@ export class SessionsService {
         },
       },
       qr_code: session.qrCode ?? null,
+    };
+  }
+
+  /**
+   * 15.1–15.3: Check-out a vehicle.
+   *
+   * Flow:
+   * 1. Lookup active session by session_id (QR) or license_plate
+   * 2. Calculate fee breakdown via FeesService
+   * 3. If duration > threshold, flag overtime + log warning
+   * 4. Return fee breakdown for Staff to confirm
+   *
+   * Req 2.1–2.3, 5.5
+   */
+  async checkOut(dto: CheckOutDto, staffId: string) {
+    // 15.1: Validate at least one identifier provided
+    if (!dto.sessionId && !dto.licensePlate) {
+      throw new BadRequestException(
+        'Either sessionId or licensePlate must be provided',
+      );
+    }
+
+    // 15.1: Lookup active session
+    const session = await this.prisma.parkingSession.findFirst({
+      where: {
+        status: 'active',
+        ...(dto.sessionId
+          ? { id: dto.sessionId }
+          : { licensePlate: dto.licensePlate }),
+      },
+      include: {
+        slot: { include: { floor: true } },
+      },
+    });
+
+    if (!session) {
+      throw new NotFoundException(
+        `No active session found for ${dto.sessionId ? `id: ${dto.sessionId}` : `plate: ${dto.licensePlate}`}`,
+      );
+    }
+
+    // 15.2: Calculate fee breakdown via FeesService
+    const now = new Date();
+    const breakdown = await this.feesService.calculate(session, false, now);
+
+    // 15.3: Flag overtime + log warning if duration > threshold
+    if (breakdown.isOvertime) {
+      this.logger.warn(
+        `Overtime detected: session ${session.id}, plate ${session.licensePlate}, ` +
+          `duration ${breakdown.roundedHours}h (threshold exceeded)`,
+      );
+    }
+
+    return {
+      session: {
+        id: session.id,
+        licensePlate: session.licensePlate,
+        vehicleType: session.vehicleType,
+        checkInTime: session.checkInTime,
+        status: session.status,
+        driverId: session.driverId,
+      },
+      slot: {
+        id: session.slot.id,
+        code: session.slot.code,
+        zone: session.slot.zone,
+        floor: {
+          id: session.slot.floor.id,
+          floorNumber: session.slot.floor.floorNumber,
+          name: session.slot.floor.name,
+        },
+      },
+      breakdown,
+    };
+  }
+
+  /**
+   * 15.4–15.6: Confirm payment and complete check-out.
+   *
+   * Flow:
+   * 1. Lookup active session by ID
+   * 2. Recalculate fee (with lost ticket flag if provided)
+   * 3. In transaction: update session (completed, fees, overtime, lost), create Payment, release slot
+   * 4. Return receipt
+   *
+   * Req 2.4, 2.5, 5.5, 6.2, 6.4
+   */
+  async confirmPayment(
+    sessionId: string,
+    dto: ConfirmPaymentDto,
+    staffId: string,
+  ) {
+    // Lookup active session
+    const session = await this.prisma.parkingSession.findUnique({
+      where: { id: sessionId },
+      include: {
+        slot: { include: { floor: true } },
+      },
+    });
+
+    if (!session) {
+      throw new NotFoundException(`Session not found: ${sessionId}`);
+    }
+
+    if (session.status !== 'active') {
+      throw new ConflictException(
+        `Session ${sessionId} is already ${session.status}`,
+      );
+    }
+
+    // Recalculate fee at confirmation time (with lost ticket flag)
+    const now = new Date();
+    const isLost = dto.isLostTicket ?? false;
+    const breakdown = await this.feesService.calculate(session, isLost, now);
+    const method = dto.method ?? PaymentMethod.cash;
+
+    // 15.4–15.5: Transaction — update session, create payment, release slot
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Update session to completed
+      const updatedSession = await tx.parkingSession.update({
+        where: { id: sessionId },
+        data: {
+          status: 'completed',
+          checkOutTime: now,
+          checkedOutById: staffId,
+          feeAmount: breakdown.baseFee,
+          penaltyAmount: breakdown.overtimePenalty + breakdown.lostTicketPenalty,
+          isPaid: true,
+          isOvertime: breakdown.isOvertime,
+          isLostTicket: isLost,
+        },
+      });
+
+      // 15.4: Create Payment record (Req 6.2)
+      const payment = await tx.payment.create({
+        data: {
+          sessionId,
+          amount: breakdown.totalFee,
+          method,
+          receivedBy: staffId,
+        },
+      });
+
+      // 15.5: Release slot → available (Req 2.5)
+      await tx.slot.update({
+        where: { id: session.slotId },
+        data: { status: 'available' },
+      });
+
+      return { updatedSession, payment };
+    });
+
+    // 15.6: Return receipt (Req 6.4)
+    return {
+      receipt: {
+        sessionId: session.id,
+        licensePlate: session.licensePlate,
+        vehicleType: session.vehicleType,
+        slot: {
+          code: session.slot.code,
+          floor: session.slot.floor.name,
+        },
+        checkInTime: session.checkInTime,
+        checkOutTime: now,
+        durationHours: breakdown.roundedHours,
+        breakdown: {
+          hourlyRate: breakdown.hourlyRate,
+          roundedHours: breakdown.roundedHours,
+          baseFee: breakdown.baseFee,
+          isOvertime: breakdown.isOvertime,
+          overtimePenalty: breakdown.overtimePenalty,
+          isLostTicket: isLost,
+          lostTicketPenalty: breakdown.lostTicketPenalty,
+          totalFee: breakdown.totalFee,
+        },
+        payment: {
+          id: result.payment.id,
+          amount: result.payment.amount,
+          method: result.payment.method,
+          paidAt: result.payment.paidAt,
+        },
+      },
     };
   }
 
