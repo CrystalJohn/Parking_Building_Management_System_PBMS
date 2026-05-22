@@ -8,6 +8,8 @@
   <p align="center">
     Hệ thống quản lý tòa nhà đỗ xe thông minh — tự động phân bổ slot, tính phí, đặt chỗ trước, và báo cáo vận hành.
   </p>
+
+  <img src="apps/web/public/cover_parking.png" alt="Parking Building Management System" width="100%" style="max-width: 600px; margin: 20px auto; display: block; border-radius: 8px;">
 </div>
 
 <!-- TABLE OF CONTENTS -->
