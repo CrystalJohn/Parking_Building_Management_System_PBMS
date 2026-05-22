@@ -1,4 +1,3 @@
-<a id="readme-top"></a>
 
 
 <!-- PROJECT LOGO -->
@@ -8,13 +7,6 @@
 
   <p align="center">
     Hệ thống quản lý tòa nhà đỗ xe thông minh — tự động phân bổ slot, tính phí, đặt chỗ trước, và báo cáo vận hành.
-    <br />
-    <br />
-    <a href="#getting-started">Bắt đầu</a>
-    ·
-    <a href="#usage">Sử dụng</a>
-    ·
-    <a href="#roadmap">Roadmap</a>
   </p>
 </div>
 

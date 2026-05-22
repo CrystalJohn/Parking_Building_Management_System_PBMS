@@ -6,6 +6,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { SlotsModule } from './slots/slots.module';
+import { SessionsModule } from './sessions/sessions.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { SlotsModule } from './slots/slots.module';
     AuthModule,
     UsersModule,
     SlotsModule,
+    SessionsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

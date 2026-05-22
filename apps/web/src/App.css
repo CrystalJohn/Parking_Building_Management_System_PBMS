@@ -182,3 +182,20 @@
     border-right-color: var(--border);
   }
 }
+
+/* Print styles — show only #receipt when window.print() is called */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #receipt,
+  #receipt * {
+    visibility: visible;
+  }
+  #receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+}
