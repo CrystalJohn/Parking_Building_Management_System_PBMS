@@ -163,8 +163,6 @@ function ReservationCard({
 }) {
   const status = STATUS_LABELS[reservation.status] ?? STATUS_LABELS.active
   const isActive = reservation.status === 'active'
-  const expiresAt = new Date(reservation.expiresAt)
-  const isExpiringSoon = isActive && expiresAt.getTime() - Date.now() < 10 * 60 * 1000
 
   return (
     <div className="card">
@@ -184,10 +182,7 @@ function ReservationCard({
             Đặt lúc: {formatDateTime(reservation.createdAt)}
           </p>
           {isActive && (
-            <p className={`text-xs ${isExpiringSoon ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
-              Hết hạn: {formatDateTime(reservation.expiresAt)}
-              {isExpiringSoon && ' — sắp hết hạn!'}
-            </p>
+            <Countdown expiresAt={reservation.expiresAt} />
           )}
         </div>
 
@@ -202,4 +197,46 @@ function ReservationCard({
       </div>
     </div>
   )
+}
+
+/**
+ * Live countdown timer that updates every second.
+ * Shows remaining time in mm:ss format.
+ * Turns red when < 5 minutes remaining.
+ */
+function Countdown({ expiresAt }: { expiresAt: string }) {
+  const [remaining, setRemaining] = useState(() => calcRemaining(expiresAt))
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setRemaining(calcRemaining(expiresAt))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [expiresAt])
+
+  if (remaining <= 0) {
+    return (
+      <p className="text-xs text-red-600 font-bold">
+        ⏰ Đã hết hạn
+      </p>
+    )
+  }
+
+  const minutes = Math.floor(remaining / 60)
+  const seconds = remaining % 60
+  const isUrgent = minutes < 5
+
+  return (
+    <div className={`flex items-center gap-2 ${isUrgent ? 'text-red-600' : 'text-gray-700'}`}>
+      <span className="text-xs">⏱ Còn lại:</span>
+      <span className={`font-mono text-sm font-bold ${isUrgent ? 'animate-pulse' : ''}`}>
+        {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
+      </span>
+    </div>
+  )
+}
+
+function calcRemaining(expiresAt: string): number {
+  const diff = new Date(expiresAt).getTime() - Date.now()
+  return Math.max(0, Math.floor(diff / 1000))
 }

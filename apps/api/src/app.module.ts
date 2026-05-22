@@ -10,6 +10,7 @@ import { SlotsModule } from './slots/slots.module';
 import { SessionsModule } from './sessions/sessions.module';
 import { FeesModule } from './fees/fees.module';
 import { ReservationsModule } from './reservations/reservations.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { ReservationsModule } from './reservations/reservations.module';
     SessionsModule,
     FeesModule,
     ReservationsModule,
+    ReportsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
