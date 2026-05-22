@@ -34,6 +34,7 @@ const makeSlot = (overrides: Partial<{
 const makeSession = (overrides: Partial<{
   id: string; licensePlate: string; vehicleType: VehicleType;
   status: SessionStatus; qrCode: string | null; driverId: string | null;
+  reservationId: string | null;
   allocationStrategy: string; allocationTimeMs: number;
   slot: ReturnType<typeof makeSlot>;
   driver: { id: string; phone: string; fullName: string | null } | null;
@@ -74,6 +75,7 @@ describe('SessionsService', () => {
   let prisma: {
     user: { findUnique: jest.Mock };
     parkingSession: { create: jest.Mock; findUnique: jest.Mock; findMany: jest.Mock; findFirst: jest.Mock };
+    reservation: { findFirst: jest.Mock };
     slot: { update: jest.Mock };
     $transaction: jest.Mock;
     $queryRaw: jest.Mock;
@@ -90,6 +92,7 @@ describe('SessionsService', () => {
         findMany: jest.fn(),
         findFirst: jest.fn(),
       },
+      reservation: { findFirst: jest.fn() },
       slot: { update: jest.fn() },
       $transaction: jest.fn(),
       $queryRaw: jest.fn(),
@@ -117,6 +120,12 @@ describe('SessionsService', () => {
     const slot = makeSlot();
 
     beforeEach(() => {
+      // Default: no duplicate session
+      prisma.parkingSession.findFirst.mockResolvedValue(null);
+
+      // Default: no active reservation
+      prisma.reservation.findFirst.mockResolvedValue(null);
+
       // Default: allocation succeeds
       allocationService.allocate.mockResolvedValue({
         slot,
@@ -129,6 +138,7 @@ describe('SessionsService', () => {
         const tx = {
           $queryRaw: jest.fn().mockResolvedValue([{ id: slot.id, status: 'available' }]),
           slot: { update: jest.fn().mockResolvedValue(slot) },
+          reservation: { update: jest.fn().mockResolvedValue({}) },
           parkingSession: {
             create: jest.fn().mockResolvedValue(makeSession()),
           },
@@ -151,12 +161,14 @@ describe('SessionsService', () => {
     it('links registered driver and generates QR code when driverPhone matches', async () => {
       const driverId = 'driver-uuid';
       prisma.user.findUnique.mockResolvedValue({ id: driverId, isActive: true });
+      prisma.reservation.findFirst.mockResolvedValue(null);
 
       // Transaction returns session with qrCode set
       prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
         const tx = {
           $queryRaw: jest.fn().mockResolvedValue([{ id: slot.id, status: 'available' }]),
           slot: { update: jest.fn().mockResolvedValue(slot) },
+          reservation: { update: jest.fn() },
           parkingSession: {
             create: jest.fn().mockResolvedValue(
               makeSession({ qrCode: 'data:image/png;base64,abc123', driverId }),
@@ -288,6 +300,128 @@ describe('SessionsService', () => {
       expect(result.session).toHaveProperty('checkInTime');
       expect(result.slot).toHaveProperty('code');
       expect(result.slot).toHaveProperty('floor');
+    });
+
+    // ── Task 20: Reservation fulfillment ──────────────────────────────────
+
+    it('fulfills active reservation instead of allocating new slot (Task 20)', async () => {
+      const driverId = 'driver-uuid';
+      const reservedSlot = makeSlot({ id: 5, code: 'T2-A-03', status: SlotStatus.reserved });
+      const reservation = {
+        id: 'reservation-uuid-1',
+        driverId,
+        slotId: 5,
+        vehicleType: VehicleType.car,
+        status: 'active',
+        slot: reservedSlot,
+      };
+
+      prisma.user.findUnique.mockResolvedValue({ id: driverId, isActive: true });
+      prisma.reservation.findFirst.mockResolvedValue(reservation);
+
+      let txReservationUpdate: unknown = null;
+      let txSlotStatus: string | null = null;
+      let capturedSessionData: Record<string, unknown> | null = null;
+
+      prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          $queryRaw: jest.fn().mockResolvedValue([{ id: 5, status: 'reserved' }]),
+          slot: {
+            update: jest.fn().mockImplementation((args) => {
+              txSlotStatus = args.data.status;
+              return Promise.resolve({ ...reservedSlot, status: 'occupied' });
+            }),
+          },
+          reservation: {
+            update: jest.fn().mockImplementation((args) => {
+              txReservationUpdate = args;
+              return Promise.resolve({});
+            }),
+          },
+          parkingSession: {
+            create: jest.fn().mockImplementation(({ data }) => {
+              capturedSessionData = data;
+              return Promise.resolve(makeSession({
+                reservationId: 'reservation-uuid-1',
+                allocationStrategy: 'reservation_fulfillment',
+                allocationTimeMs: 0,
+                driverId,
+                slot: reservedSlot,
+              }));
+            }),
+          },
+        };
+        return fn(tx);
+      });
+
+      const dto = {
+        licensePlate: '59A-12345',
+        vehicleType: VehicleType.car,
+        driverPhone: '0901234567',
+      };
+
+      const result = await service.checkIn(dto, staffId);
+
+      // Should NOT call allocation service
+      expect(allocationService.allocate).not.toHaveBeenCalled();
+
+      // Reservation should be fulfilled
+      expect((txReservationUpdate as any).where.id).toBe('reservation-uuid-1');
+      expect((txReservationUpdate as any).data.status).toBe('fulfilled');
+
+      // Slot should go from reserved → occupied
+      expect(txSlotStatus).toBe('occupied');
+
+      // Session should link to reservation
+      expect(capturedSessionData!['reservationId']).toBe('reservation-uuid-1');
+      expect(capturedSessionData!['allocationStrategy']).toBe('reservation_fulfillment');
+      expect(capturedSessionData!['allocationTimeMs']).toBe(0);
+
+      // Response includes reservationId
+      expect(result.session.reservationId).toBe('reservation-uuid-1');
+    });
+
+    it('falls back to normal allocation when driver has no active reservation', async () => {
+      const driverId = 'driver-uuid';
+      prisma.user.findUnique.mockResolvedValue({ id: driverId, isActive: true });
+      prisma.reservation.findFirst.mockResolvedValue(null);
+
+      // Override transaction to return session with QR (driver is registered)
+      prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          $queryRaw: jest.fn().mockResolvedValue([{ id: slot.id, status: 'available' }]),
+          slot: { update: jest.fn().mockResolvedValue(slot) },
+          reservation: { update: jest.fn() },
+          parkingSession: {
+            create: jest.fn().mockResolvedValue(
+              makeSession({ driverId, qrCode: 'data:image/png;base64,abc', reservationId: null }),
+            ),
+          },
+        };
+        return fn(tx);
+      });
+
+      const dto = {
+        licensePlate: '59A-12345',
+        vehicleType: VehicleType.car,
+        driverPhone: '0901234567',
+      };
+
+      const result = await service.checkIn(dto, staffId);
+
+      // Should call allocation service (normal flow)
+      expect(allocationService.allocate).toHaveBeenCalledWith(VehicleType.car);
+      expect(result.session.reservationId).toBeNull();
+    });
+
+    it('does not check reservation when no driverPhone provided (walk-in)', async () => {
+      const dto = { licensePlate: '59A-12345', vehicleType: VehicleType.car };
+
+      await service.checkIn(dto, staffId);
+
+      // Should not query reservations for walk-in
+      expect(prisma.reservation.findFirst).not.toHaveBeenCalled();
+      expect(allocationService.allocate).toHaveBeenCalled();
     });
   });
 

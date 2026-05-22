@@ -23,17 +23,20 @@ export class SessionsService {
   ) {}
 
   /**
-   * 13.1–13.6: Check-in a vehicle.
+   * 13.1–13.6 + Task 20: Check-in a vehicle.
    *
    * Flow:
-   * 1. Validate no active session already exists for this plate (unique partial index)
+   * 1. Validate no active session already exists for this plate
    * 2. Optionally resolve registered driver by phone
-   * 3. Allocate a slot via AllocationService (BalancedOccupancyStrategy)
-   * 4. Inside a transaction: update slot → occupied, create ParkingSession
-   * 5. If driver is registered, generate a QR code (UUID encoded)
-   * 6. Return session + slot + optional QR code
+   * 3. [Task 20] If driver has an active reservation for this vehicleType → fulfill it
+   *    (use reserved slot, skip allocation)
+   * 4. Otherwise allocate a slot via AllocationService (BalancedOccupancyStrategy)
+   * 5. Inside a transaction: update slot → occupied, create ParkingSession,
+   *    optionally fulfill reservation
+   * 6. If driver is registered, generate a QR code (UUID encoded)
+   * 7. Return session + slot + optional QR code
    *
-   * Req 1.1–1.5, 3.6
+   * Req 1.1–1.5, 3.6, 8
    */
   async checkIn(dto: CheckInDto, staffId: string) {
     // Check for duplicate active session with same license plate
@@ -64,46 +67,80 @@ export class SessionsService {
       }
     }
 
-    // 13.2: Allocate slot (measures allocation_time_ms internally)
-    // ConflictException is thrown here if building is full (Req 1.5)
-    const { slot, allocationStrategy, allocationTimeMs } =
-      await this.allocationService.allocate(dto.vehicleType);
+    // ─── Task 20: Check for active reservation ────────────────────────────
+    // If the driver has an active reservation for this vehicle type,
+    // fulfill it instead of allocating a new slot.
+    let reservationId: string | null = null;
+    let slot: { id: number; code: string; zone: any; floor: any; floorId: number; slotNumber: number; status: any; vehicleType: any };
+    let allocationStrategy: string;
+    let allocationTimeMs: number;
 
-    // 13.2: Wrap slot update + session creation in a transaction with
+    const activeReservation = driverId
+      ? await this.prisma.reservation.findFirst({
+          where: {
+            driverId,
+            vehicleType: dto.vehicleType,
+            status: 'active',
+          },
+          include: { slot: { include: { floor: true } } },
+        })
+      : null;
+
+    if (activeReservation) {
+      // Use the reserved slot — no allocation needed
+      slot = activeReservation.slot;
+      reservationId = activeReservation.id;
+      allocationStrategy = 'reservation_fulfillment';
+      allocationTimeMs = 0;
+    } else {
+      // 13.2: Allocate slot (measures allocation_time_ms internally)
+      // ConflictException is thrown here if building is full (Req 1.5)
+      const result = await this.allocationService.allocate(dto.vehicleType);
+      slot = result.slot;
+      allocationStrategy = result.allocationStrategy;
+      allocationTimeMs = result.allocationTimeMs;
+    }
+
+    // Wrap slot update + session creation in a transaction with
     // FOR UPDATE SKIP LOCKED to prevent concurrent double-assignment.
     const session = await this.prisma.$transaction(async (tx) => {
-      // Re-check the slot is still available and lock it
+      // Re-check the slot is still available/reserved and lock it
+      const expectedStatus = activeReservation ? 'reserved' : 'available';
       const lockedSlot = await tx.$queryRaw<{ id: number; status: string }[]>`
         SELECT id, status FROM slots
-        WHERE id = ${slot.id} AND status = 'available'
+        WHERE id = ${slot.id} AND status = ${expectedStatus}
         FOR UPDATE SKIP LOCKED
       `;
 
       if (!lockedSlot || lockedSlot.length === 0) {
-        // Slot was taken between allocation query and transaction — retry by
-        // throwing ConflictException so the caller can retry or surface the error.
         throw new ConflictException(
-          `Slot ${slot.code} is no longer available. Please retry.`,
+          `Slot ${slot.code} is no longer ${expectedStatus}. Please retry.`,
         );
       }
 
-      // 13.3: Update slot → occupied
+      // Update slot → occupied (from available or reserved)
       await tx.slot.update({
         where: { id: slot.id },
         data: { status: 'occupied' },
       });
 
-      // 13.4: Generate QR code for registered drivers
+      // Task 20: Fulfill reservation if present
+      if (reservationId) {
+        await tx.reservation.update({
+          where: { id: reservationId },
+          data: { status: 'fulfilled' },
+        });
+      }
+
+      // Generate QR code for registered drivers
       let qrCode: string | null = null;
-      // We need the session UUID first — generate it before creating the record
       const sessionId = crypto.randomUUID();
 
       if (driverId) {
-        // Encode session UUID as QR (base64 PNG data URL)
         qrCode = await QRCode.toDataURL(sessionId);
       }
 
-      // 13.3 + 13.5: Create parking session
+      // Create parking session (linked to reservation if applicable)
       const newSession = await tx.parkingSession.create({
         data: {
           id: sessionId,
@@ -111,9 +148,9 @@ export class SessionsService {
           vehicleType: dto.vehicleType,
           slotId: slot.id,
           driverId,
+          reservationId,
           checkedInById: staffId,
           qrCode,
-          // 13.5: Log allocation metadata
           allocationStrategy,
           allocationTimeMs,
         },
@@ -125,7 +162,7 @@ export class SessionsService {
       return newSession;
     });
 
-    // 13.6: Return session + slot + optional QR
+    // Return session + slot + optional QR
     return {
       session: {
         id: session.id,
@@ -135,6 +172,7 @@ export class SessionsService {
         status: session.status,
         allocationStrategy: session.allocationStrategy,
         allocationTimeMs: session.allocationTimeMs,
+        reservationId: session.reservationId,
       },
       slot: {
         id: session.slot.id,
