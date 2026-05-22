@@ -10,7 +10,7 @@ import * as QRCode from 'qrcode';
 import { PrismaService } from '../prisma/prisma.service';
 import { AllocationService } from '../slots/allocation.service';
 import { FeesService, FeeBreakdown } from '../fees/fees.service';
-import { CheckInDto, CheckOutDto, ConfirmPaymentDto } from './dto';
+import { CheckInDto, CheckOutDto, ConfirmPaymentDto, LostTicketDto } from './dto';
 
 @Injectable()
 export class SessionsService {
@@ -404,5 +404,115 @@ export class SessionsService {
       },
       orderBy: { checkInTime: 'asc' },
     });
+  }
+
+  /**
+   * 23.3 / 23.4: List sessions for a specific driver, filtered by status.
+   */
+  async findByDriver(driverId: string, status: 'active' | 'completed') {
+    return this.prisma.parkingSession.findMany({
+      where: { driverId, status },
+      include: {
+        slot: { include: { floor: true } },
+      },
+      orderBy: { checkInTime: 'desc' },
+    });
+  }
+
+  /**
+   * 21: Get QR code for a session.
+   * Returns the stored base64 data URL, or generates one if missing.
+   * Accessible by Staff and the owning Driver.
+   */
+  async getQrCode(sessionId: string) {
+    const session = await this.prisma.parkingSession.findUnique({
+      where: { id: sessionId },
+      select: { id: true, qrCode: true, driverId: true },
+    });
+
+    if (!session) {
+      throw new NotFoundException(`Session not found: ${sessionId}`);
+    }
+
+    // If QR was already generated at check-in, return it
+    if (session.qrCode) {
+      return { sessionId: session.id, qrCode: session.qrCode };
+    }
+
+    // Generate QR on-demand (for sessions that didn't have a registered driver at check-in)
+    const qrCode = await QRCode.toDataURL(sessionId);
+
+    // Persist for future requests
+    await this.prisma.parkingSession.update({
+      where: { id: sessionId },
+      data: { qrCode },
+    });
+
+    return { sessionId: session.id, qrCode };
+  }
+
+  /**
+   * 24.1–24.3: Handle lost ticket.
+   *
+   * Flow:
+   * 1. Lookup active session by license plate
+   * 2. Record ID verification info (id_card_no, driver_license_no)
+   * 3. Set isLostTicket flag on session
+   * 4. Calculate fee with lost ticket penalty
+   * 5. Return fee breakdown for staff to confirm payment
+   *
+   * Req 5.6, 7.3
+   */
+  async handleLostTicket(dto: LostTicketDto, staffId: string) {
+    // 24.2: Lookup active session by plate
+    const session = await this.prisma.parkingSession.findFirst({
+      where: {
+        licensePlate: dto.licensePlate,
+        status: 'active',
+      },
+      include: {
+        slot: { include: { floor: true } },
+      },
+    });
+
+    if (!session) {
+      throw new NotFoundException(
+        `Không tìm thấy phiên gửi xe cho biển số: ${dto.licensePlate}`,
+      );
+    }
+
+    // 24.2: Set lost ticket flag and record ID info
+    await this.prisma.parkingSession.update({
+      where: { id: session.id },
+      data: {
+        isLostTicket: true,
+        idCardNo: dto.idCardNo,
+        driverLicenseNo: dto.driverLicenseNo,
+      },
+    });
+
+    // 24.3: Calculate fee with lost ticket penalty (100k)
+    const now = new Date();
+    const breakdown = await this.feesService.calculate(session, true, now);
+
+    this.logger.warn(
+      `Lost ticket processed: session ${session.id}, plate ${dto.licensePlate}, ` +
+        `ID card: ${dto.idCardNo}, staff: ${staffId}`,
+    );
+
+    return {
+      session: {
+        id: session.id,
+        licensePlate: session.licensePlate,
+        vehicleType: session.vehicleType,
+        checkInTime: session.checkInTime,
+        isLostTicket: true,
+      },
+      slot: {
+        code: session.slot.code,
+        floor: session.slot.floor.name,
+      },
+      breakdown,
+    };
   }
 }

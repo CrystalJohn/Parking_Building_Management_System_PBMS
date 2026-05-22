@@ -78,6 +78,41 @@ export class SessionsController {
   }
 
   /**
+   * GET /sessions/my-active
+   * Driver only — list own active sessions.
+   * 23.4
+   */
+  @Get('my-active')
+  @UseGuards(RolesGuard)
+  @Roles(Role.driver)
+  findMyActive(@CurrentUser('id') driverId: string) {
+    return this.sessionsService.findByDriver(driverId, 'active');
+  }
+
+  /**
+   * GET /sessions/my-history
+   * Driver only — list own completed sessions.
+   * 23.3
+   */
+  @Get('my-history')
+  @UseGuards(RolesGuard)
+  @Roles(Role.driver)
+  findMyHistory(@CurrentUser('id') driverId: string) {
+    return this.sessionsService.findByDriver(driverId, 'completed');
+  }
+
+  /**
+   * GET /sessions/:id/qr
+   * 21: Get QR code for a session (data URL).
+   * Staff and Driver — returns base64 PNG data URL.
+   */
+  @Get(':id/qr')
+  @Roles(Role.staff, Role.driver)
+  getQrCode(@Param('id', ParseUUIDPipe) id: string) {
+    return this.sessionsService.getQrCode(id);
+  }
+
+  /**
    * GET /sessions/:id
    * Staff and Driver — get session details.
    */

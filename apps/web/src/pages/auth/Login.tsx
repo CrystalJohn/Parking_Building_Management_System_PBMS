@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, Link } from 'react-router-dom'
 import { isAxiosError } from 'axios'
 import api from '../../lib/api'
 import { getToken, getUser, saveAuth, type AuthUser } from '../../lib/auth'
@@ -192,6 +192,13 @@ export default function Login() {
             {submitting ? 'Đang đăng nhập...' : 'Đăng nhập'}
           </button>
         </form>
+
+        <p className="text-center text-sm text-gray-500">
+          Chưa có tài khoản?{' '}
+          <Link to="/register" className="text-primary-600 hover:underline font-medium">
+            Đăng ký
+          </Link>
+        </p>
       </div>
 
       <ToastContainer toasts={toasts.toasts} onDismiss={toasts.dismiss} />

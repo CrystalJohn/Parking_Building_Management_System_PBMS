@@ -12,6 +12,7 @@ import {
   type VehicleType,
 } from '../../lib/sessions-api'
 import { Receipt } from '../../components/receipt/Receipt'
+import { QRScanner } from '../../components/qr-scanner/QRScanner'
 
 type Tab = 'check-in' | 'check-out'
 
@@ -291,6 +292,7 @@ function CheckOutPanel({ toasts }: PanelProps) {
   const [confirming, setConfirming] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [receipt, setReceipt] = useState<ConfirmPaymentResponse | null>(null)
+  const [showScanner, setShowScanner] = useState(false)
 
   const reset = () => {
     setLicensePlate('')
@@ -321,8 +323,18 @@ function CheckOutPanel({ toasts }: PanelProps) {
   }
 
   const handleScanQR = () => {
-    // Task 22 will replace this stub with the html5-qrcode scanner modal.
-    toasts.showInfo('Quét QR sẽ khả dụng sau khi triển khai task 22')
+    setShowScanner(true)
+  }
+
+  const handleQRScanned = (decodedText: string) => {
+    setShowScanner(false)
+    // The QR encodes the session UUID directly
+    const sessionId = decodedText.trim()
+    if (sessionId) {
+      lookup({ sessionId })
+    } else {
+      toasts.showError('Mã QR không hợp lệ')
+    }
   }
 
   const handleConfirmPayment = async () => {
@@ -462,6 +474,13 @@ function CheckOutPanel({ toasts }: PanelProps) {
       <p className="text-xs text-gray-500">
         Khách có tài khoản: quét QR từ app. Khách vãng lai: nhập biển số.
       </p>
+
+      {showScanner && (
+        <QRScanner
+          onScan={handleQRScanned}
+          onClose={() => setShowScanner(false)}
+        />
+      )}
     </form>
   )
 }

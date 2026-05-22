@@ -3,6 +3,7 @@ import RequireAuth from '../components/auth/RequireAuth'
 
 // Auth
 import Login from '../pages/auth/Login'
+import Register from '../pages/auth/Register'
 
 // Staff
 import Gate from '../pages/staff/Gate'
@@ -20,6 +21,7 @@ import Users from '../pages/admin/Users'
 import DriverHome from '../pages/driver/Home'
 import Reservations from '../pages/driver/Reservations'
 import History from '../pages/driver/History'
+import MySession from '../pages/driver/MySession'
 
 /**
  * Central route configuration for the Parking Building Management System.
@@ -39,6 +41,7 @@ export default function AppRoutes() {
     <Routes>
       {/* Public */}
       <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
 
       {/* Staff routes */}
       <Route
@@ -116,6 +119,14 @@ export default function AppRoutes() {
         element={
           <RequireAuth allowedRoles={['driver']}>
             <History />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/driver/my-session"
+        element={
+          <RequireAuth allowedRoles={['driver']}>
+            <MySession />
           </RequireAuth>
         }
       />
