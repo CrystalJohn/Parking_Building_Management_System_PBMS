@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -47,6 +48,11 @@ export class ReportsService {
     const truncUnit = this.getTruncUnit(period);
     const { startDate, endDate } = this.getDateRange(period, date);
 
+    // DATE_TRUNC's first argument must be a SQL literal, not a bound
+    // parameter, otherwise PostgreSQL can't match the SELECT and GROUP BY
+    // expressions (error 42803). truncUnit is whitelisted by getTruncUnit().
+    const truncExpr = Prisma.raw(`DATE_TRUNC('${truncUnit}', ps.check_out_time)`);
+
     const rows = await this.prisma.$queryRaw<
       {
         period: Date;
@@ -57,7 +63,7 @@ export class ReportsService {
       }[]
     >`
       SELECT
-        DATE_TRUNC(${truncUnit}, ps.check_out_time) AS period,
+        ${truncExpr} AS period,
         ps.vehicle_type,
         COUNT(*)::bigint AS total_sessions,
         COALESCE(SUM(p.amount), 0)::bigint AS total_revenue,
@@ -67,7 +73,7 @@ export class ReportsService {
       WHERE ps.status = 'completed'
         AND ps.check_out_time >= ${startDate}
         AND ps.check_out_time < ${endDate}
-      GROUP BY DATE_TRUNC(${truncUnit}, ps.check_out_time), ps.vehicle_type
+      GROUP BY ${truncExpr}, ps.vehicle_type
       ORDER BY period ASC, ps.vehicle_type ASC
     `;
 
@@ -87,6 +93,11 @@ export class ReportsService {
   async getTraffic(period: ReportPeriod, date: string): Promise<TrafficRow[]> {
     const { startDate, endDate } = this.getDateRange(period, date);
 
+    // DATE_TRUNC and EXTRACT must be SQL literals (not bound parameters)
+    // so PostgreSQL can match SELECT and GROUP BY expressions.
+    const dayTrunc = Prisma.raw(`DATE_TRUNC('day', ps.check_in_time)`);
+    const hourExtract = Prisma.raw(`EXTRACT(HOUR FROM ps.check_in_time)`);
+
     const rows = await this.prisma.$queryRaw<
       {
         the_date: Date;
@@ -98,8 +109,8 @@ export class ReportsService {
       }[]
     >`
       SELECT
-        DATE_TRUNC('day', ps.check_in_time) AS the_date,
-        EXTRACT(HOUR FROM ps.check_in_time)::int AS hour,
+        ${dayTrunc} AS the_date,
+        ${hourExtract}::int AS hour,
         f.floor_number,
         f.name AS floor_name,
         COUNT(*)::bigint AS entry_count,
@@ -109,9 +120,7 @@ export class ReportsService {
       JOIN floors f ON f.id = s.floor_id
       WHERE ps.check_in_time >= ${startDate}
         AND ps.check_in_time < ${endDate}
-      GROUP BY DATE_TRUNC('day', ps.check_in_time),
-               EXTRACT(HOUR FROM ps.check_in_time),
-               f.floor_number, f.name
+      GROUP BY ${dayTrunc}, ${hourExtract}, f.floor_number, f.name
       ORDER BY the_date ASC, hour ASC, f.floor_number ASC
     `;
 

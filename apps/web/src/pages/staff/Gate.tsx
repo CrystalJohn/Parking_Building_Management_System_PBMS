@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { isAxiosError } from 'axios'
 import { ToastContainer } from '../../components/ui/Toast'
 import { useToasts } from '../../lib/use-toasts'
@@ -326,16 +326,24 @@ function CheckOutPanel({ toasts }: PanelProps) {
     setShowScanner(true)
   }
 
-  const handleQRScanned = (decodedText: string) => {
+  const handleQRScanned = useCallback(
+    (decodedText: string) => {
+      setShowScanner(false)
+      // The QR encodes the session UUID directly
+      const sessionId = decodedText.trim()
+      if (sessionId) {
+        lookup({ sessionId })
+      } else {
+        toasts.showError('Mã QR không hợp lệ')
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  )
+
+  const handleScannerClose = useCallback(() => {
     setShowScanner(false)
-    // The QR encodes the session UUID directly
-    const sessionId = decodedText.trim()
-    if (sessionId) {
-      lookup({ sessionId })
-    } else {
-      toasts.showError('Mã QR không hợp lệ')
-    }
-  }
+  }, [])
 
   const handleConfirmPayment = async () => {
     if (!feePreview) return
@@ -478,7 +486,8 @@ function CheckOutPanel({ toasts }: PanelProps) {
       {showScanner && (
         <QRScanner
           onScan={handleQRScanned}
-          onClose={() => setShowScanner(false)}
+          onClose={handleScannerClose}
+          onManualInput={handleQRScanned}
         />
       )}
     </form>

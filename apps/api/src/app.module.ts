@@ -11,6 +11,7 @@ import { SessionsModule } from './sessions/sessions.module';
 import { FeesModule } from './fees/fees.module';
 import { ReservationsModule } from './reservations/reservations.module';
 import { ReportsModule } from './reports/reports.module';
+import { ConfigMgmtModule } from './config-mgmt/config-mgmt.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { ReportsModule } from './reports/reports.module';
     FeesModule,
     ReservationsModule,
     ReportsModule,
+    ConfigMgmtModule,
   ],
   controllers: [AppController],
   providers: [AppService],

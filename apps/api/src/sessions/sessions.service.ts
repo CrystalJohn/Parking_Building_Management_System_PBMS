@@ -108,7 +108,7 @@ export class SessionsService {
       const expectedStatus = activeReservation ? 'reserved' : 'available';
       const lockedSlot = await tx.$queryRaw<{ id: number; status: string }[]>`
         SELECT id, status FROM slots
-        WHERE id = ${slot.id} AND status = ${expectedStatus}
+        WHERE id = ${slot.id} AND status = ${expectedStatus}::"SlotStatus"
         FOR UPDATE SKIP LOCKED
       `;
 
@@ -153,6 +153,9 @@ export class SessionsService {
           qrCode,
           allocationStrategy,
           allocationTimeMs,
+          // 32: Denormalized metrics for research queries
+          floorId: slot.floorId,
+          zone: slot.zone,
         },
         include: {
           slot: { include: { floor: true } },

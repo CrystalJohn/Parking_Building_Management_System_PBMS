@@ -128,6 +128,9 @@ model ParkingSession {
   checkedOutById     String?       @map("checked_out_by")
   allocationStrategy String?       @map("allocation_strategy")
   allocationTimeMs   Int?          @map("allocation_time_ms")
+  // 32: Denormalized metrics for research queries (avoid JOINs)
+  floorId            Int?          @map("floor_id")
+  zone               Zone?
 
   // Relations
   driver       User?        @relation("DriverSessions", fields: [driverId], references: [id])
@@ -141,6 +144,7 @@ model ParkingSession {
   @@index([checkOutTime], map: "idx_session_checkout_time")
   @@index([driverId], map: "idx_active_sessions_by_driver")
   @@index([reservationId], map: "idx_session_reservation")
+  @@index([allocationStrategy], map: "idx_session_strategy")
   @@map("parking_sessions")
 }
 

@@ -24,14 +24,16 @@ export interface AllocationStrategy {
   ): Slot & { floor: Floor };
 }
 
+// ─── Strategy Implementations ────────────────────────────────────────────────
+
 /**
- * Default strategy: Balanced Occupancy (greedy by occupancy).
+ * 31.2 / 12: Balanced Occupancy Strategy (default).
  *
- * Algorithm (Req 3.1–3.5):
+ * Algorithm:
  * 1. Filter slots by zone (Zone A for car, Zone B for motorbike)
  * 2. Calculate occupancy rate per floor for the matching vehicle type
  * 3. Sort: lowest occupancy → lowest floor number → lowest slot number
- * 4. Return the first available slot matching the criteria
+ * 4. Return the first available slot
  */
 export class BalancedOccupancyStrategy implements AllocationStrategy {
   readonly name = 'balanced_occupancy';
@@ -41,7 +43,6 @@ export class BalancedOccupancyStrategy implements AllocationStrategy {
     availableSlots: (Slot & { floor: Floor })[],
     allSlots: (Slot & { floor: Floor })[],
   ): Slot & { floor: Floor } {
-    // 12.4: Filter by zone — Zone A for car, Zone B for motorbike
     const targetZone = vehicleType === VehicleType.car ? Zone.A : Zone.B;
     const candidates = availableSlots.filter(
       (s) => s.zone === targetZone && s.vehicleType === vehicleType,
@@ -53,15 +54,12 @@ export class BalancedOccupancyStrategy implements AllocationStrategy {
       );
     }
 
-    // 12.2: Calculate occupancy rate per floor for this vehicle type + zone
     const floorOccupancy = this.calculateFloorOccupancy(
       allSlots,
       vehicleType,
       targetZone,
     );
 
-    // 12.3: Sort candidates by floor occupancy (lowest first),
-    // then floor number (lowest first), then slot number (lowest first)
     candidates.sort((a, b) => {
       const occA = floorOccupancy.get(a.floorId) ?? 0;
       const occB = floorOccupancy.get(b.floorId) ?? 0;
@@ -74,10 +72,6 @@ export class BalancedOccupancyStrategy implements AllocationStrategy {
     return candidates[0];
   }
 
-  /**
-   * 12.2: Compute occupancy rate for each floor.
-   * occupancy = occupied_count / total_count for the given vehicleType + zone.
-   */
   private calculateFloorOccupancy(
     allSlots: (Slot & { floor: Floor })[],
     vehicleType: VehicleType,
@@ -114,13 +108,86 @@ export class BalancedOccupancyStrategy implements AllocationStrategy {
 }
 
 /**
+ * 31.2: Lowest Floor Strategy.
+ *
+ * Algorithm:
+ * 1. Filter by zone
+ * 2. Sort: lowest floor number → lowest slot number
+ * 3. Return the first available slot (always fills lower floors first)
+ *
+ * Use case: Minimize walking distance for drivers (ground floor preferred).
+ * Research: Baseline comparison for RQ2 (search time).
+ */
+export class LowestFloorStrategy implements AllocationStrategy {
+  readonly name = 'lowest_floor';
+
+  allocate(
+    vehicleType: VehicleType,
+    availableSlots: (Slot & { floor: Floor })[],
+    _allSlots: (Slot & { floor: Floor })[],
+  ): Slot & { floor: Floor } {
+    const targetZone = vehicleType === VehicleType.car ? Zone.A : Zone.B;
+    const candidates = availableSlots.filter(
+      (s) => s.zone === targetZone && s.vehicleType === vehicleType,
+    );
+
+    if (candidates.length === 0) {
+      throw new ConflictException(
+        `No available slot for vehicle type: ${vehicleType}`,
+      );
+    }
+
+    candidates.sort((a, b) => {
+      if (a.floor.floorNumber !== b.floor.floorNumber)
+        return a.floor.floorNumber - b.floor.floorNumber;
+      return a.slotNumber - b.slotNumber;
+    });
+
+    return candidates[0];
+  }
+}
+
+/**
+ * 31.2: Random Strategy.
+ *
+ * Algorithm:
+ * 1. Filter by zone
+ * 2. Pick a random available slot
+ *
+ * Use case: Simulates "free choice" / no guidance scenario.
+ * Research: Control group for RQ2 (what happens without smart allocation).
+ */
+export class RandomStrategy implements AllocationStrategy {
+  readonly name = 'random';
+
+  allocate(
+    vehicleType: VehicleType,
+    availableSlots: (Slot & { floor: Floor })[],
+    _allSlots: (Slot & { floor: Floor })[],
+  ): Slot & { floor: Floor } {
+    const targetZone = vehicleType === VehicleType.car ? Zone.A : Zone.B;
+    const candidates = availableSlots.filter(
+      (s) => s.zone === targetZone && s.vehicleType === vehicleType,
+    );
+
+    if (candidates.length === 0) {
+      throw new ConflictException(
+        `No available slot for vehicle type: ${vehicleType}`,
+      );
+    }
+
+    const randomIndex = Math.floor(Math.random() * candidates.length);
+    return candidates[randomIndex];
+  }
+}
+
+// ─── Allocation Service ──────────────────────────────────────────────────────
+
+/**
  * Allocation Service — orchestrates slot assignment using the active strategy.
  *
- * Responsibilities:
- * - Load available slots from DB
- * - Delegate to the active AllocationStrategy
- * - Measure allocation_time_ms (12.6)
- * - Throw ConflictException when building is full (12.5 / Req 1.5)
+ * 31.3: Reads active strategy from SystemConfig at runtime.
+ * 31.4: Injected into SessionsService for check-in and reservations.
  */
 @Injectable()
 export class AllocationService {
@@ -128,10 +195,15 @@ export class AllocationService {
   private readonly defaultStrategy: AllocationStrategy;
 
   constructor(private readonly prisma: PrismaService) {
-    // Register available strategies
+    // 31.2: Register all available strategies
     const balanced = new BalancedOccupancyStrategy();
+    const lowestFloor = new LowestFloorStrategy();
+    const random = new RandomStrategy();
+
     this.strategies = new Map<string, AllocationStrategy>([
       [balanced.name, balanced],
+      [lowestFloor.name, lowestFloor],
+      [random.name, random],
     ]);
     this.defaultStrategy = balanced;
   }
@@ -150,8 +222,8 @@ export class AllocationService {
   ): Promise<AllocationResult> {
     const startTime = performance.now();
 
-    // Resolve strategy
-    const strategy = this.resolveStrategy(strategyName);
+    // 31.3: Resolve strategy from config or override
+    const strategy = await this.resolveStrategy(strategyName);
 
     // Fetch all slots with floor info (needed for occupancy calculation)
     const allSlots = await this.prisma.slot.findMany({
@@ -163,7 +235,7 @@ export class AllocationService {
       (s) => s.status === SlotStatus.available,
     );
 
-    // 12.5: If no available slots at all for this vehicle type, throw immediately
+    // If no available slots at all for this vehicle type, throw immediately
     const targetZone = vehicleType === VehicleType.car ? Zone.A : Zone.B;
     const hasAny = availableSlots.some(
       (s) => s.zone === targetZone && s.vehicleType === vehicleType,
@@ -177,7 +249,7 @@ export class AllocationService {
     // Delegate to strategy
     const slot = strategy.allocate(vehicleType, availableSlots, allSlots);
 
-    // 12.6: Measure allocation time
+    // Measure allocation time
     const allocationTimeMs = Math.round(performance.now() - startTime);
 
     return {
@@ -188,27 +260,57 @@ export class AllocationService {
   }
 
   /**
-   * Resolve the strategy to use. Priority:
-   * 1. Explicit strategyName parameter
+   * 31.3: Resolve the strategy to use. Priority:
+   * 1. Explicit strategyName parameter (for simulation/testing)
    * 2. System config `active_allocation_strategy`
    * 3. Default (balanced_occupancy)
    */
-  private resolveStrategy(strategyName?: string): AllocationStrategy {
+  private async resolveStrategy(strategyName?: string): Promise<AllocationStrategy> {
+    // Priority 1: explicit override
     if (strategyName && this.strategies.has(strategyName)) {
       return this.strategies.get(strategyName)!;
     }
-    // For now, return default. In Sprint 4 (task 31), this will read from SystemConfig.
+
+    // Priority 2: read from SystemConfig
+    const config = await this.prisma.systemConfig.findUnique({
+      where: { configKey: 'active_allocation_strategy' },
+    });
+
+    if (config?.configValue && this.strategies.has(config.configValue)) {
+      return this.strategies.get(config.configValue)!;
+    }
+
+    // Priority 3: default
     return this.defaultStrategy;
   }
 
   /**
    * Get the active strategy name from system config.
-   * Used externally to log which strategy was active at allocation time.
    */
   async getActiveStrategyName(): Promise<string> {
     const config = await this.prisma.systemConfig.findUnique({
       where: { configKey: 'active_allocation_strategy' },
     });
     return config?.configValue ?? this.defaultStrategy.name;
+  }
+
+  /**
+   * 31.3: List all available strategy names (for config UI).
+   */
+  getAvailableStrategies(): { name: string; description: string }[] {
+    return [
+      {
+        name: 'balanced_occupancy',
+        description: 'Cân bằng tải giữa các tầng (mặc định)',
+      },
+      {
+        name: 'lowest_floor',
+        description: 'Ưu tiên tầng thấp nhất (giảm walking time)',
+      },
+      {
+        name: 'random',
+        description: 'Ngẫu nhiên (mô phỏng free-choice, control group)',
+      },
+    ];
   }
 }

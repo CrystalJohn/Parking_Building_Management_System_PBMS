@@ -1,11 +1,27 @@
 import { useEffect, useRef, useState } from 'react'
-import { Html5Qrcode } from 'html5-qrcode'
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode'
 
 interface QRScannerProps {
   /** Called when a QR code is successfully scanned. */
   onScan: (decodedText: string) => void
   /** Called when the user closes the scanner. */
   onClose: () => void
+  /** Optional: called when the user submits a session ID manually. */
+  onManualInput?: (sessionId: string) => void
+}
+
+/**
+ * Extract a human-readable message from any error value.
+ * html5-qrcode sometimes throws strings or empty errors.
+ */
+function describeError(err: unknown): string {
+  if (typeof err === 'string') return err
+  if (err instanceof Error && err.message) return err.message
+  if (err && typeof err === 'object') {
+    const maybeMsg = (err as { message?: unknown }).message
+    if (typeof maybeMsg === 'string' && maybeMsg) return maybeMsg
+  }
+  return 'Không thể truy cập camera. Vui lòng cấp quyền camera trong trình duyệt.'
 }
 
 /**
@@ -15,11 +31,14 @@ interface QRScannerProps {
  *
  * Req 2.1, Design ref: QR scanning
  */
-export function QRScanner({ onScan, onClose }: QRScannerProps) {
+export function QRScanner({ onScan, onClose, onManualInput }: QRScannerProps) {
   const scannerRef = useRef<Html5Qrcode | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const scannedRef = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [starting, setStarting] = useState(true)
+  const [manualInput, setManualInput] = useState('')
+  const [showManual, setShowManual] = useState(false)
 
   useEffect(() => {
     const readerId = 'qr-reader-container'
@@ -27,17 +46,45 @@ export function QRScanner({ onScan, onClose }: QRScannerProps) {
 
     const startScanner = async () => {
       try {
-        const scanner = new Html5Qrcode(readerId)
+        // Browsers only allow camera over HTTPS or localhost. Surface a clear
+        // message instead of a cryptic getUserMedia error.
+        if (
+          typeof navigator === 'undefined' ||
+          !navigator.mediaDevices?.getUserMedia
+        ) {
+          throw new Error(
+            'Trình duyệt không hỗ trợ camera. Hãy mở qua HTTPS hoặc localhost.',
+          )
+        }
+
+        const scanner = new Html5Qrcode(readerId, {
+          // Restrict to QR codes for faster decoding and fewer false positives.
+          formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+          verbose: false,
+        })
         scannerRef.current = scanner
 
         await scanner.start(
           { facingMode: 'environment' },
           {
-            fps: 10,
-            qrbox: { width: 250, height: 250 },
+            // Higher FPS = more decode attempts per second
+            fps: 15,
+            // Scale qrbox dynamically to ~70% of the viewfinder. Bigger box
+            // makes near-camera framing more forgiving.
+            qrbox: (vw, vh) => {
+              const min = Math.min(vw, vh)
+              const size = Math.floor(min * 0.7)
+              return { width: size, height: size }
+            },
+            // Use the full camera resolution we can get on this device.
+            aspectRatio: 1,
+            disableFlip: false,
           },
           (decodedText) => {
-            // Successfully scanned — stop and notify parent
+            // Guard against multiple scans firing before stop() resolves
+            if (scannedRef.current) return
+            scannedRef.current = true
+            // Stop asynchronously; ignore errors (already handled in cleanup)
             scanner.stop().catch(() => {})
             if (mounted) {
               onScan(decodedText)
@@ -50,13 +97,11 @@ export function QRScanner({ onScan, onClose }: QRScannerProps) {
 
         if (mounted) setStarting(false)
       } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[QRScanner] start failed', err)
         if (mounted) {
           setStarting(false)
-          setError(
-            err instanceof Error
-              ? err.message
-              : 'Không thể truy cập camera. Vui lòng cấp quyền camera.',
-          )
+          setError(describeError(err))
         }
       }
     }
@@ -65,10 +110,24 @@ export function QRScanner({ onScan, onClose }: QRScannerProps) {
 
     return () => {
       mounted = false
-      if (scannerRef.current) {
-        scannerRef.current.stop().catch(() => {})
-        scannerRef.current.clear()
-      }
+      const scanner = scannerRef.current
+      scannerRef.current = null
+      if (!scanner) return
+
+      // stop() must complete before clear(); otherwise html5-qrcode throws.
+      // Errors from stop()/clear() during unmount are non-fatal.
+      void (async () => {
+        try {
+          await scanner.stop()
+        } catch {
+          /* ignore — scanner may already be stopped */
+        }
+        try {
+          scanner.clear()
+        } catch {
+          /* ignore */
+        }
+      })()
     }
   }, [onScan])
 
@@ -109,11 +168,60 @@ export function QRScanner({ onScan, onClose }: QRScannerProps) {
               <div
                 id="qr-reader-container"
                 ref={containerRef}
-                className="w-full aspect-square rounded-md overflow-hidden"
+                className="w-full aspect-square rounded-md overflow-hidden bg-black"
               />
               <p className="text-xs text-gray-500 text-center mt-3">
-                Hướng camera vào mã QR trên vé/app của tài xế.
+                Đặt mã QR cách camera 15-25cm, giữ thẳng và đủ sáng.
               </p>
+              {onManualInput && (
+                <div className="mt-3 border-t border-gray-200 pt-3">
+                  {!showManual ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowManual(true)}
+                      className="text-sm text-primary-600 hover:underline w-full text-center"
+                    >
+                      Camera không quét được? Nhập mã thủ công
+                    </button>
+                  ) : (
+                    <div className="space-y-2">
+                      <label className="block text-xs text-gray-600">
+                        Nhập session ID (UUID từ QR)
+                      </label>
+                      <input
+                        type="text"
+                        className="input text-xs font-mono"
+                        placeholder="VD: 5f3a9c1e-..."
+                        value={manualInput}
+                        onChange={(e) => setManualInput(e.target.value)}
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const trimmed = manualInput.trim()
+                            if (trimmed) onManualInput(trimmed)
+                          }}
+                          className="btn-primary text-sm flex-1"
+                          disabled={!manualInput.trim()}
+                        >
+                          Xác nhận
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowManual(false)
+                            setManualInput('')
+                          }}
+                          className="btn-secondary text-sm"
+                        >
+                          Hủy
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>

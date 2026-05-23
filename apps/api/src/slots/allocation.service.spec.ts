@@ -4,6 +4,8 @@ import { SlotStatus, Zone, VehicleType } from '@prisma/client';
 import {
   AllocationService,
   BalancedOccupancyStrategy,
+  LowestFloorStrategy,
+  RandomStrategy,
 } from './allocation.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -198,6 +200,103 @@ describe('BalancedOccupancyStrategy', () => {
   });
 });
 
+// ─── LowestFloorStrategy Unit Tests ──────────────────────────────────────────
+
+describe('LowestFloorStrategy', () => {
+  let strategy: LowestFloorStrategy;
+
+  beforeEach(() => {
+    strategy = new LowestFloorStrategy();
+  });
+
+  it('always picks the lowest floor first', () => {
+    const floor1 = makeFloor({ id: 1, floorNumber: 1, name: 'T1' });
+    const floor2 = makeFloor({ id: 2, floorNumber: 2, name: 'T2' });
+    const floor3 = makeFloor({ id: 3, floorNumber: 3, name: 'T3' });
+
+    const available = [
+      makeSlot({ id: 3, floorId: 3, zone: Zone.A, vehicleType: VehicleType.car, status: SlotStatus.available, floor: floor3, slotNumber: 1, code: 'T3-A-01' }),
+      makeSlot({ id: 1, floorId: 1, zone: Zone.A, vehicleType: VehicleType.car, status: SlotStatus.available, floor: floor1, slotNumber: 5, code: 'T1-A-05' }),
+      makeSlot({ id: 2, floorId: 2, zone: Zone.A, vehicleType: VehicleType.car, status: SlotStatus.available, floor: floor2, slotNumber: 1, code: 'T2-A-01' }),
+    ];
+
+    const result = strategy.allocate(VehicleType.car, available, available);
+
+    expect(result.floor.floorNumber).toBe(1);
+  });
+
+  it('picks lowest slot number on same floor', () => {
+    const floor1 = makeFloor({ id: 1, floorNumber: 1, name: 'T1' });
+
+    const available = [
+      makeSlot({ id: 2, floorId: 1, zone: Zone.A, vehicleType: VehicleType.car, status: SlotStatus.available, floor: floor1, slotNumber: 5, code: 'T1-A-05' }),
+      makeSlot({ id: 1, floorId: 1, zone: Zone.A, vehicleType: VehicleType.car, status: SlotStatus.available, floor: floor1, slotNumber: 2, code: 'T1-A-02' }),
+    ];
+
+    const result = strategy.allocate(VehicleType.car, available, available);
+
+    expect(result.slotNumber).toBe(2);
+  });
+
+  it('throws ConflictException when no slots available', () => {
+    expect(() =>
+      strategy.allocate(VehicleType.car, [], []),
+    ).toThrow(ConflictException);
+  });
+
+  it('filters by correct zone', () => {
+    const floor1 = makeFloor({ id: 1, floorNumber: 1, name: 'T1' });
+
+    const available = [
+      makeSlot({ id: 1, floorId: 1, zone: Zone.B, vehicleType: VehicleType.motorbike, status: SlotStatus.available, floor: floor1, slotNumber: 1, code: 'T1-B-01' }),
+    ];
+
+    // No Zone A slots → should throw for car
+    expect(() =>
+      strategy.allocate(VehicleType.car, available, available),
+    ).toThrow(ConflictException);
+
+    // Zone B available → should work for motorbike
+    const result = strategy.allocate(VehicleType.motorbike, available, available);
+    expect(result.zone).toBe(Zone.B);
+  });
+});
+
+// ─── RandomStrategy Unit Tests ───────────────────────────────────────────────
+
+describe('RandomStrategy', () => {
+  let strategy: RandomStrategy;
+
+  beforeEach(() => {
+    strategy = new RandomStrategy();
+  });
+
+  it('returns a slot from the correct zone', () => {
+    const floor1 = makeFloor({ id: 1, floorNumber: 1, name: 'T1' });
+
+    const available = [
+      makeSlot({ id: 1, floorId: 1, zone: Zone.B, vehicleType: VehicleType.motorbike, status: SlotStatus.available, floor: floor1, slotNumber: 1, code: 'T1-B-01' }),
+      makeSlot({ id: 2, floorId: 1, zone: Zone.B, vehicleType: VehicleType.motorbike, status: SlotStatus.available, floor: floor1, slotNumber: 2, code: 'T1-B-02' }),
+      makeSlot({ id: 3, floorId: 1, zone: Zone.B, vehicleType: VehicleType.motorbike, status: SlotStatus.available, floor: floor1, slotNumber: 3, code: 'T1-B-03' }),
+    ];
+
+    const result = strategy.allocate(VehicleType.motorbike, available, available);
+
+    expect(result.zone).toBe(Zone.B);
+    expect(result.vehicleType).toBe(VehicleType.motorbike);
+  });
+
+  it('throws ConflictException when no slots available', () => {
+    expect(() =>
+      strategy.allocate(VehicleType.car, [], []),
+    ).toThrow(ConflictException);
+  });
+
+  it('has name "random"', () => {
+    expect(strategy.name).toBe('random');
+  });
+});
+
 // ─── AllocationService Integration Tests ─────────────────────────────────────
 
 describe('AllocationService', () => {
@@ -308,6 +407,67 @@ describe('AllocationService', () => {
       const name = await service.getActiveStrategyName();
 
       expect(name).toBe('balanced_occupancy');
+    });
+  });
+
+  // 31.3: Dynamic strategy resolution
+  describe('strategy resolution (31.3)', () => {
+    const floor1 = makeFloor({ id: 1, floorNumber: 1 });
+    const floor2 = makeFloor({ id: 2, floorNumber: 2 });
+
+    const slots = [
+      makeSlot({ id: 1, floorId: 1, zone: Zone.A, vehicleType: VehicleType.car, status: SlotStatus.available, floor: floor1, slotNumber: 1, code: 'T1-A-01' }),
+      makeSlot({ id: 2, floorId: 2, zone: Zone.A, vehicleType: VehicleType.car, status: SlotStatus.available, floor: floor2, slotNumber: 1, code: 'T2-A-01' }),
+    ];
+
+    it('uses strategy from SystemConfig when set', async () => {
+      prisma.slot.findMany.mockResolvedValue(slots);
+      prisma.systemConfig.findUnique.mockResolvedValue({
+        configKey: 'active_allocation_strategy',
+        configValue: 'lowest_floor',
+      });
+
+      const result = await service.allocate(VehicleType.car);
+
+      expect(result.allocationStrategy).toBe('lowest_floor');
+    });
+
+    it('uses explicit override over SystemConfig', async () => {
+      prisma.slot.findMany.mockResolvedValue(slots);
+      prisma.systemConfig.findUnique.mockResolvedValue({
+        configKey: 'active_allocation_strategy',
+        configValue: 'balanced_occupancy',
+      });
+
+      const result = await service.allocate(VehicleType.car, 'random');
+
+      expect(result.allocationStrategy).toBe('random');
+    });
+
+    it('falls back to default when config has invalid strategy', async () => {
+      prisma.slot.findMany.mockResolvedValue(slots);
+      prisma.systemConfig.findUnique.mockResolvedValue({
+        configKey: 'active_allocation_strategy',
+        configValue: 'nonexistent_strategy',
+      });
+
+      const result = await service.allocate(VehicleType.car);
+
+      expect(result.allocationStrategy).toBe('balanced_occupancy');
+    });
+  });
+
+  // 31.2: getAvailableStrategies
+  describe('getAvailableStrategies', () => {
+    it('returns all 3 strategies', () => {
+      const strategies = service.getAvailableStrategies();
+
+      expect(strategies).toHaveLength(3);
+      expect(strategies.map((s) => s.name)).toEqual([
+        'balanced_occupancy',
+        'lowest_floor',
+        'random',
+      ]);
     });
   });
 });
