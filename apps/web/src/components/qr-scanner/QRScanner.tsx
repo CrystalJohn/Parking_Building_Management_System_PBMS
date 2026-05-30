@@ -67,18 +67,27 @@ export function QRScanner({ onScan, onClose, onManualInput }: QRScannerProps) {
         await scanner.start(
           { facingMode: 'environment' },
           {
-            // Higher FPS = more decode attempts per second
-            fps: 15,
-            // Scale qrbox dynamically to ~70% of the viewfinder. Bigger box
-            // makes near-camera framing more forgiving.
+            // Increase decode attempts per second for faster recognition.
+            fps: 20,
+            // Smaller scan box = less noise = faster decode.
             qrbox: (vw, vh) => {
               const min = Math.min(vw, vh)
-              const size = Math.floor(min * 0.7)
+              const size = Math.floor(min * 0.6)
               return { width: size, height: size }
             },
-            // Use the full camera resolution we can get on this device.
+            // Keep 1:1 so the container and video stream match — avoids the
+            // "double frame" artifact that appears when native ratio (16:9 or
+            // 9:16) doesn't match the square CSS container.
             aspectRatio: 1,
-            disableFlip: false,
+            // Rear camera doesn't need flip processing.
+            disableFlip: true,
+            // Request a square-ish HD stream so the browser picks a
+            // resolution close to 720×720 instead of falling back to VGA.
+            videoConstraints: {
+              facingMode: 'environment',
+              width: { ideal: 720 },
+              height: { ideal: 720 },
+            },
           },
           (decodedText) => {
             // Guard against multiple scans firing before stop() resolves

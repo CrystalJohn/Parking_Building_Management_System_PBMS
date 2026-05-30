@@ -2,6 +2,7 @@ import { Component, type ReactNode } from 'react'
 import { BrowserRouter } from 'react-router-dom'
 import './App.css'
 import AppRoutes from './routes/AppRoutes'
+import { ThemeProvider } from './lib/ThemeContext'
 
 // Error boundary to catch runtime errors and show a readable message
 // instead of a blank page
@@ -36,10 +37,12 @@ class ErrorBoundary extends Component<
 
 export default function App() {
   return (
-    <ErrorBoundary>
-      <BrowserRouter>
-        <AppRoutes />
-      </BrowserRouter>
-    </ErrorBoundary>
+    <ThemeProvider>
+      <ErrorBoundary>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </ErrorBoundary>
+    </ThemeProvider>
   )
 }
