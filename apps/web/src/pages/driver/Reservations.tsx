@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { isAxiosError } from 'axios'
 import {
   getMyReservations,
@@ -7,6 +8,8 @@ import {
   type Reservation,
   type VehicleType,
 } from '../../lib/driver-api'
+import AppleDateTimePicker from '../../components/reservation/AppleDateTimePicker'
+import DurationSelect, { type DurationValue } from '../../components/reservation/DurationSelect'
 
 const formatDateTime = (iso: string) =>
   new Date(iso).toLocaleString('vi-VN', {
@@ -29,10 +32,27 @@ const STATUS_LABELS: Record<string, { text: string; color: string }> = {
  * Req 8.5
  */
 export default function Reservations() {
+  const [searchParams] = useSearchParams()
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Pre-fill from query params (e.g. from landing page redirect)
+  const paramVehicle = searchParams.get('vehicleType')
+  const paramTime = searchParams.get('time')
+
+  const [vehicleType, setVehicleType] = useState<VehicleType>(
+    paramVehicle === 'car' || paramVehicle === 'motorbike' ? paramVehicle : 'car'
+  )
+  const [reservationDate, setReservationDate] = useState(() => {
+    if (paramTime) {
+      const parsed = new Date(paramTime)
+      if (!isNaN(parsed.getTime()) && parsed > new Date()) return parsed
+    }
+    return new Date(Date.now() + 30 * 60 * 1000)
+  })
+  const [duration, setDuration] = useState<DurationValue>('2h')
 
   useEffect(() => {
     loadReservations()
@@ -51,7 +71,7 @@ export default function Reservations() {
     }
   }
 
-  const handleCreate = async (vehicleType: VehicleType) => {
+  const handleCreate = async () => {
     setCreating(true)
     setError(null)
     try {
@@ -102,22 +122,70 @@ export default function Reservations() {
         )}
 
         {/* Create reservation */}
-        <div className="card">
-          <h2 className="text-lg font-semibold mb-3">Đặt chỗ mới</h2>
-          <div className="flex gap-3">
-            <button
-              onClick={() => handleCreate('car')}
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04] sm:p-7">
+          <div className="mb-6">
+            <p className="text-[11px] font-mono uppercase tracking-[0.16em] text-blue-600 dark:text-blue-300">
+              Smart reservation
+            </p>
+            <h2 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-neutral-950 dark:text-white">
+              Đặt chỗ mới
+            </h2>
+            <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+              Chọn loại xe, thời gian và thời lượng. Hệ thống sẽ tự động tìm slot phù hợp.
+            </p>
+          </div>
+
+          <div className="space-y-6">
+            <div>
+              <div className="mb-3 text-[11px] font-mono uppercase tracking-[0.16em] text-neutral-500 dark:text-neutral-400">
+                Loại xe
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  disabled={creating}
+                  onClick={() => setVehicleType('car')}
+                  className={`rounded-2xl border p-4 text-left shadow-sm transition focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:pointer-events-none disabled:opacity-50 ${
+                    vehicleType === 'car'
+                      ? 'border-blue-500/40 bg-blue-50 dark:border-blue-300/30 dark:bg-blue-400/10'
+                      : 'border-gray-200 bg-white hover:border-blue-200 hover:bg-blue-50/30 dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/[0.08]'
+                  }`}
+                >
+                  <span className="block text-[15px] font-semibold text-neutral-950 dark:text-white">Ô tô</span>
+                  <span className="mt-1 block text-[12px] text-neutral-500 dark:text-neutral-400">Zone A tự động</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={creating}
+                  onClick={() => setVehicleType('motorbike')}
+                  className={`rounded-2xl border p-4 text-left shadow-sm transition focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:pointer-events-none disabled:opacity-50 ${
+                    vehicleType === 'motorbike'
+                      ? 'border-emerald-500/40 bg-emerald-50 dark:border-emerald-300/30 dark:bg-emerald-400/10'
+                      : 'border-gray-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/30 dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/[0.08]'
+                  }`}
+                >
+                  <span className="block text-[15px] font-semibold text-neutral-950 dark:text-white">Xe máy</span>
+                  <span className="mt-1 block text-[12px] text-neutral-500 dark:text-neutral-400">Zone B tự động</span>
+                </button>
+              </div>
+            </div>
+
+            <AppleDateTimePicker
+              value={reservationDate}
+              onChange={setReservationDate}
+              minDate={new Date()}
               disabled={creating}
-              className="btn-primary flex-1"
-            >
-              {creating ? 'Đang đặt...' : 'Đặt chỗ Ô tô'}
-            </button>
+            />
+
+            <DurationSelect value={duration} onChange={setDuration} disabled={creating} />
+
             <button
-              onClick={() => handleCreate('motorbike')}
+              type="button"
+              onClick={handleCreate}
               disabled={creating}
-              className="btn-secondary flex-1"
+              className="flex h-12 w-full items-center justify-center rounded-2xl bg-blue-600 px-5 text-[15px] font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:pointer-events-none disabled:opacity-60"
             >
-              {creating ? 'Đang đặt...' : 'Đặt chỗ Xe máy'}
+              {creating ? 'Đang tìm slot...' : 'Tìm slot phù hợp'}
             </button>
           </div>
         </div>
