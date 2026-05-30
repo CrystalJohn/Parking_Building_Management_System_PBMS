@@ -12,6 +12,8 @@ import { FeesModule } from './fees/fees.module';
 import { ReservationsModule } from './reservations/reservations.module';
 import { ReportsModule } from './reports/reports.module';
 import { ConfigMgmtModule } from './config-mgmt/config-mgmt.module';
+import { SimulationModule } from './simulation/simulation.module';
+import { PlateRecognitionModule } from './plate-recognition/plate-recognition.module';
 
 @Module({
   imports: [
@@ -29,6 +31,8 @@ import { ConfigMgmtModule } from './config-mgmt/config-mgmt.module';
     ReservationsModule,
     ReportsModule,
     ConfigMgmtModule,
+    SimulationModule,
+    PlateRecognitionModule,
   ],
   controllers: [AppController],
   providers: [AppService],
