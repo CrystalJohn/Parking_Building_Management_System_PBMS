@@ -18,6 +18,15 @@ export class SlotsController {
   constructor(private readonly slotsService: SlotsService) {}
 
   /**
+   * GET /slots/summary — PUBLIC (no auth)
+   * Returns building-wide occupancy for landing page.
+   */
+  @Get('summary')
+  getPublicSummary() {
+    return this.slotsService.getPublicSummary();
+  }
+
+  /**
    * GET /slots — all authenticated roles
    * 11.1
    */

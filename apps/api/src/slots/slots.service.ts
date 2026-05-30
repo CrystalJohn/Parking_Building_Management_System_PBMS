@@ -68,6 +68,42 @@ export class SlotsService {
   }
 
   /**
+   * Public summary — total vs occupied/reserved for the entire building.
+   * No auth required. Used by landing page.
+   */
+  async getPublicSummary() {
+    const slots = await this.prisma.slot.findMany({
+      where: { status: { not: 'maintenance' } },
+      select: { status: true, zone: true },
+    });
+
+    const total = slots.length;
+    const occupied = slots.filter(
+      (s) => s.status === 'occupied' || s.status === 'reserved',
+    ).length;
+    const available = total - occupied;
+    const percent = total > 0 ? Math.round((occupied / total) * 100) : 0;
+
+    const zoneA = slots.filter((s) => s.zone === 'A');
+    const zoneB = slots.filter((s) => s.zone === 'B');
+
+    return {
+      total,
+      occupied,
+      available,
+      percent,
+      zoneA: {
+        total: zoneA.length,
+        available: zoneA.filter((s) => s.status === 'available').length,
+      },
+      zoneB: {
+        total: zoneB.length,
+        available: zoneB.filter((s) => s.status === 'available').length,
+      },
+    };
+  }
+
+  /**
    * 11.3 — Set slot to maintenance or available (manager only).
    * Req 10.3
    */

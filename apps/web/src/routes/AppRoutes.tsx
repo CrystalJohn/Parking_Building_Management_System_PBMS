@@ -1,5 +1,8 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route } from 'react-router-dom'
 import RequireAuth from '../components/auth/RequireAuth'
+
+// Landing
+import Landing from '../pages/Landing'
 
 // Auth
 import Login from '../pages/auth/Login'
@@ -22,6 +25,7 @@ import DriverHome from '../pages/driver/Home'
 import Reservations from '../pages/driver/Reservations'
 import History from '../pages/driver/History'
 import MySession from '../pages/driver/MySession'
+import Profile from '../pages/driver/Profile'
 
 /**
  * Central route configuration for the Parking Building Management System.
@@ -130,9 +134,17 @@ export default function AppRoutes() {
           </RequireAuth>
         }
       />
+      <Route
+        path="/driver/profile"
+        element={
+          <RequireAuth allowedRoles={['driver']}>
+            <Profile />
+          </RequireAuth>
+        }
+      />
 
-      {/* Fallback — redirect root to login */}
-      <Route path="/" element={<Navigate to="/login" replace />} />
+      {/* Fallback — landing page at root */}
+      <Route path="/" element={<Landing />} />
 
       {/* 404 catch-all */}
       <Route
