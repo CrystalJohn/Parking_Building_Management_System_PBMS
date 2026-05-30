@@ -13,10 +13,21 @@ import {
 } from '../../lib/sessions-api'
 import { Receipt } from '../../components/receipt/Receipt'
 import { QRScanner } from '../../components/qr-scanner/QRScanner'
+import { LicensePlateScanner } from '../../components/plate-scanner/LicensePlateScanner'
 
 type Tab = 'check-in' | 'check-out'
 
 const VND = (n: number) => `${n.toLocaleString('vi-VN')} VND`
+
+const isUuid =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+function debugLog(...args: unknown[]) {
+  if (import.meta.env.DEV) {
+    // eslint-disable-next-line no-console
+    console.log('[Gate/Checkout]', ...args)
+  }
+}
 
 const formatDateTime = (iso: string) =>
   new Date(iso).toLocaleString('vi-VN', {
@@ -117,12 +128,22 @@ function CheckInPanel({ toasts }: PanelProps) {
   const [driverPhone, setDriverPhone] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<CheckInResponse | null>(null)
+  const [showPlateScanner, setShowPlateScanner] = useState(false)
+  const [showManualInput, setShowManualInput] = useState(false)
 
   const reset = () => {
     setLicensePlate('')
     setDriverPhone('')
     setResult(null)
+    setShowManualInput(false)
   }
+
+  const handlePlateDetected = useCallback((plate: string) => {
+    setLicensePlate(plate)
+    setShowPlateScanner(false)
+    setShowManualInput(true)
+    toasts.showSuccess(`Quét được biển số: ${plate}`)
+  }, [toasts])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -142,7 +163,6 @@ function CheckInPanel({ toasts }: PanelProps) {
       toasts.showSuccess(`Đã gán slot ${response.slot.code}`)
     } catch (err) {
       const { message, isFull } = extractError(err)
-      // 17.4: explicit "Building full" toast on Conflict
       if (isFull) {
         toasts.showError(`Bãi đã đầy: ${message}`)
       } else {
@@ -158,72 +178,172 @@ function CheckInPanel({ toasts }: PanelProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <h2 className="text-lg font-semibold">Check-in xe vào bãi</h2>
+    <>
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <h2 className="text-lg font-semibold">Check-in xe vào bãi</h2>
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Biển số xe <span className="text-red-500">*</span>
-        </label>
-        <input
-          className="input uppercase"
-          placeholder="VD: 59A-12345"
-          value={licensePlate}
-          onChange={(e) => setLicensePlate(e.target.value)}
-          required
-          autoFocus
-        />
-      </div>
+        {/* ── License plate section ── */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Biển số xe <span className="text-red-500">*</span>
+          </label>
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Loại xe <span className="text-red-500">*</span>
-        </label>
-        <div className="flex gap-3">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="radio"
-              name="vehicleType"
-              value="car"
-              checked={vehicleType === 'car'}
-              onChange={() => setVehicleType('car')}
-            />
-            <span>Ô tô (Khu A)</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="radio"
-              name="vehicleType"
-              value="motorbike"
-              checked={vehicleType === 'motorbike'}
-              onChange={() => setVehicleType('motorbike')}
-            />
-            <span>Xe máy (Khu B)</span>
-          </label>
+          {/* Primary: camera scan button */}
+          {!showManualInput && !licensePlate && (
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={() => setShowPlateScanner(true)}
+                className="w-full flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-semibold py-4 px-6 rounded-xl transition-all shadow-md hover:shadow-lg text-base"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
+                  />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                📸 Quét biển số xe bằng camera
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowManualInput(true)}
+                className="w-full text-sm text-gray-500 hover:text-gray-700 py-2 underline underline-offset-2 transition-colors"
+              >
+                ✏️ Nhập tay biển số (fallback)
+              </button>
+            </div>
+          )}
+
+          {/* After scan: show detected plate + allow re-scan or manual edit */}
+          {(showManualInput || licensePlate) && (
+            <div className="space-y-2">
+              {licensePlate && !showManualInput && (
+                <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                  <span className="text-green-600 text-lg">✓</span>
+                  <span className="font-mono font-bold text-gray-900 text-lg tracking-widest flex-1">{licensePlate}</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowManualInput(true)}
+                    className="text-xs text-blue-600 hover:text-blue-800 underline"
+                  >
+                    Sửa
+                  </button>
+                </div>
+              )}
+
+              {showManualInput && (
+                <div className="space-y-2">
+                  <div className="relative">
+                    <input
+                      className="input uppercase pr-10"
+                      placeholder="VD: 59A-12345"
+                      value={licensePlate}
+                      onChange={(e) => setLicensePlate(e.target.value)}
+                      required
+                      autoFocus
+                    />
+                    {licensePlate && (
+                      <button
+                        type="button"
+                        onClick={() => setLicensePlate('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowPlateScanner(true)}
+                      className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 py-1 px-2 rounded-md hover:bg-blue-50 transition-colors"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                          d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
+                        />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      Quét lại bằng camera
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
-      </div>
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          SĐT tài xế <span className="text-gray-400 font-normal">(không bắt buộc)</span>
-        </label>
-        <input
-          className="input"
-          placeholder="VD: 0901234567 — nhập nếu khách có tài khoản để gửi QR"
-          value={driverPhone}
-          onChange={(e) => setDriverPhone(e.target.value)}
+        {/* ── Vehicle type ── */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Loại xe <span className="text-red-500">*</span>
+          </label>
+          <div className="flex gap-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="vehicleType"
+                value="car"
+                checked={vehicleType === 'car'}
+                onChange={() => setVehicleType('car')}
+              />
+              <span>Ô tô (Khu A)</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="vehicleType"
+                value="motorbike"
+                checked={vehicleType === 'motorbike'}
+                onChange={() => setVehicleType('motorbike')}
+              />
+              <span>Xe máy (Khu B)</span>
+            </label>
+          </div>
+        </div>
+
+        {/* ── Driver phone ── */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            SĐT tài xế <span className="text-gray-400 font-normal">(không bắt buộc)</span>
+          </label>
+          <input
+            className="input"
+            placeholder="VD: 0901234567 — nhập nếu khách có tài khoản để gửi QR"
+            value={driverPhone}
+            onChange={(e) => setDriverPhone(e.target.value)}
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Nếu khách đã đăng ký, hệ thống sẽ tạo mã QR để check-out.
+          </p>
+        </div>
+
+        {/* ── Submit ── */}
+        {(licensePlate || showManualInput) && (
+          <div className="flex gap-2">
+            <button type="submit" className="btn-primary" disabled={submitting || !licensePlate.trim()}>
+              {submitting ? 'Đang xử lý...' : 'Check-in'}
+            </button>
+            <button
+              type="button"
+              onClick={reset}
+              className="btn-secondary"
+              disabled={submitting}
+            >
+              Hủy
+            </button>
+          </div>
+        )}
+      </form>
+
+      {/* License plate scanner modal */}
+      {showPlateScanner && (
+        <LicensePlateScanner
+          onDetected={handlePlateDetected}
+          onClose={() => setShowPlateScanner(false)}
         />
-        <p className="text-xs text-gray-500 mt-1">
-          Nếu khách đã đăng ký, hệ thống sẽ tạo mã QR để check-out.
-        </p>
-      </div>
-
-      <div className="flex gap-2">
-        <button type="submit" className="btn-primary" disabled={submitting}>
-          {submitting ? 'Đang xử lý...' : 'Check-in'}
-        </button>
-      </div>
-    </form>
+      )}
+    </>
   )
 }
 
@@ -302,10 +422,22 @@ function CheckOutPanel({ toasts }: PanelProps) {
 
   const lookup = async (req: { sessionId?: string; licensePlate?: string }) => {
     setSubmitting(true)
+    debugLog('lookup:start', req)
     try {
       const data = await checkOut(req)
+      debugLog('lookup:success', {
+        request: req,
+        sessionId: data.sessionId,
+        licensePlate: data.licensePlate,
+      })
       setFeePreview(data)
     } catch (err) {
+      debugLog('lookup:error', {
+        request: req,
+        isAxios: isAxiosError(err),
+        status: isAxiosError(err) ? err.response?.status : undefined,
+        message: isAxiosError(err) ? err.response?.data : String(err),
+      })
       const { message } = extractError(err)
       toasts.showError(message)
     } finally {
@@ -331,6 +463,12 @@ function CheckOutPanel({ toasts }: PanelProps) {
       setShowScanner(false)
       // The QR encodes the session UUID directly
       const sessionId = decodedText.trim()
+      debugLog('qr:decoded', {
+        raw: decodedText,
+        normalized: sessionId,
+        length: sessionId.length,
+        isUuid: isUuid.test(sessionId),
+      })
       if (sessionId) {
         lookup({ sessionId })
       } else {
