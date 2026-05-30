@@ -137,7 +137,12 @@ export class SessionsService {
       const sessionId = crypto.randomUUID();
 
       if (driverId) {
-        qrCode = await QRCode.toDataURL(sessionId);
+        qrCode = await QRCode.toDataURL(sessionId, {
+          width: 400,
+          margin: 2,
+          errorCorrectionLevel: 'H',
+          color: { dark: '#000000', light: '#ffffff' },
+        });
       }
 
       // Create parking session (linked to reservation if applicable)
@@ -443,7 +448,12 @@ export class SessionsService {
     }
 
     // Generate QR on-demand (for sessions that didn't have a registered driver at check-in)
-    const qrCode = await QRCode.toDataURL(sessionId);
+    const qrCode = await QRCode.toDataURL(sessionId, {
+      width: 400,
+      margin: 2,
+      errorCorrectionLevel: 'H',
+      color: { dark: '#000000', light: '#ffffff' },
+    });
 
     // Persist for future requests
     await this.prisma.parkingSession.update({
