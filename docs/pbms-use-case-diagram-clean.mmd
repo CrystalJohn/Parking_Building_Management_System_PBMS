@@ -1,0 +1,150 @@
+flowchart LR
+  %% Parking Building Management System - business-level use case diagram
+
+  classDef actor fill:#ffffff,stroke:#263238,stroke-width:1.5px,color:#111827;
+  classDef usecase fill:#f8fafc,stroke:#475569,stroke-width:1.2px,color:#0f172a;
+  classDef boundary fill:#ffffff,stroke:#1f2937,stroke-width:2px,color:#111827;
+  classDef package fill:#f3f4f6,stroke:#cbd5e1,stroke-width:1px,color:#111827;
+  classDef note fill:#fff7cc,stroke:#d4a72c,stroke-width:1px,color:#3f2f00;
+
+  Guest["Guest"]:::actor
+  AuthUser["Authenticated User"]:::actor
+  Driver["Driver"]:::actor
+  Staff["Staff"]:::actor
+  Manager["Manager"]:::actor
+  Admin["Admin"]:::actor
+
+  Driver -. "specialized actor" .-> AuthUser
+  Staff -. "specialized actor" .-> AuthUser
+  Manager -. "specialized actor" .-> AuthUser
+  Admin -. "specialized actor" .-> AuthUser
+
+  subgraph PBMS["Parking Building Management System"]
+    direction LR
+
+    subgraph AUTH["Authentication & Account"]
+      direction TB
+      ViewSlot(("View Slot Availability")):::usecase
+      Register(("Register Account")):::usecase
+      Login(("Login")):::usecase
+      ResetPassword(("Reset Password")):::usecase
+      Logout(("Logout")):::usecase
+      ManageAccount(("Manage Personal Account")):::usecase
+      ViewInfo(("View Personal Info")):::usecase
+      ChangeInfo(("Change Personal Info")):::usecase
+      ChangePassword(("Change Password")):::usecase
+    end
+
+    subgraph RES["Reservation"]
+      direction TB
+      MakeReservation(("Make Reservation")):::usecase
+      CancelReservation(("Cancel Reservation")):::usecase
+      ViewHistory(("View Parking History")):::usecase
+      DisplayQR(("Display QR Code")):::usecase
+      ReceiveNotification(("Receive Notification")):::usecase
+      SmartAllocation(("Smart Slot Allocation")):::usecase
+    end
+
+    subgraph CHECKIN["Check-in"]
+      direction TB
+      CheckIn(("Check In Vehicle")):::usecase
+      CapturePlate(("Capture License Plate Image")):::usecase
+      RecognizePlate(("Recognize License Plate")):::usecase
+      ConfirmEditPlate(("Confirm or Edit Plate Number")):::usecase
+      ManualPlateInput(("Manual Plate Input")):::usecase
+    end
+
+    subgraph CHECKOUT["Checkout & Payment"]
+      direction TB
+      CheckOut(("Check Out Vehicle")):::usecase
+      ScanQR(("Scan QR Code")):::usecase
+      SearchPlate(("Search by License Plate")):::usecase
+      CalculateFee(("Calculate Parking Fee")):::usecase
+      SelectPayment(("Select Payment Method")):::usecase
+      ProcessPayment(("Process Payment")):::usecase
+      ConfirmCash(("Confirm Cash Payment")):::usecase
+      PayBankQR(("Pay by Bank/QR")):::usecase
+      AuthorizeExit(("Authorize Vehicle Exit")):::usecase
+      ConfirmExited(("Confirm Vehicle Exited")):::usecase
+      LostTicket(("Handle Lost Ticket")):::usecase
+      SlotReleaseNote["Slot is released only after Staff confirms the vehicle has exited."]:::note
+    end
+
+    subgraph MGMT["Management & Reports"]
+      direction TB
+      Dashboard(("View Dashboard")):::usecase
+      Reports(("View Reports")):::usecase
+      Pricing(("Configure Pricing")):::usecase
+      AllocationStrategy(("Configure Allocation Strategy")):::usecase
+      Maintenance(("Set Slot Maintenance")):::usecase
+      Simulation(("Run Simulation")):::usecase
+    end
+
+    subgraph ADMIN["Administration"]
+      direction TB
+      ManageUsers(("Manage Users")):::usecase
+      ManageRoles(("Manage Roles")):::usecase
+    end
+  end
+
+  Guest --- ViewSlot
+  Guest --- Register
+  Guest --- Login
+  Guest --- ResetPassword
+
+  AuthUser --- Logout
+  AuthUser --- ManageAccount
+
+  Driver --- MakeReservation
+  Driver --- CancelReservation
+  Driver --- ViewHistory
+  Driver --- DisplayQR
+  Driver --- ReceiveNotification
+  Driver --- PayBankQR
+
+  Staff --- CheckIn
+  Staff --- ManualPlateInput
+  Staff --- CheckOut
+  Staff --- ScanQR
+  Staff --- SearchPlate
+  Staff --- ConfirmCash
+  Staff --- PayBankQR
+  Staff --- ConfirmExited
+  Staff --- LostTicket
+
+  Manager --- Dashboard
+  Manager --- Reports
+  Manager --- Pricing
+  Manager --- AllocationStrategy
+  Manager --- Maintenance
+  Manager --- Simulation
+
+  Admin --- ManageUsers
+  Admin --- ManageRoles
+
+  ManageAccount -. "<<include>>" .-> ViewInfo
+  ManageAccount -. "<<include>>" .-> ChangeInfo
+  ManageAccount -. "<<include>>" .-> ChangePassword
+  ResetPassword -. "<<extend>>" .-> Login
+
+  MakeReservation -. "<<include>>" .-> SmartAllocation
+
+  CheckIn -. "<<include>>" .-> CapturePlate
+  CheckIn -. "<<include>>" .-> RecognizePlate
+  CheckIn -. "<<include>>" .-> ConfirmEditPlate
+  CheckIn -. "<<include>>" .-> SmartAllocation
+  ManualPlateInput -. "<<extend>>" .-> CheckIn
+
+  CheckOut -. "<<include>>" .-> CalculateFee
+  CheckOut -. "<<include>>" .-> SelectPayment
+  CheckOut -. "<<include>>" .-> ProcessPayment
+  CheckOut -. "<<include>>" .-> AuthorizeExit
+  ScanQR -. "<<extend>>" .-> CheckOut
+  SearchPlate -. "<<extend>>" .-> CheckOut
+  ConfirmCash -. "<<extend>>" .-> ProcessPayment
+  PayBankQR -. "<<extend>>" .-> ProcessPayment
+  ConfirmExited -. "<<extend>>" .-> AuthorizeExit
+  ConfirmExited --- SlotReleaseNote
+
+  class PBMS boundary;
+  class AUTH,RES,CHECKIN,CHECKOUT,MGMT,ADMIN package;

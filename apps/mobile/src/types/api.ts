@@ -1,0 +1,98 @@
+export type Role = 'admin' | 'manager' | 'staff' | 'driver';
+export type VehicleType = 'car' | 'motorbike';
+export type ReservationStatus = 'active' | 'fulfilled' | 'expired' | 'cancelled';
+export type SessionStatus = 'active' | 'completed' | 'cancelled';
+export type PaymentStatus = 'PENDING' | 'PAID' | 'FAILED' | 'CANCELLED';
+export type PaymentMethod = 'CASH' | 'BANK_QR';
+export type ExitAuthorizationStatus = 'NOT_READY' | 'AUTHORIZED' | 'EXIT_CONFIRMED';
+
+export type User = {
+  id: string;
+  phone: string;
+  role: Role;
+  fullName?: string | null;
+};
+
+export type AuthResponse = {
+  user: User;
+  access_token: string;
+};
+
+export type LoginPayload = {
+  phone: string;
+  password: string;
+};
+
+export type RegisterPayload = LoginPayload & {
+  fullName: string;
+};
+
+export type Reservation = {
+  id: string;
+  vehicleType: VehicleType;
+  status: ReservationStatus;
+  createdAt: string;
+  expiresAt: string;
+  licensePlate?: string | null;
+  slot?: {
+    id: number;
+    code: string;
+    floorId: number;
+    zone: string;
+    floor?: {
+      id: number;
+      floorNumber: number;
+      name: string;
+    };
+  };
+};
+
+export type ParkingSession = {
+  id: string;
+  licensePlate: string;
+  vehicleType: VehicleType;
+  status: SessionStatus;
+  checkInTime: string;
+  checkOutTime?: string | null;
+  feeAmount: number;
+  penaltyAmount: number;
+  isPaid: boolean;
+  slot?: {
+    id: number;
+    code: string;
+    floorId: number;
+    zone: string;
+    floor?: {
+      id: number;
+      floorNumber: number;
+      name: string;
+    };
+  };
+};
+
+export type Payment = {
+  id: string;
+  sessionId: string;
+  amount: number;
+  method: PaymentMethod;
+  status: PaymentStatus;
+  paidAt?: string | null;
+};
+
+export type SlotAvailability = {
+  total?: number;
+  available?: number;
+  occupied?: number;
+  reserved?: number;
+  maintenance?: number;
+  [key: string]: unknown;
+};
+
+export type QrCodeResponse = {
+  qrCode?: string;
+  dataUrl?: string;
+  qrDataUrl?: string;
+  qrCodeDataUrl?: string;
+  image?: string;
+  value?: string;
+};

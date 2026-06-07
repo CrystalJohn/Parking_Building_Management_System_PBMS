@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "PBMS Driver",
+    "slug": "pbms-driver",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "pbmsdriver",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0f766e"
+      }
+    },
+    "extra": {
+      "apiUrl": "http://10.0.2.2:3001"
+    },
+    "plugins": [
+      "expo-asset"
+    ]
+  }
+}
