@@ -56,14 +56,38 @@ export function ReservationDetailScreen({ navigation, route }: Props) {
             <Detail label="Expires time" value={formatDate(reservation.expiresAt)} />
 
             {reservation.status === 'active' ? (
-              <Button
-                variant="danger"
-                loading={cancelReservation.isPending}
-                onPress={handleCancel}
-              >
-                Cancel reservation
-              </Button>
-            ) : null}
+              <>
+                <View style={styles.reservationCodeCard}>
+                  <Text style={styles.codeTitle}>Reservation check-in code</Text>
+                  <Text style={styles.codeHelp}>
+                    Show this reservation QR/code to staff at check-in gate
+                  </Text>
+                  <Text selectable style={styles.codeValue}>
+                    {reservation.id}
+                  </Text>
+                  <Text style={styles.codeNote}>
+                    Payload: reservation ID. This is separate from the parking session QR used for checkout.
+                  </Text>
+                </View>
+
+                <Button
+                  variant="danger"
+                  loading={cancelReservation.isPending}
+                  onPress={handleCancel}
+                >
+                  Cancel reservation
+                </Button>
+              </>
+            ) : (
+              <View style={styles.inactiveCard}>
+                <Text style={styles.inactiveTitle}>
+                  This reservation is no longer valid for check-in
+                </Text>
+                <Text style={styles.inactiveText}>
+                  Reservation QR/code is only available while the reservation status is active.
+                </Text>
+              </View>
+            )}
           </View>
         ) : null}
       </InfoCard>
@@ -123,5 +147,56 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 16,
     fontWeight: '800',
+  },
+  reservationCodeCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 8,
+    padding: 16,
+  },
+  codeTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  codeHelp: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  codeValue: {
+    backgroundColor: '#ffffff',
+    borderColor: colors.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '900',
+    padding: 12,
+  },
+  codeNote: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  inactiveCard: {
+    backgroundColor: '#f8fafc',
+    borderColor: colors.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 6,
+    padding: 16,
+  },
+  inactiveTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  inactiveText: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 18,
   },
 });
