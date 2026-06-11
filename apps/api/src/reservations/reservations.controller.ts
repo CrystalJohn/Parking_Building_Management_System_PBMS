@@ -46,6 +46,21 @@ export class ReservationsController {
   }
 
   /**
+   * GET /reservations/:id
+   * P0: Driver only — get a single reservation by ID.
+   * Ownership is enforced: driver can only view their own reservation.
+   */
+  @Get(':id')
+  @UseGuards(RolesGuard)
+  @Roles(Role.driver)
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') driverId: string,
+  ) {
+    return this.reservationsService.findOne(id, driverId);
+  }
+
+  /**
    * DELETE /reservations/:id
    * 18.4: Driver only — cancel a reservation.
    */

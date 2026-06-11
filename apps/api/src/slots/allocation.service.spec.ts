@@ -4,6 +4,7 @@ import { SlotStatus, Zone, VehicleType } from '@prisma/client';
 import {
   AllocationService,
   BalancedOccupancyStrategy,
+  FairDistanceBasedStrategy,
   LowestFloorStrategy,
   RandomStrategy,
 } from './allocation.service';
@@ -29,6 +30,7 @@ const makeSlot = (
     code: string;
     status: SlotStatus;
     vehicleType: VehicleType;
+    walkingDistance: number;
     floor: ReturnType<typeof makeFloor>;
   }> = {},
 ) => ({
@@ -39,6 +41,7 @@ const makeSlot = (
   code: 'T1-A-01',
   status: SlotStatus.available,
   vehicleType: VehicleType.car,
+  walkingDistance: 20,
   floor: makeFloor(),
   ...overrides,
 });
@@ -299,6 +302,99 @@ describe('RandomStrategy', () => {
 
 // ─── AllocationService Integration Tests ─────────────────────────────────────
 
+describe('FairDistanceBasedStrategy', () => {
+  let strategy: FairDistanceBasedStrategy;
+
+  beforeEach(() => {
+    strategy = new FairDistanceBasedStrategy();
+  });
+
+  it('has the correct name', () => {
+    expect(strategy.name).toBe('fair_distance_based');
+  });
+
+  it('selects the lowest scoring slot', () => {
+    const floor1 = makeFloor({ id: 1, floorNumber: 1, name: 'T1' });
+    const floor2 = makeFloor({ id: 2, floorNumber: 2, name: 'T2' });
+    const allSlots = [
+      makeSlot({ id: 1, floorId: 1, floor: floor1, slotNumber: 1, code: 'T1-A-01', walkingDistance: 10, status: SlotStatus.occupied }),
+      makeSlot({ id: 2, floorId: 1, floor: floor1, slotNumber: 2, code: 'T1-A-02', walkingDistance: 20, status: SlotStatus.occupied }),
+      makeSlot({ id: 3, floorId: 1, floor: floor1, slotNumber: 3, code: 'T1-A-03', walkingDistance: 30, status: SlotStatus.available }),
+      makeSlot({ id: 4, floorId: 2, floor: floor2, slotNumber: 1, code: 'T2-A-01', walkingDistance: 25, status: SlotStatus.available }),
+      makeSlot({ id: 5, floorId: 2, floor: floor2, slotNumber: 2, code: 'T2-A-02', walkingDistance: 80, status: SlotStatus.available }),
+    ];
+    const available = allSlots.filter((s) => s.status === SlotStatus.available);
+
+    const result = strategy.allocate(VehicleType.car, available, allSlots);
+
+    expect(result.id).toBe(4);
+  });
+
+  it('uses walking distance when occupancy is equal', () => {
+    const floor1 = makeFloor({ id: 1, floorNumber: 1, name: 'T1' });
+    const floor2 = makeFloor({ id: 2, floorNumber: 2, name: 'T2' });
+    const allSlots = [
+      makeSlot({ id: 1, floorId: 1, floor: floor1, slotNumber: 2, code: 'T1-A-02', walkingDistance: 60 }),
+      makeSlot({ id: 2, floorId: 2, floor: floor2, slotNumber: 1, code: 'T2-A-01', walkingDistance: 20 }),
+    ];
+
+    const result = strategy.allocate(VehicleType.car, [...allSlots], allSlots);
+
+    expect(result.id).toBe(2);
+  });
+
+  it('penalizes crowded floors through occupancy score', () => {
+    const floor1 = makeFloor({ id: 1, floorNumber: 1, name: 'T1' });
+    const floor2 = makeFloor({ id: 2, floorNumber: 2, name: 'T2' });
+    const allSlots = [
+      makeSlot({ id: 1, floorId: 1, floor: floor1, slotNumber: 1, code: 'T1-A-01', walkingDistance: 10, status: SlotStatus.occupied }),
+      makeSlot({ id: 2, floorId: 1, floor: floor1, slotNumber: 2, code: 'T1-A-02', walkingDistance: 12, status: SlotStatus.occupied }),
+      makeSlot({ id: 3, floorId: 1, floor: floor1, slotNumber: 3, code: 'T1-A-03', walkingDistance: 14, status: SlotStatus.available }),
+      makeSlot({ id: 4, floorId: 2, floor: floor2, slotNumber: 1, code: 'T2-A-01', walkingDistance: 30, status: SlotStatus.available }),
+      makeSlot({ id: 5, floorId: 2, floor: floor2, slotNumber: 2, code: 'T2-A-02', walkingDistance: 32, status: SlotStatus.available }),
+      makeSlot({ id: 6, floorId: 2, floor: floor2, slotNumber: 3, code: 'T2-A-03', walkingDistance: 34, status: SlotStatus.available }),
+    ];
+    const available = allSlots.filter((s) => s.status === SlotStatus.available);
+
+    const result = strategy.allocate(VehicleType.car, available, allSlots);
+
+    expect(result.floorId).toBe(2);
+  });
+
+  it('applies fairness penalty when a floor is above average occupancy', () => {
+    const floor1 = makeFloor({ id: 1, floorNumber: 1, name: 'T1' });
+    const floor2 = makeFloor({ id: 2, floorNumber: 2, name: 'T2' });
+    const floor3 = makeFloor({ id: 3, floorNumber: 3, name: 'T3' });
+    const allSlots = [
+      makeSlot({ id: 1, floorId: 1, floor: floor1, slotNumber: 1, code: 'T1-A-01', walkingDistance: 10, status: SlotStatus.occupied }),
+      makeSlot({ id: 2, floorId: 1, floor: floor1, slotNumber: 2, code: 'T1-A-02', walkingDistance: 12, status: SlotStatus.available }),
+      makeSlot({ id: 3, floorId: 2, floor: floor2, slotNumber: 1, code: 'T2-A-01', walkingDistance: 30, status: SlotStatus.occupied }),
+      makeSlot({ id: 4, floorId: 2, floor: floor2, slotNumber: 2, code: 'T2-A-02', walkingDistance: 32, status: SlotStatus.available }),
+      makeSlot({ id: 5, floorId: 3, floor: floor3, slotNumber: 1, code: 'T3-A-01', walkingDistance: 20, status: SlotStatus.available }),
+      makeSlot({ id: 6, floorId: 3, floor: floor3, slotNumber: 2, code: 'T3-A-02', walkingDistance: 22, status: SlotStatus.available }),
+    ];
+    const available = allSlots.filter((s) => s.status === SlotStatus.available);
+
+    const result = strategy.allocate(VehicleType.car, available, allSlots);
+
+    expect(result.floorId).toBe(3);
+  });
+
+  it('uses tie breakers: walking distance, floor number, then slot number', () => {
+    const floor1 = makeFloor({ id: 1, floorNumber: 1, name: 'T1' });
+    const floor2 = makeFloor({ id: 2, floorNumber: 2, name: 'T2' });
+    const allSlots = [
+      makeSlot({ id: 1, floorId: 2, floor: floor2, slotNumber: 1, code: 'T2-A-01', walkingDistance: 20 }),
+      makeSlot({ id: 2, floorId: 1, floor: floor1, slotNumber: 5, code: 'T1-A-05', walkingDistance: 20 }),
+      makeSlot({ id: 3, floorId: 1, floor: floor1, slotNumber: 2, code: 'T1-A-02', walkingDistance: 20 }),
+    ];
+
+    const result = strategy.allocate(VehicleType.car, [...allSlots], allSlots);
+
+    expect(result.id).toBe(3);
+  });
+});
+
 describe('AllocationService', () => {
   let service: AllocationService;
   let prisma: {
@@ -432,6 +528,18 @@ describe('AllocationService', () => {
       expect(result.allocationStrategy).toBe('lowest_floor');
     });
 
+    it('uses fair_distance_based strategy from SystemConfig when set', async () => {
+      prisma.slot.findMany.mockResolvedValue(slots);
+      prisma.systemConfig.findUnique.mockResolvedValue({
+        configKey: 'active_allocation_strategy',
+        configValue: 'fair_distance_based',
+      });
+
+      const result = await service.allocate(VehicleType.car);
+
+      expect(result.allocationStrategy).toBe('fair_distance_based');
+    });
+
     it('uses explicit override over SystemConfig', async () => {
       prisma.slot.findMany.mockResolvedValue(slots);
       prisma.systemConfig.findUnique.mockResolvedValue({
@@ -459,12 +567,13 @@ describe('AllocationService', () => {
 
   // 31.2: getAvailableStrategies
   describe('getAvailableStrategies', () => {
-    it('returns all 3 strategies', () => {
+    it('returns all 4 strategies', () => {
       const strategies = service.getAvailableStrategies();
 
-      expect(strategies).toHaveLength(3);
+      expect(strategies).toHaveLength(4);
       expect(strategies.map((s) => s.name)).toEqual([
         'balanced_occupancy',
+        'fair_distance_based',
         'lowest_floor',
         'random',
       ]);

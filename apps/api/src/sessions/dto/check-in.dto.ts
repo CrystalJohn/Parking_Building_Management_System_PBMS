@@ -2,10 +2,27 @@ import {
   IsString,
   IsEnum,
   IsOptional,
+  IsUUID,
+  IsNumber,
+  Min,
+  Max,
   Matches,
   IsNotEmpty,
+  IsIn,
 } from 'class-validator';
 import { VehicleType } from '@prisma/client';
+
+/**
+ * Identification methods supported for check-in.
+ * Used for audit trail and operational analytics.
+ */
+export const CHECKIN_IDENTIFICATION_METHODS = [
+  'OCR',
+  'MANUAL_PLATE',
+  'RESERVATION_QR',
+] as const;
+
+export type CheckInIdentificationMethod = (typeof CHECKIN_IDENTIFICATION_METHODS)[number];
 
 export class CheckInDto {
   /**
@@ -32,4 +49,30 @@ export class CheckInDto {
   @IsString()
   @Matches(/^[0-9]{9,11}$/, { message: 'driverPhone must be a valid phone number' })
   driverPhone?: string;
+
+  /**
+   * P0-A: Optional reservation ID from scanning a reservation QR code.
+   * When provided, the system directly looks up this reservation for fulfillment
+   * instead of relying on driverPhone → DB lookup.
+   */
+  @IsOptional()
+  @IsUUID()
+  reservationId?: string;
+
+  /**
+   * P0-B: How the vehicle was identified at check-in.
+   * Enables audit trail and operational analytics.
+   */
+  @IsOptional()
+  @IsIn(CHECKIN_IDENTIFICATION_METHODS)
+  identificationMethod?: CheckInIdentificationMethod;
+
+  /**
+   * P0-B: OCR confidence score (0..1) when identification was via OCR.
+   */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  identificationConfidence?: number;
 }

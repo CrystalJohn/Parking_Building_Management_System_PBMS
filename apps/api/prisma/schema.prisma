@@ -95,6 +95,7 @@ model Slot {
   code        String      @unique
   status      SlotStatus  @default(available)
   vehicleType VehicleType @map("vehicle_type")
+  walkingDistance Int     @default(0) @map("walking_distance")
 
   // Relations
   floor        Floor            @relation(fields: [floorId], references: [id])

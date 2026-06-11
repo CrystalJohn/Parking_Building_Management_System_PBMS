@@ -3,6 +3,18 @@ import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
+function calculateWalkingDistance(
+  floorNumber: number,
+  zone: Zone,
+  slotNumber: number,
+): number {
+  const floorBaseDistance = floorNumber === 1 ? 20 : floorNumber === 2 ? 45 : 70;
+  const zoneOffset = zone === Zone.A ? 0 : 8;
+  const slotOffset = (slotNumber - 1) * 2;
+
+  return floorBaseDistance + zoneOffset + slotOffset;
+}
+
 async function main() {
   console.log('🌱 Seeding database...');
 
@@ -68,15 +80,21 @@ async function main() {
     // Zone A: 10 car slots per floor
     for (let i = 1; i <= 10; i++) {
       const code = `T${floor.floorNumber}-A-${String(i).padStart(2, '0')}`;
+      const walkingDistance = calculateWalkingDistance(
+        floor.floorNumber,
+        Zone.A,
+        i,
+      );
       await prisma.slot.upsert({
         where: { code },
-        update: {},
+        update: { walkingDistance },
         create: {
           floorId: floor.id,
           zone: Zone.A,
           slotNumber: i,
           code,
           vehicleType: VehicleType.car,
+          walkingDistance,
         },
       });
       slotCount++;
@@ -85,15 +103,21 @@ async function main() {
     // Zone B: 20 motorbike slots per floor
     for (let i = 1; i <= 20; i++) {
       const code = `T${floor.floorNumber}-B-${String(i).padStart(2, '0')}`;
+      const walkingDistance = calculateWalkingDistance(
+        floor.floorNumber,
+        Zone.B,
+        i,
+      );
       await prisma.slot.upsert({
         where: { code },
-        update: {},
+        update: { walkingDistance },
         create: {
           floorId: floor.id,
           zone: Zone.B,
           slotNumber: i,
           code,
           vehicleType: VehicleType.motorbike,
+          walkingDistance,
         },
       });
       slotCount++;
@@ -135,7 +159,7 @@ async function main() {
   const systemConfigs = [
     {
       configKey: 'active_allocation_strategy',
-      configValue: 'balanced_occupancy',
+      configValue: 'fair_distance_based',
       description: 'Current slot allocation algorithm',
     },
     {
@@ -168,7 +192,11 @@ async function main() {
   for (const config of systemConfigs) {
     await prisma.systemConfig.upsert({
       where: { configKey: config.configKey },
-      update: {},
+      update: {
+        configValue: config.configValue,
+        description: config.description,
+        updatedBy: 'system',
+      },
       create: {
         configKey: config.configKey,
         configValue: config.configValue,

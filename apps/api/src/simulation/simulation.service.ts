@@ -5,6 +5,7 @@ import {
   AllocationService,
   AllocationStrategy,
   BalancedOccupancyStrategy,
+  FairDistanceBasedStrategy,
   LowestFloorStrategy,
   RandomStrategy,
 } from '../slots/allocation.service';
@@ -21,6 +22,7 @@ interface SimSlot {
   code: string;
   status: SlotStatus;
   vehicleType: VehicleType;
+  walkingDistance: number;
   occupiedUntilMinute: number | null; // when the vehicle will leave
   floor: { id: number; floorNumber: number; name: string };
 }
@@ -131,6 +133,7 @@ export class SimulationService {
   ) {
     this.strategies = new Map<string, AllocationStrategy>([
       ['balanced_occupancy', new BalancedOccupancyStrategy()],
+      ['fair_distance_based', new FairDistanceBasedStrategy()],
       ['lowest_floor', new LowestFloorStrategy()],
       ['random', new RandomStrategy()],
     ]);
@@ -166,6 +169,7 @@ export class SimulationService {
       code: s.code,
       status: SlotStatus.available,
       vehicleType: s.vehicleType,
+      walkingDistance: s.walkingDistance,
       occupiedUntilMinute: null,
       floor: { id: s.floor.id, floorNumber: s.floor.floorNumber, name: s.floor.name },
     }));

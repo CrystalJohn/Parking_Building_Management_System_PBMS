@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { SlotsModule } from '../slots/slots.module';
 import { FeesModule } from '../fees/fees.module';
+import { VehicleIdentificationModule } from '../vehicle-identification/vehicle-identification.module';
 import { SessionsController } from './sessions.controller';
 import { TicketsController } from './tickets.controller';
 import { SessionsService } from './sessions.service';
@@ -9,8 +10,9 @@ import { SessionsService } from './sessions.service';
 @Module({
   imports: [
     PrismaModule,
-    SlotsModule, // provides AllocationService
-    FeesModule, // provides FeesService for check-out fee calculation
+    SlotsModule,    // provides AllocationService
+    FeesModule,     // provides FeesService for check-out fee calculation
+    VehicleIdentificationModule, // provides VehicleIdentificationService
   ],
   controllers: [SessionsController, TicketsController],
   providers: [SessionsService],

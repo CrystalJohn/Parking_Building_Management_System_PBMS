@@ -47,7 +47,7 @@ export interface Reservation {
   status: ReservationStatus
   createdAt: string
   expiresAt: string
-  slot: SlotInfo
+  slot: SlotInfo | null
 }
 
 export interface CreateReservationResponse {

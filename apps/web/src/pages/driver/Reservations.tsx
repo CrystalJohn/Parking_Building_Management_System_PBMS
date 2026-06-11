@@ -8,8 +8,6 @@ import {
   type Reservation,
   type VehicleType,
 } from '../../lib/driver-api'
-import AppleDateTimePicker from '../../components/reservation/AppleDateTimePicker'
-import DurationSelect, { type DurationValue } from '../../components/reservation/DurationSelect'
 
 const formatDateTime = (iso: string) =>
   new Date(iso).toLocaleString('vi-VN', {
@@ -38,21 +36,12 @@ export default function Reservations() {
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Pre-fill from query params (e.g. from landing page redirect)
+  // Pre-fill vehicle type from query params (e.g. from landing page redirect)
   const paramVehicle = searchParams.get('vehicleType')
-  const paramTime = searchParams.get('time')
 
   const [vehicleType, setVehicleType] = useState<VehicleType>(
     paramVehicle === 'car' || paramVehicle === 'motorbike' ? paramVehicle : 'car'
   )
-  const [reservationDate, setReservationDate] = useState(() => {
-    if (paramTime) {
-      const parsed = new Date(paramTime)
-      if (!isNaN(parsed.getTime()) && parsed > new Date()) return parsed
-    }
-    return new Date(Date.now() + 30 * 60 * 1000)
-  })
-  const [duration, setDuration] = useState<DurationValue>('2h')
 
   useEffect(() => {
     loadReservations()
@@ -131,7 +120,7 @@ export default function Reservations() {
               Đặt chỗ mới
             </h2>
             <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-              Chọn loại xe, thời gian và thời lượng. Hệ thống sẽ tự động tìm slot phù hợp.
+              Chọn loại xe. Hệ thống sẽ tự động phân bổ slot tốt nhất.
             </p>
           </div>
 
@@ -169,15 +158,6 @@ export default function Reservations() {
                 </button>
               </div>
             </div>
-
-            <AppleDateTimePicker
-              value={reservationDate}
-              onChange={setReservationDate}
-              minDate={new Date()}
-              disabled={creating}
-            />
-
-            <DurationSelect value={duration} onChange={setDuration} disabled={creating} />
 
             <button
               type="button"
@@ -231,20 +211,23 @@ function ReservationCard({
 }) {
   const status = STATUS_LABELS[reservation.status] ?? STATUS_LABELS.active
   const isActive = reservation.status === 'active'
+  const slot = reservation.slot
 
   return (
     <div className="card">
       <div className="flex items-start justify-between">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-lg font-bold">{reservation.slot.code}</span>
+            <span className="font-mono text-lg font-bold">
+              {slot?.code ?? '—'}
+            </span>
             <span className={`text-xs px-2 py-0.5 rounded-full ${status.color}`}>
               {status.text}
             </span>
           </div>
           <p className="text-sm text-gray-600">
-            {reservation.vehicleType === 'car' ? 'Ô tô' : 'Xe máy'} —{' '}
-            {reservation.slot.floor.name}
+            {reservation.vehicleType === 'car' ? 'Ô tô' : 'Xe máy'}
+            {slot?.floor ? ` — ${slot.floor.name}` : ''}
           </p>
           <p className="text-xs text-gray-500">
             Đặt lúc: {formatDateTime(reservation.createdAt)}

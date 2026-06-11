@@ -189,6 +189,168 @@ export class RandomStrategy implements AllocationStrategy {
  * 31.3: Reads active strategy from SystemConfig at runtime.
  * 31.4: Injected into SessionsService for check-in and reservations.
  */
+export class FairDistanceBasedStrategy implements AllocationStrategy {
+  readonly name = 'fair_distance_based';
+
+  private readonly weights = {
+    distance: 0.45,
+    floorOccupancy: 0.25,
+    zoneOccupancy: 0.15,
+    fairness: 0.15,
+  };
+
+  allocate(
+    vehicleType: VehicleType,
+    availableSlots: (Slot & { floor: Floor })[],
+    allSlots: (Slot & { floor: Floor })[],
+  ): Slot & { floor: Floor } {
+    const targetZone = vehicleType === VehicleType.car ? Zone.A : Zone.B;
+    const candidates = availableSlots.filter(
+      (s) =>
+        s.status === SlotStatus.available &&
+        s.zone === targetZone &&
+        s.vehicleType === vehicleType,
+    );
+
+    if (candidates.length === 0) {
+      throw new ConflictException(
+        `No available slot for vehicle type: ${vehicleType}`,
+      );
+    }
+
+    const maxDistance = Math.max(
+      ...candidates.map((slot) => this.getWalkingDistance(slot)),
+      1,
+    );
+    const floorOccupancy = this.calculateFloorOccupancy(
+      allSlots,
+      vehicleType,
+      targetZone,
+    );
+    const zoneOccupancy = this.calculateFloorZoneOccupancy(
+      allSlots,
+      vehicleType,
+      targetZone,
+    );
+    const averageOccupancy =
+      floorOccupancy.size > 0
+        ? Array.from(floorOccupancy.values()).reduce((sum, rate) => sum + rate, 0) /
+          floorOccupancy.size
+        : 0;
+
+    return candidates
+      .map((slot) => {
+        const distanceScore = this.getWalkingDistance(slot) / maxDistance;
+        const floorOccupancyScore = floorOccupancy.get(slot.floorId) ?? 0;
+        const zoneOccupancyScore =
+          zoneOccupancy.get(this.getFloorZoneKey(slot.floorId, slot.zone)) ?? 0;
+        const fairnessScore = Math.max(
+          0,
+          floorOccupancyScore - averageOccupancy,
+        );
+        const score =
+          this.weights.distance * distanceScore +
+          this.weights.floorOccupancy * floorOccupancyScore +
+          this.weights.zoneOccupancy * zoneOccupancyScore +
+          this.weights.fairness * fairnessScore;
+
+        return { slot, score };
+      })
+      .sort((a, b) => {
+        if (a.score !== b.score) return a.score - b.score;
+
+        const distanceDiff =
+          this.getWalkingDistance(a.slot) - this.getWalkingDistance(b.slot);
+        if (distanceDiff !== 0) return distanceDiff;
+
+        if (a.slot.floor.floorNumber !== b.slot.floor.floorNumber) {
+          return a.slot.floor.floorNumber - b.slot.floor.floorNumber;
+        }
+
+        return a.slot.slotNumber - b.slot.slotNumber;
+      })[0].slot;
+  }
+
+  private getWalkingDistance(slot: Slot): number {
+    return Math.max(0, slot.walkingDistance ?? 0);
+  }
+
+  private calculateFloorOccupancy(
+    allSlots: (Slot & { floor: Floor })[],
+    vehicleType: VehicleType,
+    zone: Zone,
+  ): Map<number, number> {
+    const floorStats = new Map<number, { total: number; occupied: number }>();
+
+    for (const slot of allSlots) {
+      if (slot.vehicleType !== vehicleType || slot.zone !== zone) continue;
+
+      if (!floorStats.has(slot.floorId)) {
+        floorStats.set(slot.floorId, { total: 0, occupied: 0 });
+      }
+
+      const stats = floorStats.get(slot.floorId)!;
+      stats.total++;
+      if (
+        slot.status === SlotStatus.occupied ||
+        slot.status === SlotStatus.reserved
+      ) {
+        stats.occupied++;
+      }
+    }
+
+    const occupancyMap = new Map<number, number>();
+    for (const [key, stats] of floorStats) {
+      occupancyMap.set(
+        key,
+        stats.total > 0 ? stats.occupied / stats.total : 0,
+      );
+    }
+
+    return occupancyMap;
+  }
+
+  private calculateFloorZoneOccupancy(
+    allSlots: (Slot & { floor: Floor })[],
+    vehicleType: VehicleType,
+    zone: Zone,
+  ): Map<string, number> {
+    const zoneStats = new Map<string, { total: number; occupied: number }>();
+
+    for (const slot of allSlots) {
+      if (slot.vehicleType !== vehicleType || slot.zone !== zone) continue;
+
+      const key = this.getFloorZoneKey(slot.floorId, slot.zone);
+      if (!zoneStats.has(key)) {
+        zoneStats.set(key, { total: 0, occupied: 0 });
+      }
+
+      const stats = zoneStats.get(key)!;
+      stats.total++;
+      if (
+        slot.status === SlotStatus.occupied ||
+        slot.status === SlotStatus.reserved
+      ) {
+        stats.occupied++;
+      }
+    }
+
+    const occupancyMap = new Map<string, number>();
+    for (const [key, stats] of zoneStats) {
+      occupancyMap.set(
+        key,
+        stats.total > 0 ? stats.occupied / stats.total : 0,
+      );
+    }
+
+    return occupancyMap;
+  }
+
+  private getFloorZoneKey(floorId: number, zone: Zone): string {
+    return `${floorId}:${zone}`;
+  }
+}
+
 @Injectable()
 export class AllocationService {
   private readonly strategies: Map<string, AllocationStrategy>;
@@ -197,11 +359,13 @@ export class AllocationService {
   constructor(private readonly prisma: PrismaService) {
     // 31.2: Register all available strategies
     const balanced = new BalancedOccupancyStrategy();
+    const fairDistanceBased = new FairDistanceBasedStrategy();
     const lowestFloor = new LowestFloorStrategy();
     const random = new RandomStrategy();
 
     this.strategies = new Map<string, AllocationStrategy>([
       [balanced.name, balanced],
+      [fairDistanceBased.name, fairDistanceBased],
       [lowestFloor.name, lowestFloor],
       [random.name, random],
     ]);
@@ -302,6 +466,11 @@ export class AllocationService {
       {
         name: 'balanced_occupancy',
         description: 'Cân bằng tải giữa các tầng (mặc định)',
+      },
+      {
+        name: 'fair_distance_based',
+        description:
+          'Weighted score: walking distance, occupancy, and fairness penalty',
       },
       {
         name: 'lowest_floor',

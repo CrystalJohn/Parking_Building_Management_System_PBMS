@@ -26,6 +26,7 @@ const makeFloor = (overrides: Partial<{ id: number; floorNumber: number; name: s
 const makeSlot = (overrides: Partial<{
   id: number; floorId: number; zone: Zone; slotNumber: number;
   code: string; status: SlotStatus; vehicleType: VehicleType;
+  walkingDistance: number;
   floor: ReturnType<typeof makeFloor>;
 }> = {}) => ({
   id: 1,
@@ -35,6 +36,7 @@ const makeSlot = (overrides: Partial<{
   code: 'T1-B-01',
   status: SlotStatus.available,
   vehicleType: VehicleType.motorbike,
+  walkingDistance: 20,
   floor: makeFloor(),
   ...overrides,
 });
@@ -66,7 +68,7 @@ describe('ReservationsService', () => {
   let service: ReservationsService;
   let prisma: {
     user: { findUnique: jest.Mock };
-    reservation: { findUnique: jest.Mock; findMany: jest.Mock; create: jest.Mock; update: jest.Mock };
+    reservation: { findUnique: jest.Mock; findMany: jest.Mock; findFirst: jest.Mock; create: jest.Mock; update: jest.Mock };
     slot: { update: jest.Mock };
     systemConfig: { findUnique: jest.Mock };
     $transaction: jest.Mock;
@@ -79,6 +81,7 @@ describe('ReservationsService', () => {
       reservation: {
         findUnique: jest.fn(),
         findMany: jest.fn(),
+        findFirst: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
       },
@@ -119,6 +122,9 @@ describe('ReservationsService', () => {
         configKey: 'reservation_timeout_minutes',
         configValue: '30',
       });
+
+      // P1: No existing active reservation by default
+      prisma.reservation.findFirst.mockResolvedValue(null);
 
       // Allocation succeeds
       allocationService.allocate.mockResolvedValue({
@@ -233,6 +239,96 @@ describe('ReservationsService', () => {
       );
 
       jest.useRealTimers();
+    });
+
+    it('uses the slot selected by fair_distance_based allocation', async () => {
+      const selectedSlot = makeSlot({
+        id: 9,
+        code: 'T1-B-09',
+        slotNumber: 9,
+        walkingDistance: 18,
+      });
+      allocationService.allocate.mockResolvedValue({
+        slot: selectedSlot,
+        allocationStrategy: 'fair_distance_based',
+        allocationTimeMs: 4,
+      });
+
+      let lockedSlotId: number | null = null;
+      let reservedSlotId: number | null = null;
+      prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          $queryRaw: jest.fn().mockImplementation((strings: TemplateStringsArray, id: number) => {
+            lockedSlotId = id;
+            return Promise.resolve([{ id, status: 'available' }]);
+          }),
+          slot: {
+            update: jest.fn().mockImplementation((args) => {
+              reservedSlotId = args.where.id;
+              return Promise.resolve({ ...selectedSlot, status: 'reserved' });
+            }),
+          },
+          reservation: {
+            create: jest.fn().mockResolvedValue(
+              makeReservation({ slotId: selectedSlot.id, slot: selectedSlot }),
+            ),
+          },
+        };
+        return fn(tx);
+      });
+
+      const result = await service.create(
+        { vehicleType: VehicleType.motorbike },
+        driverId,
+      );
+
+      expect(allocationService.allocate).toHaveBeenCalledWith(VehicleType.motorbike);
+      expect(lockedSlotId).toBe(selectedSlot.id);
+      expect(reservedSlotId).toBe(selectedSlot.id);
+      expect(result.slot.code).toBe('T1-B-09');
+    });
+
+    // P1: duplicate active reservation guard
+    it('throws ConflictException when driver already has an active reservation for the same vehicle type (P1)', async () => {
+      prisma.reservation.findFirst.mockResolvedValue({
+        id: 'existing-reservation-uuid',
+      });
+
+      await expect(
+        service.create({ vehicleType: VehicleType.motorbike }, driverId),
+      ).rejects.toThrow(ConflictException);
+
+      // Allocation should never be called if guard fires
+      expect(allocationService.allocate).not.toHaveBeenCalled();
+    });
+
+    it('allows creating a car reservation when driver only has an active motorbike reservation (P1)', async () => {
+      // findFirst returns null for car (no existing active car reservation)
+      prisma.reservation.findFirst.mockResolvedValue(null);
+      const carSlot = makeSlot({ zone: Zone.A, vehicleType: VehicleType.car, code: 'T1-A-01' });
+      allocationService.allocate.mockResolvedValue({
+        slot: carSlot,
+        allocationStrategy: 'balanced_occupancy',
+        allocationTimeMs: 2,
+      });
+
+      prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          $queryRaw: jest.fn().mockResolvedValue([{ id: carSlot.id, status: 'available' }]),
+          slot: { update: jest.fn().mockResolvedValue({ ...carSlot, status: 'reserved' }) },
+          reservation: {
+            create: jest.fn().mockResolvedValue(
+              makeReservation({ vehicleType: VehicleType.car, slot: carSlot }),
+            ),
+          },
+        };
+        return fn(tx);
+      });
+
+      const result = await service.create({ vehicleType: VehicleType.car }, driverId);
+
+      expect(allocationService.allocate).toHaveBeenCalledWith(VehicleType.car);
+      expect(result.reservation).toBeDefined();
     });
 
     it('reads timeout from SystemConfig', async () => {
@@ -459,5 +555,86 @@ describe('ReservationsService', () => {
 
       expect(prisma.$transaction).toHaveBeenCalledTimes(2);
     });
+  });
+});
+
+// ── findOne() (P0) ────────────────────────────────────────────────────────
+
+describe('ReservationsService — findOne()', () => {
+  let service: ReservationsService;
+  let prisma: {
+    user: { findUnique: jest.Mock };
+    reservation: { findUnique: jest.Mock; findMany: jest.Mock; findFirst: jest.Mock; create: jest.Mock; update: jest.Mock };
+    slot: { update: jest.Mock };
+    systemConfig: { findUnique: jest.Mock };
+    $transaction: jest.Mock;
+  };
+
+  beforeEach(async () => {
+    prisma = {
+      user: { findUnique: jest.fn() },
+      reservation: {
+        findUnique: jest.fn(),
+        findMany: jest.fn(),
+        findFirst: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+      },
+      slot: { update: jest.fn() },
+      systemConfig: { findUnique: jest.fn() },
+      $transaction: jest.fn(),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ReservationsService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AllocationService, useValue: { allocate: jest.fn() } },
+      ],
+    }).compile();
+
+    service = module.get<ReservationsService>(ReservationsService);
+  });
+
+  it('returns the reservation when driver owns it', async () => {
+    const reservation = makeReservation();
+    prisma.reservation.findUnique.mockResolvedValue(reservation);
+
+    const result = await service.findOne('reservation-uuid-1', 'driver-uuid');
+
+    expect(result).toEqual(reservation);
+    expect(prisma.reservation.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'reservation-uuid-1' } }),
+    );
+  });
+
+  it('throws NotFoundException when reservation does not exist', async () => {
+    prisma.reservation.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.findOne('nonexistent-uuid', 'driver-uuid'),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('throws ForbiddenException when driver does not own the reservation', async () => {
+    prisma.reservation.findUnique.mockResolvedValue(
+      makeReservation({ driverId: 'other-driver-uuid' }),
+    );
+
+    await expect(
+      service.findOne('reservation-uuid-1', 'driver-uuid'),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('returns reservation with slot and floor info included', async () => {
+    const floor = makeFloor({ id: 2, floorNumber: 2, name: 'T2' });
+    const slot = makeSlot({ id: 5, code: 'T2-B-05', floor });
+    const reservation = makeReservation({ slot });
+    prisma.reservation.findUnique.mockResolvedValue(reservation);
+
+    const result = await service.findOne('reservation-uuid-1', 'driver-uuid');
+
+    expect(result.slot.code).toBe('T2-B-05');
+    expect(result.slot.floor.floorNumber).toBe(2);
   });
 });

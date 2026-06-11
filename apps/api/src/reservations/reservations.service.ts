@@ -28,8 +28,9 @@ export class ReservationsService {
    *
    * Flow:
    * 1. Validate driver has an active account (18.5)
-   * 2. Allocate a slot via AllocationService
-   * 3. In transaction: set slot → reserved, create Reservation with expires_at
+   * 2. P1: Guard — one active reservation per vehicle type per driver
+   * 3. Allocate a slot via AllocationService
+   * 4. In transaction: set slot → reserved, create Reservation with expires_at
    *
    * Req 8.1, 8.2, 8.3
    */
@@ -43,6 +44,22 @@ export class ReservationsService {
     if (!driver || !driver.isActive || driver.role !== 'driver') {
       throw new ForbiddenException(
         'Only active registered drivers can create reservations',
+      );
+    }
+
+    // P1: Prevent duplicate active reservations for the same vehicle type
+    const existingActive = await this.prisma.reservation.findFirst({
+      where: {
+        driverId,
+        vehicleType: dto.vehicleType,
+        status: 'active',
+      },
+      select: { id: true },
+    });
+
+    if (existingActive) {
+      throw new ConflictException(
+        `You already have an active ${dto.vehicleType} reservation. Cancel it before creating a new one.`,
       );
     }
 
@@ -123,6 +140,29 @@ export class ReservationsService {
       },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  /**
+   * P0: Get a single reservation by ID.
+   * Ownership enforced: driver can only view their own reservation.
+   */
+  async findOne(reservationId: string, driverId: string) {
+    const reservation = await this.prisma.reservation.findUnique({
+      where: { id: reservationId },
+      include: {
+        slot: { include: { floor: true } },
+      },
+    });
+
+    if (!reservation) {
+      throw new NotFoundException(`Reservation not found: ${reservationId}`);
+    }
+
+    if (reservation.driverId !== driverId) {
+      throw new ForbiddenException('You can only view your own reservations');
+    }
+
+    return reservation;
   }
 
   /**

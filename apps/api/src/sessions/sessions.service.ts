@@ -5,11 +5,13 @@ import {
   NotFoundException,
   Logger,
 } from '@nestjs/common';
-import { VehicleType, PaymentMethod } from '@prisma/client';
+import { Prisma, VehicleType, PaymentMethod } from '@prisma/client';
 import * as QRCode from 'qrcode';
 import { PrismaService } from '../prisma/prisma.service';
 import { AllocationService } from '../slots/allocation.service';
 import { FeesService, FeeBreakdown } from '../fees/fees.service';
+import { VehicleIdentificationService } from '../vehicle-identification/vehicle-identification.service';
+import type { VehicleIdentityResult } from '../vehicle-identification/vehicle-identity.types';
 import { CheckInDto, CheckOutDto, ConfirmPaymentDto, LostTicketDto } from './dto';
 
 @Injectable()
@@ -20,157 +22,201 @@ export class SessionsService {
     private readonly prisma: PrismaService,
     private readonly allocationService: AllocationService,
     private readonly feesService: FeesService,
+    private readonly vehicleIdentificationService: VehicleIdentificationService,
   ) {}
 
   /**
-   * 13.1–13.6 + Task 20: Check-in a vehicle.
+   * 13.1–13.6 + Task 20 + P1-B: Check-in a vehicle.
    *
    * Flow:
-   * 1. Validate no active session already exists for this plate
-   * 2. Optionally resolve registered driver by phone
-   * 3. [Task 20] If driver has an active reservation for this vehicleType → fulfill it
-   *    (use reserved slot, skip allocation)
-   * 4. Otherwise allocate a slot via AllocationService (BalancedOccupancyStrategy)
-   * 5. Inside a transaction: update slot → occupied, create ParkingSession,
-   *    optionally fulfill reservation
-   * 6. If driver is registered, generate a QR code (UUID encoded)
-   * 7. Return session + slot + optional QR code
+   * 1. [P1-B] Delegate identification to VehicleIdentificationService
+   *    → resolves licensePlate / reservationId from the identity result
+   * 2. Validate no active session already exists for this plate
+   * 3. Optionally resolve registered driver by phone (or from reservation)
+   * 4. If identity has a reservationId → fulfill it (use reserved slot, skip allocation)
+   * 5. Otherwise allocate a slot via AllocationService
+   * 6. Inside a transaction: update slot → occupied, create ParkingSession
+   * 7. If driver is registered, generate a QR code (UUID encoded)
+   * 8. Return session + slot + optional QR code
    *
    * Req 1.1–1.5, 3.6, 8
    */
   async checkIn(dto: CheckInDto, staffId: string) {
+    // ─── P1-B: Identification (separated from business logic) ────────────
+    const identity: VehicleIdentityResult =
+      await this.vehicleIdentificationService.identifyForCheckIn({
+        licensePlate: dto.licensePlate,
+        reservationId: dto.reservationId,
+        driverPhone: dto.driverPhone,
+        identificationConfidence: dto.identificationConfidence,
+      });
+
+    // Use the normalized plate from the identity result
+    const licensePlate = identity.licensePlate ?? dto.licensePlate;
+
     // Check for duplicate active session with same license plate
     const existingSession = await this.prisma.parkingSession.findFirst({
-      where: {
-        licensePlate: dto.licensePlate,
-        status: 'active',
-      },
+      where: { licensePlate, status: 'active' },
       select: { id: true, licensePlate: true },
     });
 
     if (existingSession) {
       throw new ConflictException(
-        `Biển số ${dto.licensePlate} đang có phiên gửi xe chưa check-out`,
+        `Biển số ${licensePlate} đang có phiên gửi xe chưa check-out`,
       );
     }
 
-    // Resolve registered driver (optional)
+    // Resolve registered driver (optional — via phone or from reservation owner)
     let driverId: string | null = null;
     if (dto.driverPhone) {
       const driver = await this.prisma.user.findUnique({
         where: { phone: dto.driverPhone },
         select: { id: true, isActive: true },
       });
-      // Only link if driver exists and is active; silently ignore otherwise
       if (driver?.isActive) {
         driverId = driver.id;
       }
     }
 
-    // ─── Task 20: Check for active reservation ────────────────────────────
-    // If the driver has an active reservation for this vehicle type,
-    // fulfill it instead of allocating a new slot.
+    // ─── Reservation resolution (business logic) ──────────────────────────
+    // The identity result already tells us if a reservation was confirmed.
+    // Here we load the full reservation record needed for the transaction.
     let reservationId: string | null = null;
     let slot: { id: number; code: string; zone: any; floor: any; floorId: number; slotNumber: number; status: any; vehicleType: any };
     let allocationStrategy: string;
     let allocationTimeMs: number;
 
-    const activeReservation = driverId
-      ? await this.prisma.reservation.findFirst({
-          where: {
-            driverId,
-            vehicleType: dto.vehicleType,
-            status: 'active',
-          },
-          include: { slot: { include: { floor: true } } },
-        })
-      : null;
+    let activeReservation: {
+      id: string;
+      driverId: string;
+      slotId: number;
+      vehicleType: any;
+      status: string;
+      slot: any;
+    } | null = null;
+
+    if (identity.reservationId) {
+      // Identity confirmed a reservation — load the full record for the transaction
+      activeReservation = await this.prisma.reservation.findUnique({
+        where: { id: identity.reservationId },
+        include: { slot: { include: { floor: true } } },
+      });
+
+      if (
+        activeReservation &&
+        activeReservation.status === 'active' &&
+        activeReservation.vehicleType === dto.vehicleType
+      ) {
+        // Resolve driver from reservation owner if not already resolved
+        if (!driverId && activeReservation.driverId) {
+          driverId = activeReservation.driverId;
+        }
+      } else {
+        // Reservation no longer valid — fall through to allocation
+        activeReservation = null;
+      }
+    }
+
+    // Fallback: look up reservation via driverId if no direct reservation resolved
+    if (!activeReservation && driverId) {
+      activeReservation = await this.prisma.reservation.findFirst({
+        where: {
+          driverId,
+          vehicleType: dto.vehicleType,
+          status: 'active',
+        },
+        include: { slot: { include: { floor: true } } },
+      });
+    }
 
     if (activeReservation) {
-      // Use the reserved slot — no allocation needed
       slot = activeReservation.slot;
       reservationId = activeReservation.id;
       allocationStrategy = 'reservation_fulfillment';
       allocationTimeMs = 0;
     } else {
-      // 13.2: Allocate slot (measures allocation_time_ms internally)
-      // ConflictException is thrown here if building is full (Req 1.5)
+      // 13.2: Allocate slot — throws ConflictException if building is full (Req 1.5)
       const result = await this.allocationService.allocate(dto.vehicleType);
       slot = result.slot;
       allocationStrategy = result.allocationStrategy;
       allocationTimeMs = result.allocationTimeMs;
     }
 
-    // Wrap slot update + session creation in a transaction with
-    // FOR UPDATE SKIP LOCKED to prevent concurrent double-assignment.
-    const session = await this.prisma.$transaction(async (tx) => {
-      // Re-check the slot is still available/reserved and lock it
-      const expectedStatus = activeReservation ? 'reserved' : 'available';
-      const lockedSlot = await tx.$queryRaw<{ id: number; status: string }[]>`
-        SELECT id, status FROM slots
-        WHERE id = ${slot.id} AND status = ${expectedStatus}::"SlotStatus"
-        FOR UPDATE SKIP LOCKED
-      `;
+    // ─── Transaction: slot update + session creation ───────────────────────
+    let session: Prisma.ParkingSessionGetPayload<{
+      include: { slot: { include: { floor: true } } };
+    }>;
+    try {
+      session = await this.prisma.$transaction(async (tx) => {
+        const expectedStatus = activeReservation ? 'reserved' : 'available';
+        const lockedSlot = await tx.$queryRaw<{ id: number; status: string }[]>`
+          SELECT id, status FROM slots
+          WHERE id = ${slot.id} AND status = ${expectedStatus}::"SlotStatus"
+          FOR UPDATE SKIP LOCKED
+        `;
 
-      if (!lockedSlot || lockedSlot.length === 0) {
+        if (!lockedSlot || lockedSlot.length === 0) {
+          throw new ConflictException(
+            `Slot ${slot.code} is no longer ${expectedStatus}. Please retry.`,
+          );
+        }
+
+        await tx.slot.update({
+          where: { id: slot.id },
+          data: { status: 'occupied' },
+        });
+
+        if (reservationId) {
+          await tx.reservation.update({
+            where: { id: reservationId },
+            data: { status: 'fulfilled' },
+          });
+        }
+
+        let qrCode: string | null = null;
+        const sessionId = crypto.randomUUID();
+
+        if (driverId) {
+          qrCode = await QRCode.toDataURL(sessionId, {
+            width: 400,
+            margin: 2,
+            errorCorrectionLevel: 'H',
+            color: { dark: '#000000', light: '#ffffff' },
+          });
+        }
+
+        const newSession = await tx.parkingSession.create({
+          data: {
+            id: sessionId,
+            licensePlate,
+            vehicleType: dto.vehicleType,
+            slotId: slot.id,
+            driverId,
+            reservationId,
+            checkedInById: staffId,
+            qrCode,
+            allocationStrategy,
+            allocationTimeMs,
+            // 32: Denormalized metrics for research queries
+            floorId: slot.floorId,
+            zone: slot.zone,
+          },
+          include: {
+            slot: { include: { floor: true } },
+          },
+        });
+
+        return newSession;
+      });
+    } catch (error) {
+      if (this.isPrismaUniqueConstraintError(error)) {
         throw new ConflictException(
-          `Slot ${slot.code} is no longer ${expectedStatus}. Please retry.`,
+          'Duplicate active parking session detected for this license plate',
         );
       }
+      throw error;
+    }
 
-      // Update slot → occupied (from available or reserved)
-      await tx.slot.update({
-        where: { id: slot.id },
-        data: { status: 'occupied' },
-      });
-
-      // Task 20: Fulfill reservation if present
-      if (reservationId) {
-        await tx.reservation.update({
-          where: { id: reservationId },
-          data: { status: 'fulfilled' },
-        });
-      }
-
-      // Generate QR code for registered drivers
-      let qrCode: string | null = null;
-      const sessionId = crypto.randomUUID();
-
-      if (driverId) {
-        qrCode = await QRCode.toDataURL(sessionId, {
-          width: 400,
-          margin: 2,
-          errorCorrectionLevel: 'H',
-          color: { dark: '#000000', light: '#ffffff' },
-        });
-      }
-
-      // Create parking session (linked to reservation if applicable)
-      const newSession = await tx.parkingSession.create({
-        data: {
-          id: sessionId,
-          licensePlate: dto.licensePlate,
-          vehicleType: dto.vehicleType,
-          slotId: slot.id,
-          driverId,
-          reservationId,
-          checkedInById: staffId,
-          qrCode,
-          allocationStrategy,
-          allocationTimeMs,
-          // 32: Denormalized metrics for research queries
-          floorId: slot.floorId,
-          zone: slot.zone,
-        },
-        include: {
-          slot: { include: { floor: true } },
-        },
-      });
-
-      return newSession;
-    });
-
-    // Return session + slot + optional QR
     return {
       session: {
         id: session.id,
@@ -181,6 +227,7 @@ export class SessionsService {
         allocationStrategy: session.allocationStrategy,
         allocationTimeMs: session.allocationTimeMs,
         reservationId: session.reservationId,
+        identificationMethod: identity.source,
       },
       slot: {
         id: session.slot.id,
@@ -194,6 +241,15 @@ export class SessionsService {
       },
       qr_code: session.qrCode ?? null,
     };
+  }
+
+  private isPrismaUniqueConstraintError(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code?: string }).code === 'P2002'
+    );
   }
 
   /**

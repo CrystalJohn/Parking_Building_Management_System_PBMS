@@ -5,6 +5,8 @@ import { SessionsService } from './sessions.service';
 import { AllocationService } from '../slots/allocation.service';
 import { FeesService } from '../fees/fees.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { VehicleIdentificationService } from '../vehicle-identification/vehicle-identification.service';
+import type { VehicleIdentityResult } from '../vehicle-identification/vehicle-identity.types';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -18,6 +20,7 @@ const makeFloor = (overrides: Partial<{ id: number; floorNumber: number; name: s
 const makeSlot = (overrides: Partial<{
   id: number; floorId: number; zone: Zone; slotNumber: number;
   code: string; status: SlotStatus; vehicleType: VehicleType;
+  walkingDistance: number;
   floor: ReturnType<typeof makeFloor>;
 }> = {}) => ({
   id: 1,
@@ -27,6 +30,7 @@ const makeSlot = (overrides: Partial<{
   code: 'T1-A-01',
   status: SlotStatus.available,
   vehicleType: VehicleType.car,
+  walkingDistance: 20,
   floor: makeFloor(),
   ...overrides,
 });
@@ -75,13 +79,14 @@ describe('SessionsService', () => {
   let prisma: {
     user: { findUnique: jest.Mock };
     parkingSession: { create: jest.Mock; findUnique: jest.Mock; findMany: jest.Mock; findFirst: jest.Mock };
-    reservation: { findFirst: jest.Mock };
+    reservation: { findFirst: jest.Mock; findUnique: jest.Mock };
     slot: { update: jest.Mock };
     $transaction: jest.Mock;
     $queryRaw: jest.Mock;
   };
   let allocationService: { allocate: jest.Mock };
   let feesService: { calculate: jest.Mock; preview: jest.Mock };
+  let vehicleIdentificationService: { identifyForCheckIn: jest.Mock; identifyForCheckout: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
@@ -92,7 +97,7 @@ describe('SessionsService', () => {
         findMany: jest.fn(),
         findFirst: jest.fn(),
       },
-      reservation: { findFirst: jest.fn() },
+      reservation: { findFirst: jest.fn(), findUnique: jest.fn() },
       slot: { update: jest.fn() },
       $transaction: jest.fn(),
       $queryRaw: jest.fn(),
@@ -100,6 +105,10 @@ describe('SessionsService', () => {
 
     allocationService = { allocate: jest.fn() };
     feesService = { calculate: jest.fn(), preview: jest.fn() };
+    vehicleIdentificationService = {
+      identifyForCheckIn: jest.fn(),
+      identifyForCheckout: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -107,6 +116,7 @@ describe('SessionsService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: AllocationService, useValue: allocationService },
         { provide: FeesService, useValue: feesService },
+        { provide: VehicleIdentificationService, useValue: vehicleIdentificationService },
       ],
     }).compile();
 
@@ -123,8 +133,17 @@ describe('SessionsService', () => {
       // Default: no duplicate session
       prisma.parkingSession.findFirst.mockResolvedValue(null);
 
-      // Default: no active reservation
+      // Default: no active reservation (findFirst path)
       prisma.reservation.findFirst.mockResolvedValue(null);
+
+      // Default: no direct reservation (findUnique path for dto.reservationId)
+      prisma.reservation.findUnique.mockResolvedValue(null);
+
+      // Default: identification succeeds with MANUAL_PLATE
+      vehicleIdentificationService.identifyForCheckIn.mockResolvedValue({
+        source: 'MANUAL_PLATE',
+        licensePlate: '59A-12345',
+      } as VehicleIdentityResult);
 
       // Default: allocation succeeds
       allocationService.allocate.mockResolvedValue({
@@ -254,7 +273,7 @@ describe('SessionsService', () => {
     it('logs allocationStrategy and allocationTimeMs in the session', async () => {
       allocationService.allocate.mockResolvedValue({
         slot,
-        allocationStrategy: 'balanced_occupancy',
+        allocationStrategy: 'fair_distance_based',
         allocationTimeMs: 12,
       });
 
@@ -280,9 +299,18 @@ describe('SessionsService', () => {
       await service.checkIn(dto, staffId);
 
       expect(capturedData).not.toBeNull();
-      expect(capturedData!['allocationStrategy']).toBe('balanced_occupancy');
+      expect(capturedData!['allocationStrategy']).toBe('fair_distance_based');
       expect(capturedData!['allocationTimeMs']).toBe(12);
       expect(capturedData!['checkedInById']).toBe(staffId);
+    });
+
+    it('maps DB duplicate active plate protection to ConflictException', async () => {
+      prisma.parkingSession.findFirst.mockResolvedValue(null);
+      prisma.$transaction.mockRejectedValue({ code: 'P2002' });
+
+      const dto = { licensePlate: '59A-12345', vehicleType: VehicleType.car };
+
+      await expect(service.checkIn(dto, staffId)).rejects.toThrow(ConflictException);
     });
 
     // 13.6: Response shape
@@ -422,6 +450,169 @@ describe('SessionsService', () => {
       // Should not query reservations for walk-in
       expect(prisma.reservation.findFirst).not.toHaveBeenCalled();
       expect(allocationService.allocate).toHaveBeenCalled();
+    });
+
+    // ── P0-A: Direct reservation ID from QR scan ────────────────────────
+
+    it('fulfills reservation directly via dto.reservationId (P0-A)', async () => {
+      const reservedSlot = makeSlot({ id: 7, code: 'T2-B-05', status: SlotStatus.reserved, zone: Zone.B, vehicleType: VehicleType.motorbike });
+      const reservation = {
+        id: 'reservation-direct-uuid',
+        driverId: 'driver-uuid',
+        slotId: 7,
+        vehicleType: VehicleType.motorbike,
+        status: 'active',
+        slot: reservedSlot,
+      };
+
+      // VehicleIdentificationService confirms the reservation QR
+      vehicleIdentificationService.identifyForCheckIn.mockResolvedValue({
+        source: 'RESERVATION_QR',
+        reservationId: 'reservation-direct-uuid',
+        licensePlate: '59B-99999',
+      } as VehicleIdentityResult);
+
+      prisma.reservation.findUnique.mockResolvedValue(reservation);
+
+      let capturedSessionData: Record<string, unknown> | null = null;
+      prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          $queryRaw: jest.fn().mockResolvedValue([{ id: 7, status: 'reserved' }]),
+          slot: { update: jest.fn().mockResolvedValue({ ...reservedSlot, status: 'occupied' }) },
+          reservation: { update: jest.fn().mockResolvedValue({}) },
+          parkingSession: {
+            create: jest.fn().mockImplementation(({ data }) => {
+              capturedSessionData = data;
+              return Promise.resolve(makeSession({
+                reservationId: 'reservation-direct-uuid',
+                allocationStrategy: 'reservation_fulfillment',
+                allocationTimeMs: 0,
+                driverId: 'driver-uuid',
+                slot: reservedSlot,
+              }));
+            }),
+          },
+        };
+        return fn(tx);
+      });
+
+      const dto = {
+        licensePlate: '59B-99999',
+        vehicleType: VehicleType.motorbike,
+        reservationId: 'reservation-direct-uuid',
+      };
+
+      const result = await service.checkIn(dto, staffId);
+
+      // VehicleIdentificationService should have been called
+      expect(vehicleIdentificationService.identifyForCheckIn).toHaveBeenCalledWith(
+        expect.objectContaining({ reservationId: 'reservation-direct-uuid' }),
+      );
+      expect(allocationService.allocate).not.toHaveBeenCalled();
+
+      // Session should link to reservation
+      expect(capturedSessionData!['reservationId']).toBe('reservation-direct-uuid');
+      expect(capturedSessionData!['allocationStrategy']).toBe('reservation_fulfillment');
+      expect(result.session.reservationId).toBe('reservation-direct-uuid');
+      expect(result.session.identificationMethod).toBe('RESERVATION_QR');
+    });
+
+    it('falls back to allocation when dto.reservationId points to a non-active reservation (P0-A)', async () => {
+      vehicleIdentificationService.identifyForCheckIn.mockResolvedValue({
+        source: 'RESERVATION_QR',
+        reservationId: 'expired-reservation',
+        licensePlate: '59A-12345',
+      } as VehicleIdentityResult);
+
+      prisma.reservation.findUnique.mockResolvedValue({
+        id: 'expired-reservation',
+        driverId: 'driver-uuid',
+        slotId: 3,
+        vehicleType: VehicleType.car,
+        status: 'expired',
+        slot: makeSlot(),
+      });
+
+      const dto = {
+        licensePlate: '59A-12345',
+        vehicleType: VehicleType.car,
+        reservationId: 'expired-reservation',
+      };
+
+      await service.checkIn(dto, staffId);
+
+      // Should fall through to allocation since reservation is not active
+      expect(allocationService.allocate).toHaveBeenCalledWith(VehicleType.car);
+    });
+
+    it('falls back to allocation when dto.reservationId vehicleType mismatches (P0-A)', async () => {
+      vehicleIdentificationService.identifyForCheckIn.mockResolvedValue({
+        source: 'RESERVATION_QR',
+        reservationId: 'mismatch-reservation',
+        licensePlate: '59A-12345',
+      } as VehicleIdentityResult);
+
+      prisma.reservation.findUnique.mockResolvedValue({
+        id: 'mismatch-reservation',
+        driverId: 'driver-uuid',
+        slotId: 3,
+        vehicleType: VehicleType.motorbike,
+        status: 'active',
+        slot: makeSlot(),
+      });
+
+      const dto = {
+        licensePlate: '59A-12345',
+        vehicleType: VehicleType.car, // mismatch with reservation's motorbike
+        reservationId: 'mismatch-reservation',
+      };
+
+      await service.checkIn(dto, staffId);
+
+      // Should fall through to allocation since vehicle type doesn't match
+      expect(allocationService.allocate).toHaveBeenCalledWith(VehicleType.car);
+    });
+
+    // ── P0-B / P1-B: identificationMethod from identity source ─────────
+
+    it('returns identificationMethod from VehicleIdentityResult source (P1-B)', async () => {
+      vehicleIdentificationService.identifyForCheckIn.mockResolvedValue({
+        source: 'OCR',
+        licensePlate: '59A-12345',
+        confidence: 0.95,
+      } as VehicleIdentityResult);
+
+      const dto = {
+        licensePlate: '59A-12345',
+        vehicleType: VehicleType.car,
+        identificationConfidence: 0.95,
+      };
+
+      const result = await service.checkIn(dto, staffId);
+
+      expect(result.session.identificationMethod).toBe('OCR');
+    });
+
+    it('returns MANUAL_PLATE as identificationMethod for plain plate input (P1-B)', async () => {
+      const dto = { licensePlate: '59A-12345', vehicleType: VehicleType.car };
+
+      const result = await service.checkIn(dto, staffId);
+
+      expect(result.session.identificationMethod).toBe('MANUAL_PLATE');
+    });
+
+    it('delegates identification to VehicleIdentificationService on every checkIn (P1-B)', async () => {
+      const dto = { licensePlate: '59A-12345', vehicleType: VehicleType.car };
+
+      await service.checkIn(dto, staffId);
+
+      expect(vehicleIdentificationService.identifyForCheckIn).toHaveBeenCalledTimes(1);
+      expect(vehicleIdentificationService.identifyForCheckIn).toHaveBeenCalledWith({
+        licensePlate: '59A-12345',
+        reservationId: undefined,
+        driverPhone: undefined,
+        identificationConfidence: undefined,
+      });
     });
   });
 
