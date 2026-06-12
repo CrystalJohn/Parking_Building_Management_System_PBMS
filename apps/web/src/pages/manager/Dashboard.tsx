@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import api from '../../lib/api'
+import { formatDateTimeVN } from '../../lib/date-time'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -137,7 +138,7 @@ export default function Dashboard() {
             <div className="flex items-center gap-2 px-3 py-1.5 bg-white/50 dark:bg-white/[0.04] backdrop-blur-sm rounded-xl border border-white/30 dark:border-white/10">
               <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
               <span className="text-[11px] font-mono text-[#888]">
-                {lastUpdated.toLocaleTimeString('vi-VN')}
+                {formatDateTimeVN(lastUpdated)}
               </span>
             </div>
           )}

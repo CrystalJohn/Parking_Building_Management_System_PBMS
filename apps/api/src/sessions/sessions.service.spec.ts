@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Logger, NotFoundException } from '@nestjs/common';
 import { VehicleType, Zone, SlotStatus, SessionStatus, PaymentMethod } from '@prisma/client';
 import { SessionsService } from './sessions.service';
 import { AllocationService } from '../slots/allocation.service';
@@ -7,6 +7,10 @@ import { FeesService } from '../fees/fees.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { VehicleIdentificationService } from '../vehicle-identification/vehicle-identification.service';
 import type { VehicleIdentityResult } from '../vehicle-identification/vehicle-identity.types';
+
+jest.mock('qrcode', () => ({
+  toDataURL: jest.fn().mockResolvedValue('data:image/png;base64,test-qr'),
+}));
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -121,6 +125,10 @@ describe('SessionsService', () => {
     }).compile();
 
     service = module.get<SessionsService>(SessionsService);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   // ── checkIn ───────────────────────────────────────────────────────────────
@@ -252,6 +260,21 @@ describe('SessionsService', () => {
       await expect(service.checkIn(dto, staffId)).rejects.toThrow(ConflictException);
     });
 
+    it('logs duplicate active session rejection before check-in allocation', async () => {
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      prisma.parkingSession.findFirst.mockResolvedValue(
+        makeSession({ id: 'existing-session-uuid', licensePlate: '59A-12345' }),
+      );
+
+      const dto = { licensePlate: '59A-12345', vehicleType: VehicleType.car };
+
+      await expect(service.checkIn(dto, staffId)).rejects.toThrow(ConflictException);
+      expect(allocationService.allocate).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Duplicate active session rejected'),
+      );
+    });
+
     // Concurrency: slot taken between allocation and transaction
     it('throws ConflictException when slot is taken between allocation and transaction lock', async () => {
       prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
@@ -305,12 +328,16 @@ describe('SessionsService', () => {
     });
 
     it('maps DB duplicate active plate protection to ConflictException', async () => {
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
       prisma.parkingSession.findFirst.mockResolvedValue(null);
       prisma.$transaction.mockRejectedValue({ code: 'P2002' });
 
       const dto = { licensePlate: '59A-12345', vehicleType: VehicleType.car };
 
       await expect(service.checkIn(dto, staffId)).rejects.toThrow(ConflictException);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Duplicate active session rejected'),
+      );
     });
 
     // 13.6: Response shape
@@ -455,6 +482,7 @@ describe('SessionsService', () => {
     // ── P0-A: Direct reservation ID from QR scan ────────────────────────
 
     it('fulfills reservation directly via dto.reservationId (P0-A)', async () => {
+      const logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation();
       const reservedSlot = makeSlot({ id: 7, code: 'T2-B-05', status: SlotStatus.reserved, zone: Zone.B, vehicleType: VehicleType.motorbike });
       const reservation = {
         id: 'reservation-direct-uuid',
@@ -462,6 +490,7 @@ describe('SessionsService', () => {
         slotId: 7,
         vehicleType: VehicleType.motorbike,
         status: 'active',
+        expiresAt: new Date(Date.now() + 30 * 60 * 1000),
         slot: reservedSlot,
       };
 
@@ -515,9 +544,13 @@ describe('SessionsService', () => {
       expect(capturedSessionData!['allocationStrategy']).toBe('reservation_fulfillment');
       expect(result.session.reservationId).toBe('reservation-direct-uuid');
       expect(result.session.identificationMethod).toBe('RESERVATION_QR');
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Check-in with reservation success'),
+      );
     });
 
-    it('falls back to allocation when dto.reservationId points to a non-active reservation (P0-A)', async () => {
+    it('rejects check-in when dto.reservationId points to a non-active reservation (P0-A)', async () => {
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
       vehicleIdentificationService.identifyForCheckIn.mockResolvedValue({
         source: 'RESERVATION_QR',
         reservationId: 'expired-reservation',
@@ -530,6 +563,7 @@ describe('SessionsService', () => {
         slotId: 3,
         vehicleType: VehicleType.car,
         status: 'expired',
+        expiresAt: new Date(Date.now() - 60_000),
         slot: makeSlot(),
       });
 
@@ -539,13 +573,16 @@ describe('SessionsService', () => {
         reservationId: 'expired-reservation',
       };
 
-      await service.checkIn(dto, staffId);
+      await expect(service.checkIn(dto, staffId)).rejects.toThrow(ConflictException);
 
-      // Should fall through to allocation since reservation is not active
-      expect(allocationService.allocate).toHaveBeenCalledWith(VehicleType.car);
+      expect(allocationService.allocate).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Expired reservation check-in rejected'),
+      );
     });
 
-    it('falls back to allocation when dto.reservationId vehicleType mismatches (P0-A)', async () => {
+    it('rejects check-in when dto.reservationId vehicleType mismatches (P0-A)', async () => {
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
       vehicleIdentificationService.identifyForCheckIn.mockResolvedValue({
         source: 'RESERVATION_QR',
         reservationId: 'mismatch-reservation',
@@ -558,6 +595,7 @@ describe('SessionsService', () => {
         slotId: 3,
         vehicleType: VehicleType.motorbike,
         status: 'active',
+        expiresAt: new Date(Date.now() + 30 * 60 * 1000),
         slot: makeSlot(),
       });
 
@@ -567,10 +605,43 @@ describe('SessionsService', () => {
         reservationId: 'mismatch-reservation',
       };
 
-      await service.checkIn(dto, staffId);
+      await expect(service.checkIn(dto, staffId)).rejects.toThrow(ConflictException);
 
-      // Should fall through to allocation since vehicle type doesn't match
-      expect(allocationService.allocate).toHaveBeenCalledWith(VehicleType.car);
+      expect(allocationService.allocate).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Vehicle type mismatch rejected'),
+      );
+    });
+
+    it('rejects check-in when dto.reservationId is active but expired by expiresAt (P0-A)', async () => {
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      vehicleIdentificationService.identifyForCheckIn.mockResolvedValue({
+        source: 'RESERVATION_QR',
+        reservationId: 'past-active-reservation',
+        licensePlate: '59A-12345',
+      } as VehicleIdentityResult);
+
+      prisma.reservation.findUnique.mockResolvedValue({
+        id: 'past-active-reservation',
+        driverId: 'driver-uuid',
+        slotId: 3,
+        vehicleType: VehicleType.car,
+        status: 'active',
+        expiresAt: new Date(Date.now() - 60_000),
+        slot: makeSlot({ status: SlotStatus.reserved }),
+      });
+
+      const dto = {
+        licensePlate: '59A-12345',
+        vehicleType: VehicleType.car,
+        reservationId: 'past-active-reservation',
+      };
+
+      await expect(service.checkIn(dto, staffId)).rejects.toThrow(ConflictException);
+      expect(allocationService.allocate).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Expired reservation check-in rejected'),
+      );
     });
 
     // ── P0-B / P1-B: identificationMethod from identity source ─────────

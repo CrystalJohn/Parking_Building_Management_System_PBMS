@@ -5,6 +5,7 @@ import { QueryState } from '../../components/QueryState';
 import { Screen } from '../../components/Screen';
 import { useParkingHistoryQuery } from '../../hooks/useDriverQueries';
 import { colors } from '../../theme/colors';
+import { formatDateTimeVN } from '../../utils/dateTime';
 
 export function HistoryScreen() {
   const historyQuery = useParkingHistoryQuery();
@@ -36,9 +37,7 @@ export function HistoryScreen() {
   );
 }
 
-function formatDate(value: string) {
-  return new Date(value).toLocaleString();
-}
+const formatDate = formatDateTimeVN;
 
 const styles = StyleSheet.create({
   row: {

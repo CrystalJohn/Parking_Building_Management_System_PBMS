@@ -6,8 +6,13 @@ interface QRScannerProps {
   onScan: (decodedText: string) => void
   /** Called when the user closes the scanner. */
   onClose: () => void
-  /** Optional: called when the user submits a session ID manually. */
-  onManualInput?: (sessionId: string) => void
+  /** Optional: called when the user submits a QR payload manually. */
+  onManualInput?: (value: string) => void
+  title?: string
+  instructions?: string
+  manualToggleLabel?: string
+  manualInputLabel?: string
+  manualInputPlaceholder?: string
 }
 
 /**
@@ -31,7 +36,16 @@ function describeError(err: unknown): string {
  *
  * Req 2.1, Design ref: QR scanning
  */
-export function QRScanner({ onScan, onClose, onManualInput }: QRScannerProps) {
+export function QRScanner({
+  onScan,
+  onClose,
+  onManualInput,
+  title = 'Quét mã QR',
+  instructions = 'Đặt mã QR cách camera 15-25cm, giữ thẳng và đủ sáng.',
+  manualToggleLabel = 'Camera không quét được? Nhập mã thủ công',
+  manualInputLabel = 'Nhập session ID (UUID từ QR)',
+  manualInputPlaceholder = 'VD: 5f3a9c1e-...',
+}: QRScannerProps) {
   const scannerRef = useRef<Html5Qrcode | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const scannedRef = useRef(false)
@@ -145,11 +159,11 @@ export function QRScanner({ onScan, onClose, onManualInput }: QRScannerProps) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
       role="dialog"
       aria-modal="true"
-      aria-label="Quét mã QR"
+      aria-label={title}
     >
       <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-          <h3 className="text-lg font-semibold">Quét mã QR</h3>
+          <h3 className="text-lg font-semibold">{title}</h3>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
@@ -180,7 +194,7 @@ export function QRScanner({ onScan, onClose, onManualInput }: QRScannerProps) {
                 className="w-full aspect-square rounded-md overflow-hidden bg-black"
               />
               <p className="text-xs text-gray-500 text-center mt-3">
-                Đặt mã QR cách camera 15-25cm, giữ thẳng và đủ sáng.
+                {instructions}
               </p>
               {onManualInput && (
                 <div className="mt-3 border-t border-gray-200 pt-3">
@@ -190,17 +204,17 @@ export function QRScanner({ onScan, onClose, onManualInput }: QRScannerProps) {
                       onClick={() => setShowManual(true)}
                       className="text-sm text-primary-600 hover:underline w-full text-center"
                     >
-                      Camera không quét được? Nhập mã thủ công
+                      {manualToggleLabel}
                     </button>
                   ) : (
                     <div className="space-y-2">
                       <label className="block text-xs text-gray-600">
-                        Nhập session ID (UUID từ QR)
+                        {manualInputLabel}
                       </label>
                       <input
                         type="text"
                         className="input text-xs font-mono"
-                        placeholder="VD: 5f3a9c1e-..."
+                        placeholder={manualInputPlaceholder}
                         value={manualInput}
                         onChange={(e) => setManualInput(e.target.value)}
                       />

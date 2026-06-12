@@ -1,6 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const workspaceRoot = path.resolve(__dirname, '../..')
 
 export default defineConfig({
   plugins: [react()],
@@ -10,8 +14,8 @@ export default defineConfig({
     // duplicate React when both root node_modules and apps/web/node_modules
     // contain their own copy.
     alias: {
-      react: path.resolve('./node_modules/react'),
-      'react-dom': path.resolve('./node_modules/react-dom'),
+      react: path.resolve(workspaceRoot, 'node_modules/react'),
+      'react-dom': path.resolve(workspaceRoot, 'node_modules/react-dom'),
     },
   },
   server: {

@@ -1,6 +1,7 @@
 import type { CompositeScreenProps } from '@react-navigation/native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
@@ -8,8 +9,9 @@ import { Button } from '../../components/Button';
 import { InfoCard } from '../../components/InfoCard';
 import { QueryState } from '../../components/QueryState';
 import { Screen } from '../../components/Screen';
-import { useActiveSessionsQuery } from '../../hooks/useDriverQueries';
+import { driverQueryKeys, useActiveSessionsQuery } from '../../hooks/useDriverQueries';
 import { colors } from '../../theme/colors';
+import { formatDateTimeVN } from '../../utils/dateTime';
 import { formatDuration, getEstimatedFee, getSessionDurationMs } from '../../utils/session';
 import type { DriverTabParamList, RootStackParamList } from '../../navigation/types';
 
@@ -19,9 +21,16 @@ type Props = CompositeScreenProps<
 >;
 
 export function ActiveSessionScreen({ navigation }: Props) {
+  const queryClient = useQueryClient();
   const activeSessionsQuery = useActiveSessionsQuery();
   const activeSession = activeSessionsQuery.data?.[0];
   const [durationMs, setDurationMs] = useState(0);
+
+  useEffect(() => {
+    if (activeSessionsQuery.isSuccess && activeSessionsQuery.data?.length) {
+      void queryClient.invalidateQueries({ queryKey: driverQueryKeys.reservations.all });
+    }
+  }, [activeSessionsQuery.data?.length, activeSessionsQuery.isSuccess, queryClient]);
 
   useEffect(() => {
     if (!activeSession) {
@@ -105,9 +114,7 @@ function formatFloor(slot?: SlotLike) {
   return `Floor ID ${slot.floorId ?? 'N/A'}`;
 }
 
-function formatDate(value: string) {
-  return new Date(value).toLocaleString();
-}
+const formatDate = formatDateTimeVN;
 
 function Detail({ label, value }: { label: string; value: string }) {
   return (

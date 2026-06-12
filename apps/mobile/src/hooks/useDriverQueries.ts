@@ -1,11 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { driverApi } from '../api/driver';
-import type { VehicleType } from '../types/api';
+import type { Reservation, VehicleType } from '../types/api';
 
 export const driverQueryKeys = {
   availability: ['driver', 'availability'] as const,
-  reservations: ['driver', 'reservations'] as const,
+  reservations: {
+    all: ['driver', 'reservations'] as const,
+    list: ['driver', 'reservations', 'list'] as const,
+    detail: (reservationId: string) => ['driver', 'reservations', 'detail', reservationId] as const,
+  },
   activeSessions: ['driver', 'active-sessions'] as const,
   history: ['driver', 'history'] as const,
   qrCode: (sessionId: string) => ['driver', 'qr-code', sessionId] as const,
@@ -20,18 +24,16 @@ export function useSlotAvailabilityQuery() {
 
 export function useReservationsQuery() {
   return useQuery({
-    queryKey: driverQueryKeys.reservations,
+    queryKey: driverQueryKeys.reservations.list,
     queryFn: driverApi.getMyReservations,
   });
 }
 
 export function useReservationDetailQuery(reservationId: string) {
-  const reservationsQuery = useReservationsQuery();
-
-  return {
-    ...reservationsQuery,
-    data: reservationsQuery.data?.find((reservation) => reservation.id === reservationId),
-  };
+  return useQuery({
+    queryKey: driverQueryKeys.reservations.detail(reservationId),
+    queryFn: () => driverApi.getReservationById(reservationId),
+  });
 }
 
 export function useCreateReservationMutation() {
@@ -39,8 +41,12 @@ export function useCreateReservationMutation() {
 
   return useMutation({
     mutationFn: (vehicleType: VehicleType) => driverApi.createReservation(vehicleType),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: driverQueryKeys.reservations });
+    onSuccess: (reservation: Reservation) => {
+      queryClient.setQueryData(
+        driverQueryKeys.reservations.detail(reservation.id),
+        reservation
+      );
+      queryClient.invalidateQueries({ queryKey: driverQueryKeys.reservations.all });
       queryClient.invalidateQueries({ queryKey: driverQueryKeys.availability });
     },
   });
@@ -52,7 +58,7 @@ export function useCancelReservationMutation() {
   return useMutation({
     mutationFn: (reservationId: string) => driverApi.cancelReservation(reservationId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: driverQueryKeys.reservations });
+      queryClient.invalidateQueries({ queryKey: driverQueryKeys.reservations.all });
       queryClient.invalidateQueries({ queryKey: driverQueryKeys.availability });
     },
   });

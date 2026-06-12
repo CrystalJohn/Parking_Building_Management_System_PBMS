@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import {
   ConflictException,
   ForbiddenException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -103,6 +104,10 @@ describe('ReservationsService', () => {
     service = module.get<ReservationsService>(ReservationsService);
   });
 
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   // ── create() (18.1, 18.2, 18.5) ──────────────────────────────────────────
 
   describe('create()', () => {
@@ -147,6 +152,8 @@ describe('ReservationsService', () => {
     });
 
     it('creates a reservation and returns slot info (18.1)', async () => {
+      const logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+
       const result = await service.create(
         { vehicleType: VehicleType.motorbike },
         driverId,
@@ -158,6 +165,9 @@ describe('ReservationsService', () => {
       expect(result.slot).toHaveProperty('code');
       expect(result.slot).toHaveProperty('floor');
       expect(allocationService.allocate).toHaveBeenCalledWith(VehicleType.motorbike);
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Reservation created'),
+      );
     });
 
     it('throws ForbiddenException when driver not found (18.5)', async () => {
@@ -389,6 +399,8 @@ describe('ReservationsService', () => {
 
   describe('cancel()', () => {
     it('cancels reservation and releases slot', async () => {
+      const logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+
       prisma.reservation.findUnique.mockResolvedValue(makeReservation());
       prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
         const tx = {
@@ -401,6 +413,9 @@ describe('ReservationsService', () => {
       const result = await service.cancel('reservation-uuid-1', 'driver-uuid');
 
       expect(result.message).toContain('cancelled');
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Reservation cancelled'),
+      );
     });
 
     it('throws NotFoundException when reservation not found', async () => {
@@ -475,6 +490,8 @@ describe('ReservationsService', () => {
     });
 
     it('expires reservations past their expires_at and releases slots', async () => {
+      const logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+
       const expired = [
         { id: 'res-1', slotId: 1 },
         { id: 'res-2', slotId: 5 },
@@ -509,6 +526,9 @@ describe('ReservationsService', () => {
       expect(prisma.$transaction).toHaveBeenCalledTimes(2);
       expect(txCalls.reservationIds).toEqual(['res-1', 'res-2']);
       expect(txCalls.slotIds).toEqual([1, 5]);
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Reservation expired'),
+      );
     });
 
     it('queries for active reservations with expiresAt < now', async () => {

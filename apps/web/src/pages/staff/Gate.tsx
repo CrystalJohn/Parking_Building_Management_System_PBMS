@@ -7,6 +7,7 @@ import {
   checkOut,
   confirmPayment,
   type CheckInResponse,
+  type CheckInIdentificationMethod,
   type CheckOutResponse,
   type ConfirmPaymentResponse,
   type VehicleType,
@@ -14,6 +15,7 @@ import {
 import { Receipt } from '../../components/receipt/Receipt'
 import { QRScanner } from '../../components/qr-scanner/QRScanner'
 import { LicensePlateScanner } from '../../components/plate-scanner/LicensePlateScanner'
+import { formatDateTimeVN } from '../../lib/date-time'
 
 type Tab = 'check-in' | 'check-out'
 
@@ -29,14 +31,7 @@ function debugLog(...args: unknown[]) {
   }
 }
 
-const formatDateTime = (iso: string) =>
-  new Date(iso).toLocaleString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+const formatDateTime = formatDateTimeVN
 
 /**
  * Extracts a user-friendly error message from an Axios error.
@@ -126,23 +121,43 @@ function CheckInPanel({ toasts }: PanelProps) {
   const [licensePlate, setLicensePlate] = useState('')
   const [vehicleType, setVehicleType] = useState<VehicleType>('car')
   const [driverPhone, setDriverPhone] = useState('')
+  const [reservationId, setReservationId] = useState('')
+  const [plateIdentificationMethod, setPlateIdentificationMethod] =
+    useState<CheckInIdentificationMethod>('MANUAL_PLATE')
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<CheckInResponse | null>(null)
   const [showPlateScanner, setShowPlateScanner] = useState(false)
+  const [showReservationScanner, setShowReservationScanner] = useState(false)
   const [showManualInput, setShowManualInput] = useState(false)
 
   const reset = () => {
     setLicensePlate('')
     setDriverPhone('')
+    setReservationId('')
+    setPlateIdentificationMethod('MANUAL_PLATE')
     setResult(null)
     setShowManualInput(false)
+    setShowReservationScanner(false)
   }
 
   const handlePlateDetected = useCallback((plate: string) => {
     setLicensePlate(plate)
+    setPlateIdentificationMethod('OCR')
     setShowPlateScanner(false)
     setShowManualInput(true)
     toasts.showSuccess(`Quét được biển số: ${plate}`)
+  }, [toasts])
+
+  const handleReservationQrScanned = useCallback((decodedText: string) => {
+    const code = decodedText.trim()
+    setShowReservationScanner(false)
+    if (!code) {
+      toasts.showError('Mã reservation QR không hợp lệ')
+      return
+    }
+
+    setReservationId(code)
+    toasts.showSuccess('Đã nhận reservation ID từ QR')
   }, [toasts])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -158,6 +173,10 @@ function CheckInPanel({ toasts }: PanelProps) {
         licensePlate: licensePlate.trim().toUpperCase(),
         vehicleType,
         driverPhone: driverPhone.trim() || undefined,
+        reservationId: reservationId.trim() || undefined,
+        identificationMethod: reservationId.trim()
+          ? 'RESERVATION_QR'
+          : plateIdentificationMethod,
       })
       setResult(response)
       toasts.showSuccess(`Đã gán slot ${response.slot.code}`)
@@ -181,6 +200,50 @@ function CheckInPanel({ toasts }: PanelProps) {
     <>
       <form onSubmit={handleSubmit} className="space-y-5">
         <h2 className="text-lg font-semibold">Check-in xe vào bãi</h2>
+
+        <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 space-y-3">
+          <div>
+            <label className="block text-sm font-semibold text-gray-800">
+              Reservation ID / Code
+            </label>
+            <p className="text-xs text-gray-600 mt-1">
+              Optional - used when the driver has reserved a slot. OCR / manual plate is still required to confirm the vehicle plate.
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button
+              type="button"
+              onClick={() => setShowReservationScanner(true)}
+              className="btn-secondary"
+              disabled={submitting}
+            >
+              Scan Reservation QR
+            </button>
+            {reservationId && (
+              <button
+                type="button"
+                onClick={() => setReservationId('')}
+                className="text-sm text-gray-500 hover:text-gray-700 px-2"
+                disabled={submitting}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          <input
+            className="input font-mono text-xs"
+            placeholder="Paste or type reservation UUID"
+            value={reservationId}
+            onChange={(e) => setReservationId(e.target.value)}
+            disabled={submitting}
+          />
+
+          <p className="text-xs text-gray-500">
+            If provided, backend will use the reserved slot. If empty, check-in uses OCR/manual plate with smart allocation.
+          </p>
+        </div>
 
         {/* ── License plate section ── */}
         <div>
@@ -238,7 +301,10 @@ function CheckInPanel({ toasts }: PanelProps) {
                       className="input uppercase pr-10"
                       placeholder="VD: 59A-12345"
                       value={licensePlate}
-                      onChange={(e) => setLicensePlate(e.target.value)}
+                      onChange={(e) => {
+                        setLicensePlate(e.target.value)
+                        setPlateIdentificationMethod('MANUAL_PLATE')
+                      }}
                       required
                       autoFocus
                     />
@@ -341,6 +407,19 @@ function CheckInPanel({ toasts }: PanelProps) {
         <LicensePlateScanner
           onDetected={handlePlateDetected}
           onClose={() => setShowPlateScanner(false)}
+        />
+      )}
+
+      {showReservationScanner && (
+        <QRScanner
+          title="Scan Reservation QR"
+          instructions="Scan the reservation QR/code from the driver's mobile reservation detail screen."
+          manualToggleLabel="Camera cannot scan? Enter reservation ID/code manually"
+          manualInputLabel="Reservation ID / Code"
+          manualInputPlaceholder="Reservation UUID"
+          onScan={handleReservationQrScanned}
+          onClose={() => setShowReservationScanner(false)}
+          onManualInput={handleReservationQrScanned}
         />
       )}
     </>

@@ -1,5 +1,6 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Alert, StyleSheet, Text, View } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
 
 import { getErrorMessage } from '../../api/client';
 import { Button } from '../../components/Button';
@@ -12,6 +13,8 @@ import {
 } from '../../hooks/useDriverQueries';
 import { colors } from '../../theme/colors';
 import type { RootStackParamList } from '../../navigation/types';
+import { formatDateTimeVN } from '../../utils/dateTime';
+import { canCancelReservation, getReservationStatusLabel } from '../../utils/reservationStatus';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ReservationDetail'>;
 
@@ -46,7 +49,7 @@ export function ReservationDetailScreen({ navigation, route }: Props) {
 
         {reservation ? (
           <View style={styles.details}>
-            <Detail label="Status" value={reservation.status} />
+            <Detail label="Status" value={getReservationStatusLabel(reservation.status)} />
             <Detail label="Vehicle type" value={reservation.vehicleType} />
             <Detail label="License plate" value={reservation.licensePlate ?? 'Not assigned'} />
             <Detail label="Assigned slot" value={reservation.slot?.code ?? 'Not assigned'} />
@@ -55,18 +58,22 @@ export function ReservationDetailScreen({ navigation, route }: Props) {
             <Detail label="Created time" value={formatDate(reservation.createdAt)} />
             <Detail label="Expires time" value={formatDate(reservation.expiresAt)} />
 
-            {reservation.status === 'active' ? (
+            {canCancelReservation(reservation.status) ? (
               <>
                 <View style={styles.reservationCodeCard}>
-                  <Text style={styles.codeTitle}>Reservation check-in code</Text>
+                  <Text style={styles.codeTitle}>Reservation QR</Text>
                   <Text style={styles.codeHelp}>
-                    Show this reservation QR/code to staff at check-in gate
+                    Show this Reservation QR to staff at the check-in gate.
                   </Text>
+                  <View style={styles.qrWrap}>
+                    <QRCode value={reservation.id} size={210} />
+                  </View>
+                  <Text style={styles.codeLabel}>Text fallback: reservation ID</Text>
                   <Text selectable style={styles.codeValue}>
                     {reservation.id}
                   </Text>
                   <Text style={styles.codeNote}>
-                    Payload: reservation ID. This is separate from the parking session QR used for checkout.
+                    QR payload: reservation ID. This is separate from the Session QR used for checkout.
                   </Text>
                 </View>
 
@@ -115,9 +122,7 @@ function formatFloor(slot?: SlotLike) {
   return `Floor ID ${slot.floorId ?? 'N/A'}`;
 }
 
-function formatDate(value: string) {
-  return new Date(value).toLocaleString();
-}
+const formatDate = formatDateTimeVN;
 
 function Detail({ label, value }: { label: string; value: string }) {
   return (
@@ -165,6 +170,20 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 13,
     fontWeight: '700',
+  },
+  qrWrap: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: colors.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+  },
+  codeLabel: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
   },
   codeValue: {
     backgroundColor: '#ffffff',

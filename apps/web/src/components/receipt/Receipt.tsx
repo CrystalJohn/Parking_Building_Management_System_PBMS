@@ -1,4 +1,5 @@
 import type { ConfirmPaymentResponse } from '../../lib/sessions-api'
+import { formatDateTimeVN } from '../../lib/date-time'
 
 interface ReceiptProps {
   data: ConfirmPaymentResponse
@@ -6,15 +7,7 @@ interface ReceiptProps {
 
 const VND = (n: number) => `${n.toLocaleString('vi-VN')} VND`
 
-const formatDateTime = (iso: string) =>
-  new Date(iso).toLocaleString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
+const formatDateTime = formatDateTimeVN
 
 /**
  * Printable parking receipt. Use window.print() from the parent.

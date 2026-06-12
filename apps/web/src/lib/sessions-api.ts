@@ -5,11 +5,15 @@ import api from './api'
 export type VehicleType = 'car' | 'motorbike'
 export type Zone = 'A' | 'B'
 export type SessionStatus = 'active' | 'completed' | 'cancelled'
+export type CheckInIdentificationMethod = 'RESERVATION_QR' | 'OCR' | 'MANUAL_PLATE'
 
 export interface CheckInRequest {
   licensePlate: string
   vehicleType: VehicleType
   driverPhone?: string
+  reservationId?: string
+  identificationMethod?: CheckInIdentificationMethod
+  identificationConfidence?: number
 }
 
 export interface FloorInfo {

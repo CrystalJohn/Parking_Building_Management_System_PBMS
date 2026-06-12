@@ -3,17 +3,11 @@ import { isAxiosError } from 'axios'
 import api from '../../lib/api'
 import { ToastContainer } from '../../components/ui/Toast'
 import { useToasts } from '../../lib/use-toasts'
+import { formatDateTimeVN } from '../../lib/date-time'
 
 const VND = (n: number) => `${n.toLocaleString('vi-VN')} VND`
 
-const formatDateTime = (iso: string) =>
-  new Date(iso).toLocaleString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+const formatDateTime = formatDateTimeVN
 
 interface LostTicketResult {
   session: {

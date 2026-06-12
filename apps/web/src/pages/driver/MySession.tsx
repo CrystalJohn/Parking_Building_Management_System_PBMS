@@ -4,15 +4,9 @@ import {
   getSessionQr,
   type ActiveSession,
 } from '../../lib/driver-api'
+import { formatDateTimeVN } from '../../lib/date-time'
 
-const formatDateTime = (iso: string) =>
-  new Date(iso).toLocaleString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+const formatDateTime = formatDateTimeVN
 
 /**
  * 23.4: Driver My Session — show QR code for active session.

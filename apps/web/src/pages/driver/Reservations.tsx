@@ -8,15 +8,9 @@ import {
   type Reservation,
   type VehicleType,
 } from '../../lib/driver-api'
+import { formatDateTimeVN } from '../../lib/date-time'
 
-const formatDateTime = (iso: string) =>
-  new Date(iso).toLocaleString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+const formatDateTime = formatDateTimeVN
 
 const STATUS_LABELS: Record<string, { text: string; color: string }> = {
   active: { text: 'Đang giữ', color: 'bg-green-100 text-green-800' },

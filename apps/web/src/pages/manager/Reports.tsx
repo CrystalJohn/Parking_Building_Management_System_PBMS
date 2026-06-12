@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import api from '../../lib/api'
+import { formatDateTimeVN } from '../../lib/date-time'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -157,7 +158,7 @@ function RevenueTab() {
                   {data.map((row, idx) => (
                     <tr key={idx}>
                       <td className="px-4 py-2 text-gray-600">
-                        {new Date(row.period).toLocaleDateString('vi-VN')}
+                        {formatDateTimeVN(row.period)}
                       </td>
                       <td className="px-4 py-2">
                         {row.vehicleType === 'car' ? 'Ô tô' : 'Xe máy'}

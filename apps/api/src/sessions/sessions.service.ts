@@ -61,6 +61,9 @@ export class SessionsService {
     });
 
     if (existingSession) {
+      this.logger.warn(
+        `Duplicate active session rejected | licensePlate=${licensePlate} existingSessionId=${existingSession.id}`,
+      );
       throw new ConflictException(
         `Biển số ${licensePlate} đang có phiên gửi xe chưa check-out`,
       );
@@ -92,6 +95,7 @@ export class SessionsService {
       slotId: number;
       vehicleType: any;
       status: string;
+      expiresAt?: Date | null;
       slot: any;
     } | null = null;
 
@@ -117,6 +121,21 @@ export class SessionsService {
       }
     }
 
+    if (identity.reservationId) {
+      if (!activeReservation) {
+        activeReservation = await this.prisma.reservation.findUnique({
+          where: { id: identity.reservationId },
+          include: { slot: { include: { floor: true } } },
+        });
+      }
+
+      this.assertReservationCanBeFulfilled(activeReservation, dto.vehicleType);
+
+      if (!driverId && activeReservation.driverId) {
+        driverId = activeReservation.driverId;
+      }
+    }
+
     // Fallback: look up reservation via driverId if no direct reservation resolved
     if (!activeReservation && driverId) {
       activeReservation = await this.prisma.reservation.findFirst({
@@ -127,6 +146,10 @@ export class SessionsService {
         },
         include: { slot: { include: { floor: true } } },
       });
+
+      if (activeReservation) {
+        this.assertReservationCanBeFulfilled(activeReservation, dto.vehicleType);
+      }
     }
 
     if (activeReservation) {
@@ -210,11 +233,20 @@ export class SessionsService {
       });
     } catch (error) {
       if (this.isPrismaUniqueConstraintError(error)) {
+        this.logger.warn(
+          `Duplicate active session rejected | licensePlate=${licensePlate} source=db_unique_constraint`,
+        );
         throw new ConflictException(
           'Duplicate active parking session detected for this license plate',
         );
       }
       throw error;
+    }
+
+    if (reservationId) {
+      this.logger.log(
+        `Check-in with reservation success | reservationId=${reservationId} sessionId=${session.id} licensePlate=${session.licensePlate} slotId=${session.slot.id} staffId=${staffId}`,
+      );
     }
 
     return {
@@ -250,6 +282,68 @@ export class SessionsService {
       'code' in error &&
       (error as { code?: string }).code === 'P2002'
     );
+  }
+
+  private assertReservationCanBeFulfilled(
+    reservation: {
+      id: string;
+      vehicleType: VehicleType;
+      status: string;
+      expiresAt?: Date | null;
+      slot?: { status?: string } | null;
+    } | null,
+    vehicleType: VehicleType,
+  ): asserts reservation is {
+    id: string;
+    vehicleType: VehicleType;
+    status: string;
+    expiresAt?: Date | null;
+    slot: { status?: string };
+  } {
+    if (!reservation) {
+      throw new NotFoundException('Active reservation not found');
+    }
+
+    if (reservation.status !== 'active') {
+      if (reservation.status === 'expired') {
+        this.logger.warn(
+          `Expired reservation check-in rejected | reservationId=${reservation.id} requestedVehicleType=${vehicleType}`,
+        );
+      } else {
+        this.logger.warn(
+          `Reservation check-in rejected | reservationId=${reservation.id} status=${reservation.status} requestedVehicleType=${vehicleType}`,
+        );
+      }
+      throw new ConflictException(
+        `Reservation ${reservation.id} is already ${reservation.status}`,
+      );
+    }
+
+    if (reservation.expiresAt && reservation.expiresAt.getTime() <= Date.now()) {
+      this.logger.warn(
+        `Expired reservation check-in rejected | reservationId=${reservation.id} expiresAt=${reservation.expiresAt.toISOString()} requestedVehicleType=${vehicleType}`,
+      );
+      throw new ConflictException(`Reservation ${reservation.id} is expired`);
+    }
+
+    if (reservation.vehicleType !== vehicleType) {
+      this.logger.warn(
+        `Vehicle type mismatch rejected | reservationId=${reservation.id} reservationVehicleType=${reservation.vehicleType} requestedVehicleType=${vehicleType}`,
+      );
+      throw new ConflictException(
+        `Reservation ${reservation.id} is for ${reservation.vehicleType}, not ${vehicleType}`,
+      );
+    }
+
+    if (!reservation.slot) {
+      throw new ConflictException(`Reservation ${reservation.id} has no assigned slot`);
+    }
+
+    if (reservation.slot.status && reservation.slot.status !== 'reserved') {
+      throw new ConflictException(
+        `Reserved slot for reservation ${reservation.id} is ${reservation.slot.status}`,
+      );
+    }
   }
 
   /**

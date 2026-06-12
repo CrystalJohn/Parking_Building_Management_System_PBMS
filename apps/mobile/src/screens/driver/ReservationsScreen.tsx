@@ -1,8 +1,8 @@
-import type { CompositeScreenProps } from '@react-navigation/native';
+import { useFocusEffect, type CompositeScreenProps } from '@react-navigation/native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { Alert, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { getErrorMessage } from '../../api/client';
 import { Button } from '../../components/Button';
@@ -17,6 +17,8 @@ import {
 import { colors } from '../../theme/colors';
 import type { DriverTabParamList, RootStackParamList } from '../../navigation/types';
 import type { VehicleType } from '../../types/api';
+import { formatDateTimeVN } from '../../utils/dateTime';
+import { canCancelReservation, getReservationStatusLabel } from '../../utils/reservationStatus';
 
 const vehicleTypes: VehicleType[] = ['car', 'motorbike'];
 
@@ -31,10 +33,24 @@ export function ReservationsScreen({ navigation }: Props) {
   const createReservation = useCreateReservationMutation();
   const cancelReservation = useCancelReservationMutation();
 
+  useFocusEffect(
+    useCallback(() => {
+      void reservationsQuery.refetch();
+    }, [reservationsQuery.refetch])
+  );
+
   async function handleCreateReservation() {
     try {
-      await createReservation.mutateAsync(vehicleType);
-      Alert.alert('Reservation created', 'PBMS assigned a slot using backend allocation logic.');
+      const reservation = await createReservation.mutateAsync(vehicleType);
+      if (reservation.id) {
+        navigation.navigate('ReservationDetail', { reservationId: reservation.id });
+        return;
+      }
+
+      Alert.alert(
+        'Reservation created',
+        'Open your reservation detail to show the Reservation QR at check-in.'
+      );
     } catch (error) {
       Alert.alert('Create reservation failed', getErrorMessage(error));
     }
@@ -49,7 +65,18 @@ export function ReservationsScreen({ navigation }: Props) {
   }
 
   return (
-    <Screen>
+    <Screen
+      refreshControl={
+        <RefreshControl
+          colors={[colors.primary]}
+          refreshing={reservationsQuery.isRefetching && !reservationsQuery.isLoading}
+          tintColor={colors.primary}
+          onRefresh={() => {
+            void reservationsQuery.refetch();
+          }}
+        />
+      }
+    >
       <InfoCard title="Make Reservation" subtitle="Smart slot allocation runs in backend">
         <View style={styles.segment}>
           {vehicleTypes.map((type) => (
@@ -87,20 +114,28 @@ export function ReservationsScreen({ navigation }: Props) {
             <View style={styles.rowText}>
               <Text style={styles.rowTitle}>{reservation.vehicleType}</Text>
               <Text style={styles.muted}>
-                {reservation.status} · expires {formatDate(reservation.expiresAt)}
+                {getReservationStatusLabel(reservation.status)} - expires {formatDate(reservation.expiresAt)}
               </Text>
               {reservation.slot?.code ? (
                 <Text style={styles.muted}>Slot {reservation.slot.code}</Text>
               ) : null}
             </View>
-            {reservation.status === 'active' ? (
-              <Button
-                variant="danger"
-                loading={cancelReservation.isPending}
-                onPress={() => handleCancel(reservation.id)}
-              >
-                Cancel
-              </Button>
+            {canCancelReservation(reservation.status) ? (
+              <View style={styles.actions}>
+                <Button
+                  variant="secondary"
+                  onPress={() => navigation.navigate('ReservationDetail', { reservationId: reservation.id })}
+                >
+                  View Reservation QR
+                </Button>
+                <Button
+                  variant="danger"
+                  loading={cancelReservation.isPending}
+                  onPress={() => handleCancel(reservation.id)}
+                >
+                  Cancel
+                </Button>
+              </View>
             ) : null}
           </Pressable>
         ))}
@@ -109,9 +144,7 @@ export function ReservationsScreen({ navigation }: Props) {
   );
 }
 
-function formatDate(value: string) {
-  return new Date(value).toLocaleString();
-}
+const formatDate = formatDateTimeVN;
 
 const styles = StyleSheet.create({
   segment: {
@@ -147,6 +180,9 @@ const styles = StyleSheet.create({
   },
   rowText: {
     gap: 4,
+  },
+  actions: {
+    gap: 8,
   },
   rowTitle: {
     color: colors.text,

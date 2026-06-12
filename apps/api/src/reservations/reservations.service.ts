@@ -108,6 +108,10 @@ export class ReservationsService {
       return newReservation;
     });
 
+    this.logger.log(
+      `Reservation created | reservationId=${reservation.id} driverId=${driverId} vehicleType=${reservation.vehicleType} slotId=${reservation.slotId} slotCode=${reservation.slot.code} expiresAt=${reservation.expiresAt.toISOString()}`,
+    );
+
     return {
       reservation: {
         id: reservation.id,
@@ -202,6 +206,10 @@ export class ReservationsService {
       });
     });
 
+    this.logger.log(
+      `Reservation cancelled | reservationId=${reservationId} driverId=${driverId} slotId=${reservation.slotId}`,
+    );
+
     return { message: 'Reservation cancelled successfully' };
   }
 
@@ -239,6 +247,10 @@ export class ReservationsService {
             data: { status: 'available' },
           });
         });
+
+        this.logger.log(
+          `Reservation expired | reservationId=${reservation.id} slotId=${reservation.slotId}`,
+        );
       } catch (error) {
         // Log but don't throw — other reservations should still be processed
         this.logger.error(

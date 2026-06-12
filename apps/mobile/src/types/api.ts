@@ -47,6 +47,23 @@ export type Reservation = {
   };
 };
 
+export type CreateReservationResponse =
+  | Reservation
+  | {
+      reservation: Omit<Reservation, 'slot'>;
+      slot?: {
+        id: number;
+        code: string;
+        floorId?: number;
+        zone: string;
+        floor?: {
+          id: number;
+          floorNumber: number;
+          name: string;
+        };
+      };
+    };
+
 export type ParkingSession = {
   id: string;
   licensePlate: string;
@@ -79,14 +96,17 @@ export type Payment = {
   paidAt?: string | null;
 };
 
-export type SlotAvailability = {
-  total?: number;
-  available?: number;
-  occupied?: number;
-  reserved?: number;
-  maintenance?: number;
-  [key: string]: unknown;
+export type SlotAvailabilityItem = {
+  floorId: number;
+  floorNumber: number;
+  floorName: string;
+  zone: string;
+  vehicleType: VehicleType;
+  available: number;
+  total: number;
 };
+
+export type SlotAvailability = SlotAvailabilityItem[];
 
 export type QrCodeResponse = {
   qrCode?: string;
