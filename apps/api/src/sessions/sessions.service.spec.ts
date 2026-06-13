@@ -7,6 +7,7 @@ import { FeesService } from '../fees/fees.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { VehicleIdentificationService } from '../vehicle-identification/vehicle-identification.service';
 import type { VehicleIdentityResult } from '../vehicle-identification/vehicle-identity.types';
+import * as QRCode from 'qrcode';
 
 jest.mock('qrcode', () => ({
   toDataURL: jest.fn().mockResolvedValue('data:image/png;base64,test-qr'),
@@ -43,6 +44,10 @@ const makeSession = (overrides: Partial<{
   id: string; licensePlate: string; vehicleType: VehicleType;
   status: SessionStatus; qrCode: string | null; driverId: string | null;
   reservationId: string | null;
+  sessionCode: string | null;
+  ticketGeneratedAt: Date | null;
+  ticketIssuedAt: Date | null;
+  ticketIssuedByStaffId: string | null;
   allocationStrategy: string; allocationTimeMs: number;
   slot: ReturnType<typeof makeSlot>;
   driver: { id: string; phone: string; fullName: string | null } | null;
@@ -58,6 +63,10 @@ const makeSession = (overrides: Partial<{
   checkOutTime: null,
   slotId: 1,
   reservationId: null,
+  sessionCode: 'PBMS-SESSION',
+  ticketGeneratedAt: new Date('2024-01-01T08:00:00Z'),
+  ticketIssuedAt: null,
+  ticketIssuedByStaffId: null,
   feeAmount: 0,
   penaltyAmount: 0,
   isPaid: false,
@@ -82,8 +91,9 @@ describe('SessionsService', () => {
   let service: SessionsService;
   let prisma: {
     user: { findUnique: jest.Mock };
-    parkingSession: { create: jest.Mock; findUnique: jest.Mock; findMany: jest.Mock; findFirst: jest.Mock };
+    parkingSession: { create: jest.Mock; findUnique: jest.Mock; findMany: jest.Mock; findFirst: jest.Mock; update: jest.Mock };
     reservation: { findFirst: jest.Mock; findUnique: jest.Mock };
+    ocrEvidence: { update: jest.Mock };
     slot: { update: jest.Mock };
     $transaction: jest.Mock;
     $queryRaw: jest.Mock;
@@ -100,8 +110,10 @@ describe('SessionsService', () => {
         findUnique: jest.fn(),
         findMany: jest.fn(),
         findFirst: jest.fn(),
+        update: jest.fn(),
       },
       reservation: { findFirst: jest.fn(), findUnique: jest.fn() },
+      ocrEvidence: { update: jest.fn() },
       slot: { update: jest.fn() },
       $transaction: jest.fn(),
       $queryRaw: jest.fn(),
@@ -167,7 +179,14 @@ describe('SessionsService', () => {
           slot: { update: jest.fn().mockResolvedValue(slot) },
           reservation: { update: jest.fn().mockResolvedValue({}) },
           parkingSession: {
-            create: jest.fn().mockResolvedValue(makeSession()),
+            create: jest.fn().mockImplementation(({ data }) =>
+              Promise.resolve(makeSession({
+                id: data.id,
+                qrCode: data.qrCode,
+                sessionCode: data.sessionCode,
+                ticketGeneratedAt: data.ticketGeneratedAt,
+              })),
+            ),
           },
         };
         return fn(tx as unknown as typeof prisma);
@@ -181,7 +200,8 @@ describe('SessionsService', () => {
 
       expect(result.session).toBeDefined();
       expect(result.slot).toBeDefined();
-      expect(result.qr_code).toBeNull();
+      expect(result.qr_code).toBe('data:image/png;base64,test-qr');
+      expect(result.ticket.sessionCode).toBeDefined();
       expect(allocationService.allocate).toHaveBeenCalledWith(VehicleType.car);
     });
 
@@ -231,8 +251,8 @@ describe('SessionsService', () => {
 
       const result = await service.checkIn(dto, staffId);
 
-      // No QR code since driver not found
-      expect(result.qr_code).toBeNull();
+      // Flow 3 still generates a Session QR for walk-in ticket issuance.
+      expect(result.qr_code).toBe('data:image/png;base64,test-qr');
     });
 
     it('does not link driver when account is deactivated', async () => {
@@ -246,7 +266,7 @@ describe('SessionsService', () => {
 
       const result = await service.checkIn(dto, staffId);
 
-      expect(result.qr_code).toBeNull();
+      expect(result.qr_code).toBe('data:image/png;base64,test-qr');
     });
 
     // Req 1.5: Building full
@@ -355,6 +375,84 @@ describe('SessionsService', () => {
       expect(result.session).toHaveProperty('checkInTime');
       expect(result.slot).toHaveProperty('code');
       expect(result.slot).toHaveProperty('floor');
+    });
+
+    it('links OCR evidence to the created session after staff confirms check-in', async () => {
+      let txOcrEvidenceUpdate: unknown = null;
+
+      prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          $queryRaw: jest.fn().mockResolvedValue([{ id: slot.id, status: 'available' }]),
+          slot: { update: jest.fn().mockResolvedValue(slot) },
+          reservation: { update: jest.fn() },
+          ocrEvidence: {
+            update: jest.fn().mockImplementation((args) => {
+              txOcrEvidenceUpdate = args;
+              return Promise.resolve({});
+            }),
+          },
+          parkingSession: {
+            create: jest.fn().mockImplementation(({ data }) =>
+              Promise.resolve(makeSession({
+                id: data.id,
+                qrCode: data.qrCode,
+                sessionCode: data.sessionCode,
+                ticketGeneratedAt: data.ticketGeneratedAt,
+              })),
+            ),
+          },
+        };
+        return fn(tx);
+      });
+
+      await service.checkIn(
+        {
+          licensePlate: '59A-12345',
+          vehicleType: VehicleType.car,
+          ocrEvidenceId: 'ocr-evidence-uuid',
+          identificationMethod: 'OCR',
+          identificationConfidence: 0.92,
+        } as any,
+        staffId,
+      );
+
+      expect(txOcrEvidenceUpdate).toEqual(
+        expect.objectContaining({
+          where: { id: 'ocr-evidence-uuid' },
+          data: expect.objectContaining({
+            sessionId: expect.any(String),
+            confirmedPlate: '59A-12345',
+            vehicleType: VehicleType.car,
+            staffId,
+            reservationId: null,
+            checkInTime: expect.any(Date),
+          }),
+        }),
+      );
+    });
+
+    it('returns session ticket data for walk-in check-in', async () => {
+      const dto = { licensePlate: '59A-12345', vehicleType: VehicleType.car };
+      jest.mocked(QRCode.toDataURL).mockClear();
+
+      const result = await service.checkIn(dto, staffId);
+
+      expect(result.ticket).toMatchObject({
+        sessionId: expect.any(String),
+        sessionCode: expect.stringMatching(/^PBMS-/),
+        qrCode: 'data:image/png;base64,test-qr',
+        licensePlate: '59A-12345',
+        vehicleType: VehicleType.car,
+        slotCode: 'T1-A-01',
+        floorName: 'T1',
+        floorNumber: 1,
+        zone: Zone.A,
+      });
+      expect(result.ticket.qrPayload).toBe(result.ticket.sessionCode);
+      expect(QRCode.toDataURL).toHaveBeenCalledWith(
+        result.ticket.sessionCode,
+        expect.any(Object),
+      );
     });
 
     // ── Task 20: Reservation fulfillment ──────────────────────────────────
@@ -771,7 +869,10 @@ describe('SessionsService', () => {
 
       expect(prisma.parkingSession.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { status: 'active', id: 'session-uuid-1' },
+          where: {
+            status: 'active',
+            OR: [{ id: 'session-uuid-1' }, { sessionCode: 'session-uuid-1' }],
+          },
         }),
       );
       expect(result.session.id).toBe('session-uuid-1');
@@ -790,6 +891,23 @@ describe('SessionsService', () => {
         }),
       );
       expect(result.session.licensePlate).toBe('59A-12345');
+    });
+
+    it('looks up session by friendly sessionCode from Session QR', async () => {
+      prisma.parkingSession.findFirst.mockResolvedValue(sessionWithSlot);
+      feesService.calculate.mockResolvedValue(mockBreakdown);
+
+      const result = await service.checkOut({ sessionId: 'PBMS-SESSION' }, staffId);
+
+      expect(prisma.parkingSession.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            status: 'active',
+            OR: [{ id: 'PBMS-SESSION' }, { sessionCode: 'PBMS-SESSION' }],
+          },
+        }),
+      );
+      expect(result.session.id).toBe('session-uuid-1');
     });
 
     it('throws NotFoundException when no active session found', async () => {
@@ -1028,6 +1146,33 @@ describe('SessionsService', () => {
       );
 
       expect(result.receipt.payment.method).toBe(PaymentMethod.cash);
+    });
+  });
+
+  describe('issueTicket', () => {
+    const staffId = 'staff-uuid';
+
+    it('stores ticketIssuedAt and ticketIssuedByStaffId for a session ticket', async () => {
+      prisma.parkingSession.update.mockResolvedValue({
+        ...makeSession(),
+        ticketIssuedAt: new Date('2026-06-13T03:00:00Z'),
+        ticketIssuedByStaffId: staffId,
+      });
+
+      const result = await service.issueTicket('session-uuid-1', staffId);
+
+      expect(prisma.parkingSession.update).toHaveBeenCalledWith({
+        where: { id: 'session-uuid-1' },
+        data: {
+          ticketIssuedAt: expect.any(Date),
+          ticketIssuedByStaffId: staffId,
+        },
+      });
+      expect(result).toMatchObject({
+        sessionId: 'session-uuid-1',
+        ticketIssuedByStaffId: staffId,
+      });
+      expect(result.ticketIssuedAt).toBeDefined();
     });
   });
 });

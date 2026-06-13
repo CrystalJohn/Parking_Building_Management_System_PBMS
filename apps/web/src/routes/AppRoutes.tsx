@@ -51,7 +51,7 @@ export default function AppRoutes() {
       <Route
         path="/staff/gate"
         element={
-          <RequireAuth allowedRoles={['staff']}>
+          <RequireAuth allowedRoles={['staff']} hideAppHeader>
             <Gate />
           </RequireAuth>
         }

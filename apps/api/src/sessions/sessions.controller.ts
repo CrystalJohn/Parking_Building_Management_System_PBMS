@@ -66,6 +66,20 @@ export class SessionsController {
   }
 
   /**
+   * POST /sessions/:id/ticket/issue
+   * Staff confirms a software-generated ticket was issued to the walk-in driver.
+   */
+  @Post(':id/ticket/issue')
+  @UseGuards(RolesGuard)
+  @Roles(Role.staff)
+  issueTicket(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') staffId: string,
+  ) {
+    return this.sessionsService.issueTicket(id, staffId);
+  }
+
+  /**
    * GET /sessions/active
    * Staff only — list all active sessions.
    * NOTE: must be declared before :id to avoid route conflict.

@@ -14,6 +14,7 @@ import { ReportsModule } from './reports/reports.module';
 import { ConfigMgmtModule } from './config-mgmt/config-mgmt.module';
 import { SimulationModule } from './simulation/simulation.module';
 import { PlateRecognitionModule } from './plate-recognition/plate-recognition.module';
+import { OcrModule } from './ocr';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { PlateRecognitionModule } from './plate-recognition/plate-recognition.mo
     ConfigMgmtModule,
     SimulationModule,
     PlateRecognitionModule,
+    OcrModule,
   ],
   controllers: [AppController],
   providers: [AppService],

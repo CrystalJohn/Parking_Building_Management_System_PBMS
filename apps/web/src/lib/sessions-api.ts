@@ -12,6 +12,8 @@ export interface CheckInRequest {
   vehicleType: VehicleType
   driverPhone?: string
   reservationId?: string
+  reservationCode?: string
+  ocrEvidenceId?: string
   identificationMethod?: CheckInIdentificationMethod
   identificationConfidence?: number
 }
@@ -43,6 +45,47 @@ export interface CheckInResponse {
   session: SessionSummary
   slot: AssignedSlot
   qr_code: string | null
+  ticket?: SessionTicket
+}
+
+export interface SessionTicket {
+  sessionId: string
+  sessionCode: string
+  qrPayload: string
+  qrCode: string | null
+  licensePlate: string
+  vehicleType: VehicleType
+  slotCode: string
+  floorName?: string
+  floorNumber?: number
+  zone?: Zone
+  checkInTime: string
+  buildingName: string
+  gateName: string
+  ticketGeneratedAt: string
+}
+
+export interface OcrPlateBox {
+  xmin: number
+  ymin: number
+  xmax: number
+  ymax: number
+}
+
+export interface OcrRecognizeResponse {
+  ocrEvidenceId: string
+  detectedPlate: string | null
+  confidence: number | null
+  vehicleTypePrediction: string | null
+  provider: 'PLATE_RECOGNIZER'
+  providerFilename: string | null
+  providerTimestamp: string | null
+  cameraId: string | null
+  plateBox: OcrPlateBox | null
+  buildingName: string
+  gateName: string
+  error: string | null
+  durationMs: number
 }
 
 // ─── Check-out types ─────────────────────────────────────────────────────────
@@ -167,6 +210,33 @@ function mapBreakdownToFee(b: BackendBreakdown): FeeBreakdown {
 
 export async function checkIn(request: CheckInRequest): Promise<CheckInResponse> {
   const { data } = await api.post<CheckInResponse>('/sessions/check-in', request)
+  return data
+}
+
+export async function recognizePlateImage(input: {
+  image: Blob
+  cameraId?: string
+  buildingName?: string
+  gateName?: string
+  reservationId?: string
+}): Promise<OcrRecognizeResponse> {
+  const formData = new FormData()
+  formData.append('image', input.image, 'gate-frame.jpg')
+  if (input.cameraId) formData.append('cameraId', input.cameraId)
+  if (input.buildingName) formData.append('buildingName', input.buildingName)
+  if (input.gateName) formData.append('gateName', input.gateName)
+  if (input.reservationId) formData.append('reservationId', input.reservationId)
+
+  const { data } = await api.post<OcrRecognizeResponse>('/ocr/recognize', formData)
+  return data
+}
+
+export async function issueSessionTicket(sessionId: string) {
+  const { data } = await api.post<{
+    sessionId: string
+    ticketIssuedAt: string
+    ticketIssuedByStaffId: string
+  }>(`/sessions/${sessionId}/ticket/issue`, {})
   return data
 }
 

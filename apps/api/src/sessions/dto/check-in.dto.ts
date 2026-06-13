@@ -60,6 +60,20 @@ export class CheckInDto {
   reservationId?: string;
 
   /**
+   * Optional alias for reservationId when staff enters a QR/code manually.
+   */
+  @IsOptional()
+  @IsString()
+  reservationCode?: string;
+
+  /**
+   * OCR evidence metadata record captured before staff confirmation.
+   */
+  @IsOptional()
+  @IsUUID()
+  ocrEvidenceId?: string;
+
+  /**
    * P0-B: How the vehicle was identified at check-in.
    * Enables audit trail and operational analytics.
    */

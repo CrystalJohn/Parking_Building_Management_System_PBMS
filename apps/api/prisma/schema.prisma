@@ -69,6 +69,8 @@ model User {
   sessionsAsDriver    ParkingSession[] @relation("DriverSessions")
   sessionsCheckedIn   ParkingSession[] @relation("CheckedInBy")
   sessionsCheckedOut  ParkingSession[] @relation("CheckedOutBy")
+  sessionsTicketIssued ParkingSession[] @relation("TicketIssuedBy")
+  ocrEvidencesStaff   OcrEvidence[]    @relation("OcrEvidenceStaff")
   reservations        Reservation[]
   paymentsReceived    Payment[]        @relation("ReceivedBy")
   pricingUpdates      PricingConfig[]  @relation("PricingUpdatedBy")
@@ -127,6 +129,10 @@ model ParkingSession {
   isSynthetic        Boolean       @default(false) @map("is_synthetic")
   checkedInById      String?       @map("checked_in_by")
   checkedOutById     String?       @map("checked_out_by")
+  sessionCode         String?       @unique @map("session_code")
+  ticketGeneratedAt   DateTime?     @map("ticket_generated_at") @db.Timestamptz(3)
+  ticketIssuedAt      DateTime?     @map("ticket_issued_at") @db.Timestamptz(3)
+  ticketIssuedByStaffId String?     @map("ticket_issued_by_staff_id")
   allocationStrategy String?       @map("allocation_strategy")
   allocationTimeMs   Int?          @map("allocation_time_ms")
   // 32: Denormalized metrics for research queries (avoid JOINs)
@@ -139,7 +145,9 @@ model ParkingSession {
   reservation  Reservation? @relation(fields: [reservationId], references: [id])
   checkedInBy  User?        @relation("CheckedInBy", fields: [checkedInById], references: [id])
   checkedOutBy User?        @relation("CheckedOutBy", fields: [checkedOutById], references: [id])
+  ticketIssuedByStaff User?  @relation("TicketIssuedBy", fields: [ticketIssuedByStaffId], references: [id])
   payment      Payment?
+  ocrEvidences OcrEvidence[]
 
   @@index([licensePlate, status], map: "idx_session_plate_status")
   @@index([checkOutTime], map: "idx_session_checkout_time")
@@ -162,6 +170,7 @@ model Reservation {
   driver  User            @relation(fields: [driverId], references: [id])
   slot    Slot            @relation(fields: [slotId], references: [id])
   session ParkingSession?
+  ocrEvidences OcrEvidence[]
 
   @@index([status, expiresAt], map: "idx_reservation_active")
   @@map("reservations")
@@ -228,4 +237,38 @@ model SimulationRun {
 
   @@index([strategy, scenario], map: "idx_simrun_strategy_scenario")
   @@map("simulation_runs")
+}
+
+model OcrEvidence {
+  id                String   @id @default(uuid())
+  provider          String   @default("PLATE_RECOGNIZER")
+  providerFilename  String?  @map("provider_filename")
+  providerTimestamp DateTime? @map("provider_timestamp") @db.Timestamptz(3)
+  cameraId          String?  @map("camera_id")
+  rawResponse       Json?    @map("raw_response")
+  plateBox          Json?    @map("plate_box")
+  ocrPlate          String?  @map("ocr_plate")
+  ocrConfidence     Float?   @map("ocr_confidence")
+  confirmedPlate    String?  @map("confirmed_plate")
+  vehicleType       String?  @map("vehicle_type")
+  buildingName      String?  @map("building_name")
+  gateName          String?  @map("gate_name")
+  errorMessage      String?  @map("error_message")
+  capturedAt        DateTime @default(now()) @map("captured_at") @db.Timestamptz(3)
+  checkInTime       DateTime? @map("check_in_time") @db.Timestamptz(3)
+  staffId           String?  @map("staff_id")
+  reservationId     String?  @map("reservation_id")
+  sessionId         String?  @map("session_id")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  staff       User?           @relation("OcrEvidenceStaff", fields: [staffId], references: [id])
+  reservation Reservation?    @relation(fields: [reservationId], references: [id])
+  session     ParkingSession? @relation(fields: [sessionId], references: [id])
+
+  @@index([sessionId], map: "idx_ocr_evidence_session")
+  @@index([reservationId], map: "idx_ocr_evidence_reservation")
+  @@index([staffId], map: "idx_ocr_evidence_staff")
+  @@index([capturedAt], map: "idx_ocr_evidence_captured_at")
+  @@map("ocr_evidences")
 }

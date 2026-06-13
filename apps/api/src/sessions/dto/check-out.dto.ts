@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsUUID, IsIn } from 'class-validator';
+import { IsOptional, IsString, IsIn } from 'class-validator';
 
 /**
  * Identification methods supported for checkout.
@@ -20,7 +20,7 @@ export type CheckOutIdentificationMethod = (typeof CHECKOUT_IDENTIFICATION_METHO
  */
 export class CheckOutDto {
   @IsOptional()
-  @IsUUID()
+  @IsString()
   sessionId?: string;
 
   @IsOptional()

@@ -46,7 +46,7 @@ export class SessionsService {
     const identity: VehicleIdentityResult =
       await this.vehicleIdentificationService.identifyForCheckIn({
         licensePlate: dto.licensePlate,
-        reservationId: dto.reservationId,
+        reservationId: dto.reservationId ?? dto.reservationCode,
         driverPhone: dto.driverPhone,
         identificationConfidence: dto.identificationConfidence,
       });
@@ -166,9 +166,7 @@ export class SessionsService {
     }
 
     // ─── Transaction: slot update + session creation ───────────────────────
-    let session: Prisma.ParkingSessionGetPayload<{
-      include: { slot: { include: { floor: true } } };
-    }>;
+    let session: any;
     try {
       session = await this.prisma.$transaction(async (tx) => {
         const expectedStatus = activeReservation ? 'reserved' : 'available';
@@ -196,17 +194,15 @@ export class SessionsService {
           });
         }
 
-        let qrCode: string | null = null;
         const sessionId = crypto.randomUUID();
+        const sessionCode = this.buildSessionCode(sessionId);
 
-        if (driverId) {
-          qrCode = await QRCode.toDataURL(sessionId, {
-            width: 400,
-            margin: 2,
-            errorCorrectionLevel: 'H',
-            color: { dark: '#000000', light: '#ffffff' },
-          });
-        }
+        const qrCode = await QRCode.toDataURL(sessionCode, {
+          width: 400,
+          margin: 2,
+          errorCorrectionLevel: 'H',
+          color: { dark: '#000000', light: '#ffffff' },
+        });
 
         const newSession = await tx.parkingSession.create({
           data: {
@@ -218,16 +214,32 @@ export class SessionsService {
             reservationId,
             checkedInById: staffId,
             qrCode,
+            sessionCode,
+            ticketGeneratedAt: new Date(),
             allocationStrategy,
             allocationTimeMs,
             // 32: Denormalized metrics for research queries
             floorId: slot.floorId,
             zone: slot.zone,
-          },
+          } as any,
           include: {
             slot: { include: { floor: true } },
           },
         });
+
+        if (dto.ocrEvidenceId) {
+          await (tx as any).ocrEvidence.update({
+            where: { id: dto.ocrEvidenceId },
+            data: {
+              sessionId: newSession.id,
+              confirmedPlate: licensePlate,
+              vehicleType: dto.vehicleType,
+              staffId,
+              reservationId,
+              checkInTime: newSession.checkInTime,
+            },
+          });
+        }
 
         return newSession;
       });
@@ -272,6 +284,42 @@ export class SessionsService {
         },
       },
       qr_code: session.qrCode ?? null,
+      ticket: {
+        sessionId: session.id,
+        sessionCode: session.sessionCode,
+        qrPayload: session.sessionCode,
+        qrCode: session.qrCode,
+        licensePlate: session.licensePlate,
+        vehicleType: session.vehicleType,
+        slotCode: session.slot.code,
+        floorName: session.slot.floor.name,
+        floorNumber: session.slot.floor.floorNumber,
+        zone: session.slot.zone,
+        checkInTime: session.checkInTime,
+        buildingName: process.env.PBMS_BUILDING_NAME ?? 'PBMS Building',
+        gateName: process.env.PBMS_GATE_NAME ?? 'Main Gate',
+        ticketGeneratedAt: session.ticketGeneratedAt,
+      },
+    };
+  }
+
+  private buildSessionCode(sessionId: string): string {
+    return `PBMS-${sessionId.replace(/-/g, '').slice(0, 10).toUpperCase()}`;
+  }
+
+  async issueTicket(sessionId: string, staffId: string) {
+    const updated = await (this.prisma as any).parkingSession.update({
+      where: { id: sessionId },
+      data: {
+        ticketIssuedAt: new Date(),
+        ticketIssuedByStaffId: staffId,
+      },
+    });
+
+    return {
+      sessionId: updated.id,
+      ticketIssuedAt: updated.ticketIssuedAt,
+      ticketIssuedByStaffId: updated.ticketIssuedByStaffId,
     };
   }
 
@@ -370,7 +418,7 @@ export class SessionsService {
       where: {
         status: 'active',
         ...(dto.sessionId
-          ? { id: dto.sessionId }
+          ? { OR: [{ id: dto.sessionId }, { sessionCode: dto.sessionId }] }
           : { licensePlate: dto.licensePlate }),
       },
       include: {
@@ -585,7 +633,7 @@ export class SessionsService {
   async getQrCode(sessionId: string) {
     const session = await this.prisma.parkingSession.findUnique({
       where: { id: sessionId },
-      select: { id: true, qrCode: true, driverId: true },
+      select: { id: true, sessionCode: true, qrCode: true, driverId: true },
     });
 
     if (!session) {
@@ -594,11 +642,12 @@ export class SessionsService {
 
     // If QR was already generated at check-in, return it
     if (session.qrCode) {
-      return { sessionId: session.id, qrCode: session.qrCode };
+      return { sessionId: session.id, sessionCode: session.sessionCode, qrCode: session.qrCode };
     }
 
     // Generate QR on-demand (for sessions that didn't have a registered driver at check-in)
-    const qrCode = await QRCode.toDataURL(sessionId, {
+    const qrPayload = session.sessionCode ?? sessionId;
+    const qrCode = await QRCode.toDataURL(qrPayload, {
       width: 400,
       margin: 2,
       errorCorrectionLevel: 'H',
@@ -611,7 +660,7 @@ export class SessionsService {
       data: { qrCode },
     });
 
-    return { sessionId: session.id, qrCode };
+    return { sessionId: session.id, sessionCode: session.sessionCode, qrCode };
   }
 
   /**

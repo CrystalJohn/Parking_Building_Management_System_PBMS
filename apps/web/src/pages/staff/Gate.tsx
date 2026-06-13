@@ -1,6 +1,8 @@
 import { useCallback, useState } from 'react'
 import { isAxiosError } from 'axios'
+import { NavLink, useNavigate } from 'react-router-dom'
 import { ToastContainer } from '../../components/ui/Toast'
+import { clearAuth, getUser } from '../../lib/auth'
 import { useToasts } from '../../lib/use-toasts'
 import {
   checkIn,
@@ -16,8 +18,34 @@ import { Receipt } from '../../components/receipt/Receipt'
 import { QRScanner } from '../../components/qr-scanner/QRScanner'
 import { LicensePlateScanner } from '../../components/plate-scanner/LicensePlateScanner'
 import { formatDateTimeVN } from '../../lib/date-time'
+import { StaffOcrCheckInPanel } from './StaffOcrCheckInPanel'
 
 type Tab = 'check-in' | 'check-out'
+
+const GATE_TABS: Array<{
+  id: Tab
+  title: string
+  subtitle: string
+  activeHint: string
+}> = [
+  {
+    id: 'check-in',
+    title: 'Check-in',
+    subtitle: 'Xe vào bãi',
+    activeHint: 'OCR, đặt chỗ, cấp vé',
+  },
+  {
+    id: 'check-out',
+    title: 'Check-out',
+    subtitle: 'Xe ra khỏi bãi',
+    activeHint: 'QR, biển số, thu phí',
+  },
+]
+
+const STAFF_NAV = [
+  { to: '/staff/gate', label: 'Cổng ra/vào' },
+  { to: '/staff/lost-ticket', label: 'Mất vé' },
+]
 
 const VND = (n: number) => `${n.toLocaleString('vi-VN')} VND`
 
@@ -59,52 +87,133 @@ function extractError(err: unknown): { message: string; isFull: boolean } {
 export default function Gate() {
   const [tab, setTab] = useState<Tab>('check-in')
   const toasts = useToasts()
+  const navigate = useNavigate()
+  const user = getUser()
+  const activeTab = GATE_TABS.find((item) => item.id === tab) ?? GATE_TABS[0]
+  const userInitial = (user?.fullName || user?.phone || 'S')[0].toUpperCase()
+
+  const handleLogout = () => {
+    clearAuth()
+    navigate('/login', { replace: true })
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-3xl mx-auto">
-        <header className="mb-6">
-          <h1 className="text-2xl font-bold">Cổng ra/vào</h1>
-          <p className="text-sm text-gray-500">
-            Nhân viên thao tác check-in / check-out tại đây.
-          </p>
-        </header>
+    <div className="min-h-screen bg-slate-100">
+      <div className="sticky top-0 z-50 border-b border-slate-200/80 bg-slate-100/95 shadow-sm backdrop-blur-xl print:hidden">
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:px-6 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-primary-600 to-slate-950 text-sm font-black text-white shadow-lg shadow-primary-600/20">
+                {userInitial}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-black text-slate-950">
+                  {user?.fullName || user?.phone || 'Gate Staff'}
+                </p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Nhân viên cổng
+                </p>
+              </div>
+            </div>
 
-        <nav className="flex gap-2 mb-4" role="tablist">
-          <button
-            role="tab"
-            aria-selected={tab === 'check-in'}
-            onClick={() => setTab('check-in')}
-            className={`px-4 py-2 rounded-md font-medium text-sm transition-colors ${
-              tab === 'check-in'
-                ? 'bg-primary-600 text-white'
-                : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-            }`}
-          >
-            Check-in
-          </button>
-          <button
-            role="tab"
-            aria-selected={tab === 'check-out'}
-            onClick={() => setTab('check-out')}
-            className={`px-4 py-2 rounded-md font-medium text-sm transition-colors ${
-              tab === 'check-out'
-                ? 'bg-primary-600 text-white'
-                : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-            }`}
-          >
-            Check-out
-          </button>
-        </nav>
+            <nav className="flex flex-wrap items-center gap-1 lg:border-l lg:border-slate-300 lg:pl-3" aria-label="Staff navigation">
+              {STAFF_NAV.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={({ isActive }) =>
+                    `rounded-xl px-3 py-2 text-sm font-bold transition-all ${
+                      isActive
+                        ? 'bg-white text-slate-950 shadow-sm ring-1 ring-slate-200'
+                        : 'text-slate-500 hover:bg-white/70 hover:text-slate-900'
+                    }`
+                  }
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+            </nav>
 
-        <div className="card">
+            <header className="min-w-0 lg:border-l lg:border-slate-300 lg:pl-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Gate Workspace
+              </p>
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <h1 className="text-xl font-black tracking-tight text-slate-950">
+                  Cổng ra/vào
+                </h1>
+                <span className="text-sm font-medium text-slate-500">
+                  Đang dùng: {activeTab.title}
+                </span>
+              </div>
+            </header>
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <nav
+              className="grid grid-cols-2 gap-1 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm sm:min-w-[360px]"
+              role="tablist"
+              aria-label="Gate actions"
+            >
+              {GATE_TABS.map((item) => {
+                const isActive = tab === item.id
+                return (
+                  <button
+                    key={item.id}
+                    role="tab"
+                    aria-selected={isActive}
+                    aria-controls={`gate-panel-${item.id}`}
+                    onClick={() => setTab(item.id)}
+                    className={`group rounded-xl px-3 py-2 text-left transition-all focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
+                      isActive
+                        ? 'bg-slate-950 text-white shadow-md'
+                        : 'bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-black">{item.title}</span>
+                      <span
+                        className={`h-2 w-2 rounded-full ${
+                          isActive ? 'bg-emerald-400' : 'bg-slate-300 group-hover:bg-slate-400'
+                        }`}
+                      />
+                    </span>
+                    <span
+                      className={`mt-0.5 block text-[11px] font-medium ${
+                        isActive ? 'text-slate-300' : 'text-slate-500'
+                      }`}
+                    >
+                      {item.subtitle} · {item.activeHint}
+                    </span>
+                  </button>
+                )
+              })}
+            </nav>
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-600 shadow-sm transition-all hover:bg-slate-950 hover:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+            >
+              Đăng xuất
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <main className="mx-auto max-w-7xl px-4 py-4 sm:px-6 print:max-w-none print:p-0">
+        <div
+          id={`gate-panel-${tab}`}
+          role="tabpanel"
+          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm print:rounded-none print:border-0 print:p-0 print:shadow-none sm:p-5"
+        >
           {tab === 'check-in' ? (
-            <CheckInPanel toasts={toasts} />
+            <StaffOcrCheckInPanel toasts={toasts} />
           ) : (
             <CheckOutPanel toasts={toasts} />
           )}
         </div>
-      </div>
+      </main>
 
       <ToastContainer toasts={toasts.toasts} onDismiss={toasts.dismiss} />
     </div>
@@ -117,7 +226,7 @@ interface PanelProps {
   toasts: ReturnType<typeof useToasts>
 }
 
-function CheckInPanel({ toasts }: PanelProps) {
+export function CheckInPanel({ toasts }: PanelProps) {
   const [licensePlate, setLicensePlate] = useState('')
   const [vehicleType, setVehicleType] = useState<VehicleType>('car')
   const [driverPhone, setDriverPhone] = useState('')
