@@ -38,6 +38,8 @@ enum SlotStatus {
 
 enum SessionStatus {
   active
+  checkout_pending
+  exit_authorized
   completed
   cancelled
 }
@@ -51,6 +53,15 @@ enum ReservationStatus {
 
 enum PaymentMethod {
   cash
+  bank_qr
+}
+
+enum PaymentStatus {
+  pending
+  paid
+  failed
+  cancelled
+  expired
 }
 
 // ─── Models ──────────────────────────────────────────────────────────────────
@@ -129,7 +140,7 @@ model ParkingSession {
   isSynthetic        Boolean       @default(false) @map("is_synthetic")
   checkedInById      String?       @map("checked_in_by")
   checkedOutById     String?       @map("checked_out_by")
-  sessionCode         String?       @unique @map("session_code")
+  sessionCode         String        @unique @map("session_code")
   ticketGeneratedAt   DateTime?     @map("ticket_generated_at") @db.Timestamptz(3)
   ticketIssuedAt      DateTime?     @map("ticket_issued_at") @db.Timestamptz(3)
   ticketIssuedByStaffId String?     @map("ticket_issued_by_staff_id")
@@ -181,12 +192,13 @@ model Payment {
   sessionId  String        @unique @map("session_id")
   amount     Int
   method     PaymentMethod @default(cash)
-  paidAt     DateTime      @default(now()) @map("paid_at") @db.Timestamptz(3)
-  receivedBy String        @map("received_by")
+  status     PaymentStatus @default(pending)
+  paidAt     DateTime?     @map("paid_at") @db.Timestamptz(3)
+  receivedBy String?       @map("received_by")
 
   // Relations
   session      ParkingSession @relation(fields: [sessionId], references: [id])
-  receivedUser User           @relation("ReceivedBy", fields: [receivedBy], references: [id])
+  receivedUser User?          @relation("ReceivedBy", fields: [receivedBy], references: [id])
 
   @@map("payments")
 }

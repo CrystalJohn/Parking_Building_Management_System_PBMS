@@ -332,6 +332,18 @@ export class SessionsService {
     );
   }
 
+  private mapBreakdownToCheckoutFee(breakdown: FeeBreakdown) {
+    return {
+      durationHours: breakdown.roundedHours,
+      baseFee: breakdown.baseFee,
+      penalty: breakdown.overtimePenalty + breakdown.lostTicketPenalty,
+      total: breakdown.totalFee,
+      isOvertime: breakdown.isOvertime,
+      isLostTicket: breakdown.isLostTicket,
+      checkOutTime: breakdown.checkOutTime,
+    };
+  }
+
   private assertReservationCanBeFulfilled(
     reservation: {
       id: string;
@@ -401,7 +413,8 @@ export class SessionsService {
    * 1. Lookup active session by session_id (QR) or license_plate
    * 2. Calculate fee breakdown via FeesService
    * 3. If duration > threshold, flag overtime + log warning
-   * 4. Return fee breakdown for Staff to confirm
+   * 4. Move session to checkout_pending and create/update pending payment
+   * 5. Return fee breakdown for Staff to confirm
    *
    * Req 2.1–2.3, 5.5
    */
@@ -444,18 +457,58 @@ export class SessionsService {
       );
     }
 
+    const payment = await this.prisma.$transaction(async (tx) => {
+      await tx.parkingSession.update({
+        where: { id: session.id },
+        data: {
+          status: 'checkout_pending',
+          feeAmount: breakdown.baseFee,
+          penaltyAmount: breakdown.overtimePenalty + breakdown.lostTicketPenalty,
+          isOvertime: breakdown.isOvertime,
+          isLostTicket: breakdown.isLostTicket,
+        } as any,
+      });
+
+      return tx.payment.upsert({
+        where: { sessionId: session.id },
+        create: {
+          sessionId: session.id,
+          amount: breakdown.totalFee,
+          method: PaymentMethod.cash,
+          status: 'pending',
+          paidAt: null,
+          receivedBy: null,
+        } as any,
+        update: {
+          amount: breakdown.totalFee,
+          method: PaymentMethod.cash,
+          status: 'pending',
+          paidAt: null,
+          receivedBy: null,
+        } as any,
+      });
+    });
+
     return {
       session: {
         id: session.id,
+        sessionCode: session.sessionCode,
         licensePlate: session.licensePlate,
         vehicleType: session.vehicleType,
         checkInTime: session.checkInTime,
-        status: session.status,
+        checkOutTime: session.checkOutTime,
+        status: 'checkout_pending',
         driverId: session.driverId,
+        isPaid: session.isPaid,
+        feeAmount: breakdown.baseFee,
+        penaltyAmount: breakdown.overtimePenalty + breakdown.lostTicketPenalty,
+        isOvertime: breakdown.isOvertime,
+        isLostTicket: breakdown.isLostTicket,
       },
       slot: {
         id: session.slot.id,
         code: session.slot.code,
+        status: session.slot.status,
         zone: session.slot.zone,
         floor: {
           id: session.slot.floor.id,
@@ -464,17 +517,24 @@ export class SessionsService {
         },
       },
       breakdown,
+      payment: {
+        id: payment.id,
+        amount: payment.amount,
+        method: payment.method,
+        status: (payment as any).status,
+        paidAt: payment.paidAt,
+      },
     };
   }
 
   /**
-   * 15.4–15.6: Confirm payment and complete check-out.
+   * 15.4–15.6: Confirm payment and authorize exit.
    *
    * Flow:
-   * 1. Lookup active session by ID
+   * 1. Lookup checkout_pending session by ID
    * 2. Recalculate fee (with lost ticket flag if provided)
-   * 3. In transaction: update session (completed, fees, overtime, lost), create Payment, release slot
-   * 4. Return receipt
+   * 3. In transaction: update Payment to paid and session to exit_authorized
+   * 4. Return receipt/exit authorization. Slot release happens in confirmExit().
    *
    * Req 2.4, 2.5, 5.5, 6.2, 6.4
    */
@@ -483,7 +543,7 @@ export class SessionsService {
     dto: ConfirmPaymentDto,
     staffId: string,
   ) {
-    // Lookup active session
+    // Lookup checkout pending session
     const session = await this.prisma.parkingSession.findUnique({
       where: { id: sessionId },
       include: {
@@ -495,7 +555,7 @@ export class SessionsService {
       throw new NotFoundException(`Session not found: ${sessionId}`);
     }
 
-    if (session.status !== 'active') {
+    if ((session.status as string) !== 'checkout_pending') {
       throw new ConflictException(
         `Session ${sessionId} is already ${session.status}`,
       );
@@ -507,37 +567,47 @@ export class SessionsService {
     const breakdown = await this.feesService.calculate(session, isLost, now);
     const method = dto.method ?? PaymentMethod.cash;
 
-    // 15.4–15.5: Transaction — update session, create payment, release slot
+    // 15.4–15.5: Payment confirmation authorizes exit.
     const result = await this.prisma.$transaction(async (tx) => {
-      // Update session to completed
+      const existingPayment = await tx.payment.findUnique({
+        where: { sessionId },
+      });
+
+      if (!existingPayment) {
+        await tx.payment.create({
+          data: {
+            sessionId,
+            amount: breakdown.totalFee,
+            method,
+            status: 'pending',
+            paidAt: null,
+            receivedBy: null,
+          } as any,
+        });
+      }
+
+      const payment = await tx.payment.update({
+        where: { sessionId },
+        data: {
+          amount: breakdown.totalFee,
+          method,
+          status: 'paid',
+          paidAt: now,
+          receivedBy: staffId,
+        } as any,
+      });
+
       const updatedSession = await tx.parkingSession.update({
         where: { id: sessionId },
         data: {
-          status: 'completed',
-          checkOutTime: now,
+          status: 'exit_authorized',
           checkedOutById: staffId,
           feeAmount: breakdown.baseFee,
           penaltyAmount: breakdown.overtimePenalty + breakdown.lostTicketPenalty,
           isPaid: true,
           isOvertime: breakdown.isOvertime,
           isLostTicket: isLost,
-        },
-      });
-
-      // 15.4: Create Payment record (Req 6.2)
-      const payment = await tx.payment.create({
-        data: {
-          sessionId,
-          amount: breakdown.totalFee,
-          method,
-          receivedBy: staffId,
-        },
-      });
-
-      // 15.5: Release slot → available (Req 2.5)
-      await tx.slot.update({
-        where: { id: session.slotId },
-        data: { status: 'available' },
+        } as any,
       });
 
       return { updatedSession, payment };
@@ -570,8 +640,66 @@ export class SessionsService {
           id: result.payment.id,
           amount: result.payment.amount,
           method: result.payment.method,
+          status: (result.payment as any).status,
           paidAt: result.payment.paidAt,
         },
+        exitAuthorizationStatus: result.updatedSession.status,
+      },
+    };
+  }
+
+  /**
+   * Flow 4A.1: Staff confirms the vehicle actually exited.
+   * This is the only point where the slot is released.
+   */
+  async confirmExit(sessionId: string, staffId: string) {
+    const session = await this.prisma.parkingSession.findUnique({
+      where: { id: sessionId },
+      include: {
+        slot: { include: { floor: true } },
+      },
+    });
+
+    if (!session) {
+      throw new NotFoundException(`Session not found: ${sessionId}`);
+    }
+
+    if ((session.status as string) !== 'exit_authorized') {
+      throw new ConflictException(
+        `Session ${sessionId} must be exit_authorized before exit confirmation`,
+      );
+    }
+
+    const now = new Date();
+    const updatedSession = await this.prisma.$transaction(async (tx) => {
+      const completed = await tx.parkingSession.update({
+        where: { id: sessionId },
+        data: {
+          status: 'completed',
+          checkOutTime: now,
+          checkedOutById: staffId,
+        } as any,
+      });
+
+      await tx.slot.update({
+        where: { id: session.slotId },
+        data: { status: 'available' },
+      });
+
+      return completed;
+    });
+
+    return {
+      session: {
+        id: updatedSession.id,
+        status: updatedSession.status,
+        checkOutTime: updatedSession.checkOutTime,
+        checkedOutById: updatedSession.checkedOutById,
+      },
+      slot: {
+        id: session.slot.id,
+        code: session.slot.code,
+        status: 'available',
       },
     };
   }
@@ -610,6 +738,85 @@ export class SessionsService {
       },
       orderBy: { checkInTime: 'asc' },
     });
+  }
+
+  /**
+   * Flow 4A.2: read-only lookup for the Staff checkout workspace.
+   * This must not move the session lifecycle forward.
+   */
+  async lookupForCheckout(input: {
+    sessionCode?: string;
+    licensePlate?: string;
+  }) {
+    const sessionCode = input.sessionCode?.trim();
+    const licensePlate = input.licensePlate?.trim().toUpperCase();
+
+    if (!sessionCode && !licensePlate) {
+      throw new BadRequestException(
+        'Either sessionCode or licensePlate must be provided',
+      );
+    }
+
+    const session = await this.prisma.parkingSession.findFirst({
+      where: sessionCode
+        ? { OR: [{ id: sessionCode }, { sessionCode }] }
+        : { licensePlate },
+      include: {
+        slot: { include: { floor: true } },
+        payment: true,
+      },
+      orderBy: { checkInTime: 'desc' },
+    });
+
+    if (!session) {
+      throw new NotFoundException('Không tìm thấy session.');
+    }
+
+    const breakdown = await this.feesService.calculate(
+      session,
+      session.isLostTicket,
+      session.checkOutTime ?? new Date(),
+    );
+
+    return {
+      session: {
+        id: session.id,
+        sessionCode: session.sessionCode,
+        licensePlate: session.licensePlate,
+        vehicleType: session.vehicleType,
+        checkInTime: session.checkInTime,
+        checkOutTime: session.checkOutTime,
+        status: session.status,
+        isPaid: session.isPaid,
+        feeAmount: session.feeAmount,
+        penaltyAmount: session.penaltyAmount,
+        isOvertime: session.isOvertime,
+        isLostTicket: session.isLostTicket,
+      },
+      slot: {
+        id: session.slot.id,
+        code: session.slot.code,
+        status: session.slot.status,
+        zone: session.slot.zone,
+        floor: {
+          id: session.slot.floor.id,
+          floorNumber: session.slot.floor.floorNumber,
+          name: session.slot.floor.name,
+        },
+      },
+      fee: this.mapBreakdownToCheckoutFee(breakdown),
+      payment: session.payment
+        ? {
+            id: session.payment.id,
+            sessionId: session.payment.sessionId,
+            amount: session.payment.amount,
+            method: session.payment.method,
+            status: (session.payment as any).status,
+            paidAt: session.payment.paidAt,
+            receivedBy: session.payment.receivedBy,
+          }
+        : null,
+    };
   }
 
   /**

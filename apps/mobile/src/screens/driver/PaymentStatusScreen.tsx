@@ -16,8 +16,8 @@ export function PaymentStatusScreen({ route }: Props) {
   const sessionQuery = useActiveSessionQuery(route.params?.sessionId);
   const session = sessionQuery.data;
   const fee = session ? getEstimatedFee(session) : null;
-  const paymentStatus: PaymentStatus = session?.isPaid ? 'PAID' : 'PENDING';
-  const paymentMethod: PaymentMethod = session?.isPaid ? 'CASH' : 'BANK_QR';
+  const paymentStatus: PaymentStatus = session?.isPaid ? 'paid' : 'pending';
+  const paymentMethod: PaymentMethod = session?.isPaid ? 'cash' : 'bank_qr';
   const exitStatus: ExitAuthorizationStatus = session?.isPaid ? 'AUTHORIZED' : 'NOT_READY';
 
   return (

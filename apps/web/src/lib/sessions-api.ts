@@ -4,7 +4,9 @@ import api from './api'
 
 export type VehicleType = 'car' | 'motorbike'
 export type Zone = 'A' | 'B'
-export type SessionStatus = 'active' | 'completed' | 'cancelled'
+export type SessionStatus = 'active' | 'checkout_pending' | 'exit_authorized' | 'completed' | 'cancelled'
+export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'cancelled' | 'expired'
+export type PaymentMethod = 'cash' | 'bank_qr'
 export type CheckInIdentificationMethod = 'RESERVATION_QR' | 'OCR' | 'MANUAL_PLATE'
 
 export interface CheckInRequest {
@@ -102,6 +104,52 @@ export interface FeeBreakdown {
   total: number
   isOvertime: boolean
   isLostTicket: boolean
+  checkOutTime?: string
+}
+
+export interface CheckoutLookupInput {
+  sessionCode?: string
+  licensePlate?: string
+}
+
+export interface PaymentInfo {
+  id: string
+  sessionId: string
+  amount: number
+  method: PaymentMethod
+  status: PaymentStatus
+  paidAt: string | null
+  receivedBy?: string | null
+}
+
+export interface CheckoutSessionInfo {
+  id: string
+  sessionCode: string
+  licensePlate: string
+  vehicleType: VehicleType
+  checkInTime: string
+  checkOutTime: string | null
+  status: SessionStatus
+  isPaid: boolean
+  feeAmount: number
+  penaltyAmount: number
+  isOvertime: boolean
+  isLostTicket: boolean
+}
+
+export interface CheckoutSlotInfo {
+  id: number
+  code: string
+  status: 'available' | 'occupied' | 'reserved' | 'maintenance'
+  zone: Zone
+  floor: FloorInfo
+}
+
+export interface CheckoutWorkflowResponse {
+  session: CheckoutSessionInfo
+  slot: CheckoutSlotInfo
+  fee: FeeBreakdown
+  payment: PaymentInfo | null
 }
 
 export interface CheckOutResponse {
@@ -124,8 +172,25 @@ export interface ConfirmPaymentResponse {
   durationHours: number
   slotCode: string
   fee: FeeBreakdown
-  paymentMethod: 'cash'
+  paymentId: string
+  paymentMethod: PaymentMethod
+  paymentStatus: PaymentStatus
+  exitAuthorizationStatus: SessionStatus
   paidAt: string
+}
+
+export interface ConfirmExitResponse {
+  session: {
+    id: string
+    status: 'completed'
+    checkOutTime: string
+    checkedOutById: string
+  }
+  slot: {
+    id: number
+    code: string
+    status: 'available'
+  }
 }
 
 // ─── Backend raw response types (internal) ───────────────────────────────────
@@ -147,22 +212,44 @@ interface BackendBreakdown {
   totalFee: number
 }
 
+interface BackendLookupCheckoutResponse {
+  session: CheckoutSessionInfo
+  slot: CheckoutSlotInfo
+  fee: FeeBreakdown
+  payment: PaymentInfo | null
+}
+
 interface BackendCheckOutResponse {
   session: {
     id: string
+    sessionCode: string
     licensePlate: string
     vehicleType: VehicleType
     checkInTime: string
+    checkOutTime: string | null
     status: string
     driverId: string | null
+    isPaid: boolean
+    feeAmount: number
+    penaltyAmount: number
+    isOvertime: boolean
+    isLostTicket: boolean
   }
   slot: {
     id: number
     code: string
+    status: 'available' | 'occupied' | 'reserved' | 'maintenance'
     zone: Zone
     floor: FloorInfo
   }
   breakdown: BackendBreakdown
+  payment: {
+    id: string
+    amount: number
+    method: PaymentMethod
+    status: PaymentStatus
+    paidAt: string | null
+  }
 }
 
 interface BackendConfirmPaymentResponse {
@@ -187,9 +274,11 @@ interface BackendConfirmPaymentResponse {
     payment: {
       id: string
       amount: number
-      method: string
-      paidAt: string
+      method: PaymentMethod
+      status: PaymentStatus
+      paidAt: string | null
     }
+    exitAuthorizationStatus: SessionStatus
   }
 }
 
@@ -203,6 +292,32 @@ function mapBreakdownToFee(b: BackendBreakdown): FeeBreakdown {
     total: b.totalFee,
     isOvertime: b.isOvertime,
     isLostTicket: b.isLostTicket,
+    checkOutTime: b.checkOutTime,
+  }
+}
+
+function mapBackendCheckout(data: BackendCheckOutResponse): CheckoutWorkflowResponse {
+  return {
+    session: {
+      id: data.session.id,
+      sessionCode: data.session.sessionCode,
+      licensePlate: data.session.licensePlate,
+      vehicleType: data.session.vehicleType,
+      checkInTime: data.session.checkInTime,
+      checkOutTime: data.session.checkOutTime,
+      status: data.session.status as SessionStatus,
+      isPaid: data.session.isPaid,
+      feeAmount: data.session.feeAmount,
+      penaltyAmount: data.session.penaltyAmount,
+      isOvertime: data.session.isOvertime,
+      isLostTicket: data.session.isLostTicket,
+    },
+    slot: data.slot,
+    fee: mapBreakdownToFee(data.breakdown),
+    payment: {
+      ...data.payment,
+      sessionId: data.session.id,
+    },
   }
 }
 
@@ -240,18 +355,38 @@ export async function issueSessionTicket(sessionId: string) {
   return data
 }
 
-export async function checkOut(request: CheckOutRequest): Promise<CheckOutResponse> {
-  const { data } = await api.post<BackendCheckOutResponse>('/sessions/check-out', request)
+export async function lookupSessionForCheckout(input: CheckoutLookupInput): Promise<CheckoutWorkflowResponse> {
+  const { data } = await api.get<BackendLookupCheckoutResponse>('/sessions/checkout-lookup', {
+    params: {
+      sessionCode: input.sessionCode || undefined,
+      licensePlate: input.licensePlate || undefined,
+    },
+  })
+  return data
+}
 
+export async function requestCheckout(input: CheckoutLookupInput): Promise<CheckoutWorkflowResponse> {
+  const { data } = await api.post<BackendCheckOutResponse>('/sessions/check-out', {
+    sessionId: input.sessionCode || undefined,
+    licensePlate: input.licensePlate || undefined,
+  })
+  return mapBackendCheckout(data)
+}
+
+export async function checkOut(request: CheckOutRequest): Promise<CheckOutResponse> {
+  const data = await requestCheckout({
+    sessionCode: request.sessionId,
+    licensePlate: request.licensePlate,
+  })
   return {
     sessionId: data.session.id,
     licensePlate: data.session.licensePlate,
     vehicleType: data.session.vehicleType,
-    checkInTime: data.breakdown.checkInTime,
-    checkOutTime: data.breakdown.checkOutTime,
+    checkInTime: data.session.checkInTime,
+    checkOutTime: data.fee.checkOutTime ?? new Date().toISOString(),
     slotCode: data.slot.code,
-    fee: mapBreakdownToFee(data.breakdown),
-    isPaid: false,
+    fee: data.fee,
+    isPaid: data.session.isPaid,
   }
 }
 
@@ -278,7 +413,26 @@ export async function confirmPayment(sessionId: string): Promise<ConfirmPaymentR
       isOvertime: r.breakdown.isOvertime,
       isLostTicket: r.breakdown.isLostTicket,
     },
-    paymentMethod: 'cash',
-    paidAt: r.payment.paidAt,
+    paymentId: r.payment.id,
+    paymentMethod: r.payment.method,
+    paymentStatus: r.payment.status,
+    exitAuthorizationStatus: r.exitAuthorizationStatus,
+    paidAt: r.payment.paidAt ?? r.checkOutTime,
   }
+}
+
+export async function confirmCashPayment(sessionId: string): Promise<ConfirmPaymentResponse> {
+  return confirmPayment(sessionId)
+}
+
+export async function confirmExit(sessionId: string): Promise<ConfirmExitResponse> {
+  const { data } = await api.post<ConfirmExitResponse>(
+    `/sessions/${sessionId}/confirm-exit`,
+    {},
+  )
+  return data
+}
+
+export async function confirmVehicleExited(sessionId: string): Promise<ConfirmExitResponse> {
+  return confirmExit(sessionId)
 }

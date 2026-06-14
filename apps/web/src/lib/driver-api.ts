@@ -5,7 +5,7 @@ import api from './api'
 export type VehicleType = 'car' | 'motorbike'
 export type Zone = 'A' | 'B'
 export type ReservationStatus = 'active' | 'fulfilled' | 'expired' | 'cancelled'
-export type SessionStatus = 'active' | 'completed' | 'cancelled'
+export type SessionStatus = 'active' | 'checkout_pending' | 'exit_authorized' | 'completed' | 'cancelled'
 
 export interface FloorInfo {
   id: number
@@ -81,7 +81,7 @@ export interface ActiveSession {
   licensePlate: string
   vehicleType: VehicleType
   checkInTime: string
-  status: 'active'
+  status: Exclude<SessionStatus, 'completed' | 'cancelled'>
   qrCode: string | null
   slot: SlotInfo
 }

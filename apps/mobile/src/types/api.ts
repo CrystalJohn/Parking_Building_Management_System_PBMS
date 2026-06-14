@@ -1,9 +1,9 @@
 export type Role = 'admin' | 'manager' | 'staff' | 'driver';
 export type VehicleType = 'car' | 'motorbike';
 export type ReservationStatus = 'active' | 'fulfilled' | 'expired' | 'cancelled';
-export type SessionStatus = 'active' | 'completed' | 'cancelled';
-export type PaymentStatus = 'PENDING' | 'PAID' | 'FAILED' | 'CANCELLED';
-export type PaymentMethod = 'CASH' | 'BANK_QR';
+export type SessionStatus = 'active' | 'checkout_pending' | 'exit_authorized' | 'completed' | 'cancelled';
+export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'cancelled' | 'expired';
+export type PaymentMethod = 'cash' | 'bank_qr';
 export type ExitAuthorizationStatus = 'NOT_READY' | 'AUTHORIZED' | 'EXIT_CONFIRMED';
 
 export type User = {

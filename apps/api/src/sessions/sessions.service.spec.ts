@@ -826,6 +826,91 @@ describe('SessionsService', () => {
     });
   });
 
+  describe('lookupForCheckout', () => {
+    const sessionWithSlot = {
+      ...makeSession({ sessionCode: 'PBMS-SESSION' }),
+      slot: {
+        ...makeSlot(),
+        status: SlotStatus.occupied,
+        floor: makeFloor(),
+      },
+      payment: null,
+    };
+
+    const mockBreakdown = {
+      sessionId: 'session-uuid-1',
+      vehicleType: VehicleType.car,
+      checkInTime: new Date('2024-01-01T08:00:00Z'),
+      checkOutTime: new Date('2024-01-01T10:30:00Z'),
+      durationMs: 9000000,
+      durationHours: 2.5,
+      roundedHours: 3,
+      hourlyRate: 8000,
+      baseFee: 24000,
+      isOvertime: false,
+      overtimePenalty: 0,
+      isLostTicket: false,
+      lostTicketPenalty: 0,
+      totalFee: 24000,
+    };
+
+    it('looks up an active session by Session Code without mutating checkout state', async () => {
+      prisma.parkingSession.findFirst.mockResolvedValue(sessionWithSlot);
+      feesService.calculate.mockResolvedValue(mockBreakdown);
+
+      const result = await service.lookupForCheckout({ sessionCode: 'PBMS-SESSION' });
+
+      expect(prisma.parkingSession.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { OR: [{ id: 'PBMS-SESSION' }, { sessionCode: 'PBMS-SESSION' }] },
+          include: expect.objectContaining({
+            slot: { include: { floor: true } },
+            payment: true,
+          }),
+        }),
+      );
+      expect(prisma.parkingSession.update).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(result.session).toMatchObject({
+        id: 'session-uuid-1',
+        sessionCode: 'PBMS-SESSION',
+        status: 'active',
+      });
+      expect(result.fee.total).toBe(24000);
+      expect(result.payment).toBeNull();
+    });
+
+    it('returns completed session state without checkout actions', async () => {
+      prisma.parkingSession.findFirst.mockResolvedValue({
+        ...sessionWithSlot,
+        status: SessionStatus.completed,
+        checkOutTime: new Date('2024-01-01T10:30:00Z'),
+        isPaid: true,
+        payment: {
+          id: 'payment-uuid-1',
+          sessionId: 'session-uuid-1',
+          amount: 24000,
+          method: PaymentMethod.cash,
+          status: 'paid',
+          paidAt: new Date('2024-01-01T10:30:00Z'),
+          receivedBy: 'staff-uuid',
+        },
+      });
+      feesService.calculate.mockResolvedValue(mockBreakdown);
+
+      const result = await service.lookupForCheckout({ sessionCode: 'PBMS-SESSION' });
+
+      expect(result.session.status).toBe('completed');
+      expect(result.payment).toMatchObject({ status: 'paid' });
+      expect(result.fee.total).toBe(24000);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('throws BadRequestException when lookup has no Session Code or plate', async () => {
+      await expect(service.lookupForCheckout({})).rejects.toThrow(BadRequestException);
+    });
+  });
+
   // ── checkOut (15.1–15.3) ──────────────────────────────────────────────────
 
   describe('checkOut', () => {
@@ -854,6 +939,28 @@ describe('SessionsService', () => {
       lostTicketPenalty: 0,
       totalFee: 24000,
     };
+
+    beforeEach(() => {
+      prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          parkingSession: {
+            update: jest.fn().mockResolvedValue({ ...sessionWithSlot, status: 'checkout_pending' }),
+          },
+          payment: {
+            upsert: jest.fn().mockResolvedValue({
+              id: 'payment-uuid-1',
+              sessionId: 'session-uuid-1',
+              amount: 24000,
+              method: PaymentMethod.cash,
+              status: 'pending',
+              paidAt: null,
+              receivedBy: null,
+            }),
+          },
+        };
+        return fn(tx);
+      });
+    });
 
     it('throws BadRequestException when neither sessionId nor licensePlate provided (15.1)', async () => {
       await expect(service.checkOut({}, staffId)).rejects.toThrow(
@@ -964,6 +1071,68 @@ describe('SessionsService', () => {
       expect(result.slot).toHaveProperty('code');
       expect(result.slot).toHaveProperty('floor');
     });
+
+    it('moves active session to checkout_pending and creates a pending cash payment without releasing the slot', async () => {
+      let txCalls: { sessionUpdate?: any; paymentUpsert?: any; slotUpdate?: any } = {};
+      prisma.parkingSession.findFirst.mockResolvedValue(sessionWithSlot);
+      feesService.calculate.mockResolvedValue(mockBreakdown);
+      prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          parkingSession: {
+            update: jest.fn().mockImplementation((args) => {
+              txCalls.sessionUpdate = args;
+              return Promise.resolve({ ...sessionWithSlot, status: 'checkout_pending' });
+            }),
+          },
+          payment: {
+            upsert: jest.fn().mockImplementation((args) => {
+              txCalls.paymentUpsert = args;
+              return Promise.resolve({
+                id: 'payment-uuid-1',
+                sessionId: 'session-uuid-1',
+                amount: 24000,
+                method: PaymentMethod.cash,
+                status: 'pending',
+                paidAt: null,
+                receivedBy: null,
+              });
+            }),
+          },
+          slot: {
+            update: jest.fn().mockImplementation((args) => {
+              txCalls.slotUpdate = args;
+              return Promise.resolve({});
+            }),
+          },
+        };
+        return fn(tx);
+      });
+
+      const result = await service.checkOut({ sessionId: 'session-uuid-1' }, staffId);
+
+      expect(txCalls.sessionUpdate).toEqual(
+        expect.objectContaining({
+          where: { id: 'session-uuid-1' },
+          data: expect.objectContaining({
+            status: 'checkout_pending',
+            feeAmount: 24000,
+            penaltyAmount: 0,
+          }),
+        }),
+      );
+      expect(txCalls.paymentUpsert.create).toEqual(
+        expect.objectContaining({
+          sessionId: 'session-uuid-1',
+          amount: 24000,
+          method: PaymentMethod.cash,
+          status: 'pending',
+          paidAt: null,
+        }),
+      );
+      expect(txCalls.slotUpdate).toBeUndefined();
+      expect(result.session.status).toBe('checkout_pending');
+      expect(result.payment.status).toBe('pending');
+    });
   });
 
   // ── confirmPayment (15.4–15.6) ────────────────────────────────────────────
@@ -971,7 +1140,7 @@ describe('SessionsService', () => {
   describe('confirmPayment', () => {
     const staffId = 'staff-uuid';
     const sessionWithSlot = {
-      ...makeSession(),
+      ...makeSession({ status: 'checkout_pending' as SessionStatus }),
       slotId: 1,
       slot: {
         ...makeSlot(),
@@ -1004,14 +1173,24 @@ describe('SessionsService', () => {
       prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
         const tx = {
           parkingSession: {
-            update: jest.fn().mockResolvedValue({ ...sessionWithSlot, status: 'completed' }),
+            update: jest.fn().mockResolvedValue({ ...sessionWithSlot, status: 'exit_authorized' }),
           },
           payment: {
-            create: jest.fn().mockResolvedValue({
+            findUnique: jest.fn().mockResolvedValue({
               id: 'payment-uuid-1',
               sessionId: 'session-uuid-1',
               amount: 24000,
               method: PaymentMethod.cash,
+              status: 'pending',
+              paidAt: null,
+              receivedBy: null,
+            }),
+            update: jest.fn().mockResolvedValue({
+              id: 'payment-uuid-1',
+              sessionId: 'session-uuid-1',
+              amount: 24000,
+              method: PaymentMethod.cash,
+              status: 'paid',
               paidAt: new Date('2024-01-01T10:30:00Z'),
               receivedBy: staffId,
             }),
@@ -1065,27 +1244,35 @@ describe('SessionsService', () => {
       expect(result.receipt.breakdown.lostTicketPenalty).toBe(100000);
     });
 
-    it('creates Payment record and releases slot in transaction (15.4, 15.5)', async () => {
-      let txCalls: { sessionUpdate: unknown; paymentCreate: unknown; slotUpdate: unknown } | null = null;
+    it('marks pending payment as paid and authorizes exit without releasing the slot', async () => {
+      let txCalls: { sessionUpdate?: any; paymentUpdate?: any; slotUpdate?: any } = {};
 
       prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
         const tx = {
           parkingSession: {
             update: jest.fn().mockImplementation((args) => {
-              txCalls = txCalls || {} as any;
-              (txCalls as any).sessionUpdate = args;
-              return Promise.resolve({ ...sessionWithSlot, status: 'completed' });
+              txCalls.sessionUpdate = args;
+              return Promise.resolve({ ...sessionWithSlot, status: 'exit_authorized' });
             }),
           },
           payment: {
-            create: jest.fn().mockImplementation((args) => {
-              txCalls = txCalls || {} as any;
-              (txCalls as any).paymentCreate = args;
+            findUnique: jest.fn().mockResolvedValue({
+              id: 'payment-uuid-1',
+              sessionId: 'session-uuid-1',
+              amount: 24000,
+              method: PaymentMethod.cash,
+              status: 'pending',
+              paidAt: null,
+              receivedBy: null,
+            }),
+            update: jest.fn().mockImplementation((args) => {
+              txCalls.paymentUpdate = args;
               return Promise.resolve({
                 id: 'payment-uuid-1',
                 sessionId: 'session-uuid-1',
                 amount: 24000,
                 method: PaymentMethod.cash,
+                status: 'paid',
                 paidAt: new Date(),
                 receivedBy: staffId,
               });
@@ -1093,8 +1280,7 @@ describe('SessionsService', () => {
           },
           slot: {
             update: jest.fn().mockImplementation((args) => {
-              txCalls = txCalls || {} as any;
-              (txCalls as any).slotUpdate = args;
+              txCalls.slotUpdate = args;
               return Promise.resolve({ id: 1, status: 'available' });
             }),
           },
@@ -1104,21 +1290,21 @@ describe('SessionsService', () => {
 
       await service.confirmPayment('session-uuid-1', {}, staffId);
 
-      // Session marked completed with fees
-      expect((txCalls as any).sessionUpdate.data.status).toBe('completed');
-      expect((txCalls as any).sessionUpdate.data.isPaid).toBe(true);
-      expect((txCalls as any).sessionUpdate.data.feeAmount).toBe(24000);
-      expect((txCalls as any).sessionUpdate.data.checkedOutById).toBe(staffId);
+      expect(txCalls.sessionUpdate.data.status).toBe('exit_authorized');
+      expect(txCalls.sessionUpdate.data.isPaid).toBe(true);
+      expect(txCalls.sessionUpdate.data.checkedOutById).toBe(staffId);
 
-      // Payment created
-      expect((txCalls as any).paymentCreate.data.sessionId).toBe('session-uuid-1');
-      expect((txCalls as any).paymentCreate.data.amount).toBe(24000);
-      expect((txCalls as any).paymentCreate.data.method).toBe(PaymentMethod.cash);
-      expect((txCalls as any).paymentCreate.data.receivedBy).toBe(staffId);
-
-      // Slot released
-      expect((txCalls as any).slotUpdate.data.status).toBe('available');
-      expect((txCalls as any).slotUpdate.where.id).toBe(1);
+      expect(txCalls.paymentUpdate).toEqual(
+        expect.objectContaining({
+          where: { sessionId: 'session-uuid-1' },
+          data: expect.objectContaining({
+            status: 'paid',
+            paidAt: expect.any(Date),
+            receivedBy: staffId,
+          }),
+        }),
+      );
+      expect(txCalls.slotUpdate).toBeUndefined();
     });
 
     it('returns receipt with full breakdown (15.6)', async () => {
@@ -1135,10 +1321,11 @@ describe('SessionsService', () => {
       expect(result.receipt.breakdown).toHaveProperty('totalFee', 24000);
       expect(result.receipt.payment).toHaveProperty('id', 'payment-uuid-1');
       expect(result.receipt.payment).toHaveProperty('method', PaymentMethod.cash);
+      expect(result.receipt.payment).toHaveProperty('status', 'paid');
     });
 
     it('uses provided payment method', async () => {
-      // PaymentMethod only has 'cash' for now, but test the pass-through
+      // Flow 4A.1 keeps cash as the default method; bank_qr is reserved for later backend payment integration.
       const result = await service.confirmPayment(
         'session-uuid-1',
         { method: PaymentMethod.cash },
@@ -1146,6 +1333,64 @@ describe('SessionsService', () => {
       );
 
       expect(result.receipt.payment.method).toBe(PaymentMethod.cash);
+    });
+  });
+
+  describe('confirmExit', () => {
+    const staffId = 'staff-uuid';
+    const exitAuthorizedSession = {
+      ...makeSession({ status: 'exit_authorized' as SessionStatus }),
+      slotId: 1,
+      slot: {
+        ...makeSlot(),
+        floor: makeFloor(),
+      },
+    };
+
+    it('marks exit_authorized session completed and releases the slot', async () => {
+      prisma.parkingSession.findUnique.mockResolvedValue(exitAuthorizedSession);
+      let txCalls: { sessionUpdate?: any; slotUpdate?: any } = {};
+      prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          parkingSession: {
+            update: jest.fn().mockImplementation((args) => {
+              txCalls.sessionUpdate = args;
+              return Promise.resolve({ ...exitAuthorizedSession, status: 'completed' });
+            }),
+          },
+          slot: {
+            update: jest.fn().mockImplementation((args) => {
+              txCalls.slotUpdate = args;
+              return Promise.resolve({ id: 1, status: 'available' });
+            }),
+          },
+        };
+        return fn(tx);
+      });
+
+      const result = await service.confirmExit('session-uuid-1', staffId);
+
+      expect(txCalls.sessionUpdate).toEqual(
+        expect.objectContaining({
+          where: { id: 'session-uuid-1' },
+          data: expect.objectContaining({
+            status: 'completed',
+            checkOutTime: expect.any(Date),
+            checkedOutById: staffId,
+          }),
+        }),
+      );
+      expect(txCalls.slotUpdate).toEqual({
+        where: { id: 1 },
+        data: { status: 'available' },
+      });
+      expect(result.session.status).toBe('completed');
+    });
+
+    it('rejects exit confirmation before payment authorizes exit', async () => {
+      prisma.parkingSession.findUnique.mockResolvedValue(makeSession({ status: SessionStatus.active }));
+
+      await expect(service.confirmExit('session-uuid-1', staffId)).rejects.toThrow(ConflictException);
     });
   });
 

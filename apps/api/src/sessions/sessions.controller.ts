@@ -4,6 +4,7 @@ import {
   Get,
   Body,
   Param,
+  Query,
   UseGuards,
   ParseUUIDPipe,
 } from '@nestjs/common';
@@ -51,7 +52,8 @@ export class SessionsController {
 
   /**
    * POST /sessions/:id/confirm-payment
-   * 15.4: Staff only — confirm payment, complete session, release slot.
+   * 15.4: Staff only — confirm payment and authorize exit.
+   * Slot release happens only after confirm-exit.
    * Req 2.4, 6.2, 6.4
    */
   @Post(':id/confirm-payment')
@@ -63,6 +65,20 @@ export class SessionsController {
     @CurrentUser('id') staffId: string,
   ) {
     return this.sessionsService.confirmPayment(id, dto, staffId);
+  }
+
+  /**
+   * POST /sessions/:id/confirm-exit
+   * Staff only — confirm the vehicle actually exited, then release slot.
+   */
+  @Post(':id/confirm-exit')
+  @UseGuards(RolesGuard)
+  @Roles(Role.staff)
+  confirmExit(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') staffId: string,
+  ) {
+    return this.sessionsService.confirmExit(id, staffId);
   }
 
   /**
@@ -89,6 +105,20 @@ export class SessionsController {
   @Roles(Role.staff)
   findActive() {
     return this.sessionsService.findActive();
+  }
+
+  /**
+   * GET /sessions/checkout-lookup?sessionCode=... or ?licensePlate=...
+   * Staff only — read-only lookup for checkout workflow.
+   */
+  @Get('checkout-lookup')
+  @UseGuards(RolesGuard)
+  @Roles(Role.staff)
+  lookupForCheckout(
+    @Query('sessionCode') sessionCode?: string,
+    @Query('licensePlate') licensePlate?: string,
+  ) {
+    return this.sessionsService.lookupForCheckout({ sessionCode, licensePlate });
   }
 
   /**

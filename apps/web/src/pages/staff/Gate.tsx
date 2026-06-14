@@ -8,10 +8,18 @@ import {
   checkIn,
   checkOut,
   confirmPayment,
+  confirmCashPayment,
+  confirmVehicleExited,
+  lookupSessionForCheckout,
+  requestCheckout,
   type CheckInResponse,
   type CheckInIdentificationMethod,
   type CheckOutResponse,
+  type CheckoutWorkflowResponse,
+  type ConfirmExitResponse,
   type ConfirmPaymentResponse,
+  type PaymentStatus,
+  type SessionStatus,
   type VehicleType,
 } from '../../lib/sessions-api'
 import { Receipt } from '../../components/receipt/Receipt'
@@ -594,7 +602,7 @@ function CheckInResult({
 
 // ─── Check-out Panel ─────────────────────────────────────────────────────────
 
-function CheckOutPanel({ toasts }: PanelProps) {
+export function LegacyCheckOutPanel({ toasts }: PanelProps) {
   const [licensePlate, setLicensePlate] = useState('')
   const [feePreview, setFeePreview] = useState<CheckOutResponse | null>(null)
   const [confirming, setConfirming] = useState(false)
@@ -817,5 +825,589 @@ function CheckOutPanel({ toasts }: PanelProps) {
         />
       )}
     </form>
+  )
+}
+
+function CheckOutPanel({ toasts }: PanelProps) {
+  const [sessionCode, setSessionCode] = useState('')
+  const [licensePlate, setLicensePlate] = useState('')
+  const [workflow, setWorkflow] = useState<CheckoutWorkflowResponse | null>(null)
+  const [receipt, setReceipt] = useState<ConfirmPaymentResponse | null>(null)
+  const [exitResult, setExitResult] = useState<ConfirmExitResponse | null>(null)
+  const [action, setAction] = useState<'lookup' | 'checkout' | 'payment' | 'exit' | null>(null)
+  const [showScanner, setShowScanner] = useState(false)
+
+  const status = workflow?.session.status
+  const paymentStatus = workflow?.payment?.status ?? null
+  const canRequestCheckout = status === 'active'
+  const canConfirmPayment = status === 'checkout_pending'
+  const canConfirmExit = status === 'exit_authorized'
+  const isCompleted = status === 'completed'
+
+  const reset = () => {
+    setSessionCode('')
+    setLicensePlate('')
+    setWorkflow(null)
+    setReceipt(null)
+    setExitResult(null)
+    setAction(null)
+    setShowScanner(false)
+  }
+
+  const normalizeSessionCode = (value: string) => {
+    const trimmed = value.trim()
+    return trimmed.toUpperCase().startsWith('PBMS-') ? trimmed.toUpperCase() : trimmed
+  }
+
+  const lookupSession = async (input: { sessionCode?: string; licensePlate?: string }) => {
+    const code = input.sessionCode ? normalizeSessionCode(input.sessionCode) : ''
+    const plate = input.licensePlate?.trim().toUpperCase() ?? ''
+    if (!code && !plate) {
+      toasts.showError('Nhap Session Code/QR hoac bien so de tra cuu.')
+      return
+    }
+
+    setAction('lookup')
+    try {
+      const data = await lookupSessionForCheckout({
+        sessionCode: code || undefined,
+        licensePlate: plate || undefined,
+      })
+      setWorkflow(data)
+      setReceipt(null)
+      setExitResult(null)
+      if (data.session.status === 'completed') {
+        toasts.showInfo('Session nay da hoan tat checkout.')
+      } else {
+        toasts.showSuccess('Da tai session checkout.')
+      }
+    } catch (err) {
+      const { message } = extractError(err)
+      toasts.showError(message || 'Khong tim thay session.')
+    } finally {
+      setAction(null)
+    }
+  }
+
+  const handleLookupBySession = (event: React.FormEvent) => {
+    event.preventDefault()
+    lookupSession({ sessionCode })
+  }
+
+  const handleLookupByPlate = (event: React.FormEvent) => {
+    event.preventDefault()
+    lookupSession({ licensePlate })
+  }
+
+  const handleQRScanned = useCallback((decodedText: string) => {
+    const code = decodedText.trim()
+    setShowScanner(false)
+    if (!code) {
+      toasts.showError('Ma QR khong hop le.')
+      return
+    }
+    setSessionCode(code)
+    lookupSession({ sessionCode: code })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toasts])
+
+  const handleRequestCheckout = async () => {
+    if (!workflow) return
+    setAction('checkout')
+    try {
+      const data = await requestCheckout({
+        sessionCode: workflow.session.sessionCode || workflow.session.id,
+      })
+      setWorkflow(data)
+      setReceipt(null)
+      setExitResult(null)
+      toasts.showSuccess('Checkout started. Payment is pending.')
+    } catch (err) {
+      const { message } = extractError(err)
+      toasts.showError(message || 'Checkout failed.')
+    } finally {
+      setAction(null)
+    }
+  }
+
+  const handleConfirmPayment = async () => {
+    if (!workflow) return
+    setAction('payment')
+    try {
+      const response = await confirmCashPayment(workflow.session.id)
+      setReceipt(response)
+      setWorkflow((current) =>
+        current
+          ? {
+              ...current,
+              session: {
+                ...current.session,
+                status: response.exitAuthorizationStatus,
+                isPaid: true,
+                feeAmount: response.fee.baseFee,
+                penaltyAmount: response.fee.penalty,
+                isOvertime: response.fee.isOvertime,
+                isLostTicket: response.fee.isLostTicket,
+              },
+              fee: response.fee,
+              payment: {
+                id: response.paymentId,
+                sessionId: response.sessionId,
+                amount: response.fee.total,
+                method: response.paymentMethod,
+                status: response.paymentStatus,
+                paidAt: response.paidAt,
+              },
+            }
+          : current,
+      )
+      toasts.showSuccess('Cash payment confirmed. Vehicle is authorized to exit.')
+    } catch (err) {
+      const { message } = extractError(err)
+      toasts.showError(message || 'Payment confirmation failed.')
+    } finally {
+      setAction(null)
+    }
+  }
+
+  const handleConfirmExit = async () => {
+    if (!workflow) return
+    setAction('exit')
+    try {
+      const response = await confirmVehicleExited(workflow.session.id)
+      setExitResult(response)
+      setWorkflow((current) =>
+        current
+          ? {
+              ...current,
+              session: {
+                ...current.session,
+                status: response.session.status,
+                checkOutTime: response.session.checkOutTime,
+              },
+              slot: {
+                ...current.slot,
+                status: response.slot.status,
+              },
+            }
+          : current,
+      )
+      toasts.showSuccess('Vehicle exit confirmed. Slot released.')
+    } catch (err) {
+      const { message } = extractError(err)
+      toasts.showError(message || 'Exit confirmation failed.')
+    } finally {
+      setAction(null)
+    }
+  }
+
+  const handlePrint = () => window.print()
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-col gap-2 border-b border-slate-200 pb-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">
+            Cash Checkout Flow
+          </p>
+          <h2 className="text-2xl font-black tracking-tight text-slate-950">
+            Staff Check-out
+          </h2>
+          <p className="mt-1 max-w-3xl text-sm text-slate-500">
+            Khach dua Session Ticket/QR khi ra bai. Nhap Session Code hoac quet QR de bat dau checkout.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={reset}
+          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-600 transition hover:bg-slate-950 hover:text-white"
+        >
+          Next Vehicle
+        </button>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_420px]">
+        <div className="space-y-5">
+          <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+              <form onSubmit={handleLookupBySession} className="space-y-2">
+                <label className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                  Session Code / QR
+                </label>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    className="input font-mono text-base font-black uppercase tracking-[0.08em]"
+                    placeholder="PBMS-D1878BC500"
+                    value={sessionCode}
+                    onChange={(event) => setSessionCode(event.target.value)}
+                    autoFocus
+                  />
+                  <button
+                    type="submit"
+                    className="btn-primary whitespace-nowrap"
+                    disabled={action === 'lookup'}
+                  >
+                    {action === 'lookup' ? 'Loading...' : 'Lookup Session'}
+                  </button>
+                </div>
+              </form>
+
+              <button
+                type="button"
+                onClick={() => setShowScanner(true)}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:border-slate-950 hover:text-slate-950 disabled:opacity-60"
+                disabled={action === 'lookup'}
+              >
+                Scan QR
+              </button>
+            </div>
+
+            <form onSubmit={handleLookupByPlate} className="mt-4 border-t border-slate-200 pt-4">
+              <label className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                Tim bang bien so neu khach mat ve
+              </label>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                <input
+                  className="input uppercase"
+                  placeholder="VD: 59A-12345"
+                  value={licensePlate}
+                  onChange={(event) => setLicensePlate(event.target.value)}
+                />
+                <button
+                  type="submit"
+                  className="btn-secondary whitespace-nowrap"
+                  disabled={action === 'lookup'}
+                >
+                  Search Plate
+                </button>
+              </div>
+            </form>
+          </section>
+
+          {workflow ? (
+            <section className="grid gap-5 lg:grid-cols-2">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+                      Session Detail
+                    </p>
+                    <p className="mt-1 font-mono text-2xl font-black tracking-[0.08em] text-slate-950">
+                      {workflow.session.sessionCode}
+                    </p>
+                  </div>
+                  <StatusBadge status={workflow.session.status} />
+                </div>
+
+                <div className="mt-5 grid gap-3 text-sm">
+                  <DetailRow label="Plate" value={workflow.session.licensePlate} strong />
+                  <DetailRow label="Vehicle" value={formatVehicleType(workflow.session.vehicleType)} />
+                  <DetailRow label="Slot" value={workflow.slot.code} mono strong />
+                  <DetailRow label="Floor / Zone" value={`${workflow.slot.floor.name} / Zone ${workflow.slot.zone}`} />
+                  <DetailRow label="Check-in" value={formatDateTime(workflow.session.checkInTime)} />
+                  <DetailRow label="Duration" value={`${workflow.fee.durationHours} hour${workflow.fee.durationHours > 1 ? 's' : ''}`} />
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+                      Fee / Payment
+                    </p>
+                    <p className="mt-1 text-3xl font-black text-slate-950">
+                      {VND(workflow.fee.total)}
+                    </p>
+                  </div>
+                  <PaymentBadge status={paymentStatus} />
+                </div>
+
+                <div className="mt-5 space-y-2 text-sm">
+                  <DetailRow label="Base fee" value={VND(workflow.fee.baseFee)} />
+                  <DetailRow label="Penalty" value={VND(workflow.fee.penalty)} />
+                  <DetailRow label="Method" value="Cash" />
+                  <DetailRow
+                    label="Payment"
+                    value={workflow.payment ? readablePaymentStatus(workflow.payment.status) : 'Not created'}
+                  />
+                  {workflow.payment?.paidAt ? (
+                    <DetailRow label="Paid at" value={formatDateTime(workflow.payment.paidAt)} />
+                  ) : null}
+                </div>
+
+                {workflow.fee.isOvertime || workflow.fee.isLostTicket ? (
+                  <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
+                    Fee includes penalty.
+                  </p>
+                ) : null}
+              </div>
+            </section>
+          ) : (
+            <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
+              <p className="text-sm font-black uppercase tracking-[0.18em] text-slate-400">
+                Waiting for Session Ticket
+              </p>
+              <p className="mt-2 text-lg font-bold text-slate-700">
+                Enter Session Code or scan QR to load checkout details.
+              </p>
+            </section>
+          )}
+
+          {isCompleted && receipt ? (
+            <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xl font-black text-emerald-950">Checkout completed</p>
+                  <p className="text-sm font-semibold text-emerald-700">
+                    Vehicle exited. Slot released.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={handlePrint} className="btn-secondary print:hidden">
+                    Print Receipt
+                  </button>
+                  <button type="button" onClick={reset} className="btn-primary print:hidden">
+                    Next Vehicle
+                  </button>
+                </div>
+              </div>
+              <div className="mt-4 print:block">
+                <Receipt data={receipt} />
+              </div>
+            </section>
+          ) : null}
+        </div>
+
+        <aside className="space-y-4">
+          <section className="rounded-2xl border border-slate-200 bg-slate-950 p-5 text-white shadow-sm">
+            <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">
+              Lifecycle Status
+            </p>
+            <div className="mt-5 space-y-4">
+              <LifecycleStep label="Active" active={status === 'active'} complete={Boolean(status && status !== 'active')} />
+              <LifecycleStep label="Checkout Pending" active={status === 'checkout_pending'} complete={status === 'exit_authorized' || status === 'completed'} />
+              <LifecycleStep label="Payment Paid" active={paymentStatus === 'paid' && status === 'exit_authorized'} complete={status === 'completed'} />
+              <LifecycleStep label="Exit Authorized" active={status === 'exit_authorized'} complete={status === 'completed'} />
+              <LifecycleStep label="Completed / Slot Released" active={status === 'completed'} complete={status === 'completed'} />
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+              Actions
+            </p>
+            <p className="mt-2 text-sm text-slate-500">
+              {workflow ? actionHint(workflow.session.status) : 'Load a session before starting checkout.'}
+            </p>
+
+            <div className="mt-5 space-y-2">
+              <button
+                type="button"
+                onClick={handleRequestCheckout}
+                disabled={!canRequestCheckout || Boolean(action)}
+                className="w-full rounded-xl bg-slate-950 px-4 py-3 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+              >
+                {action === 'checkout' ? 'Starting checkout...' : 'Calculate Fee & Start Checkout'}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmPayment}
+                disabled={!canConfirmPayment || Boolean(action)}
+                className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+              >
+                {action === 'payment' ? 'Confirming cash...' : 'Confirm Cash Payment'}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmExit}
+                disabled={!canConfirmExit || Boolean(action)}
+                className="w-full rounded-xl bg-primary-600 px-4 py-3 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+              >
+                {action === 'exit' ? 'Releasing slot...' : 'Confirm Vehicle Exited'}
+              </button>
+            </div>
+
+            {!canConfirmExit && workflow?.session.status === 'checkout_pending' ? (
+              <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                Chi xac nhan xe ra sau khi da thanh toan.
+              </p>
+            ) : null}
+
+            {workflow?.session.status === 'exit_authorized' ? (
+              <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
+                Da thanh toan. Xe duoc phep ra. Slot van occupied den khi nhan vien xac nhan xe da ra.
+              </p>
+            ) : null}
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+              Exit Summary
+            </p>
+            <div className="mt-4 space-y-3 text-sm">
+              <DetailRow label="Slot status" value={workflow?.slot.status ?? 'Not loaded'} />
+              <DetailRow label="Exit authorization" value={readableExitStatus(status)} />
+              <DetailRow
+                label="Final checkout"
+                value={
+                  workflow?.session.checkOutTime
+                    ? formatDateTime(workflow.session.checkOutTime)
+                    : exitResult?.session.checkOutTime
+                      ? formatDateTime(exitResult.session.checkOutTime)
+                      : 'Pending'
+                }
+              />
+            </div>
+          </section>
+        </aside>
+      </div>
+
+      {showScanner ? (
+        <QRScanner
+          title="Scan Session QR"
+          instructions="Scan Session QR/code from the parking ticket issued at check-in."
+          manualToggleLabel="Camera cannot scan? Enter Session Code manually"
+          manualInputLabel="Session Code / QR"
+          manualInputPlaceholder="PBMS-D1878BC500"
+          onScan={handleQRScanned}
+          onClose={() => setShowScanner(false)}
+          onManualInput={handleQRScanned}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+function formatVehicleType(type: VehicleType) {
+  return type === 'car' ? 'Car' : 'Motorbike'
+}
+
+function readableStatus(status: SessionStatus) {
+  const labels: Record<SessionStatus, string> = {
+    active: 'Active',
+    checkout_pending: 'Checkout Pending',
+    exit_authorized: 'Exit Authorized',
+    completed: 'Completed',
+    cancelled: 'Cancelled',
+  }
+  return labels[status]
+}
+
+function readablePaymentStatus(status: PaymentStatus) {
+  const labels: Record<PaymentStatus, string> = {
+    pending: 'Pending',
+    paid: 'Paid',
+    failed: 'Failed',
+    cancelled: 'Cancelled',
+    expired: 'Expired',
+  }
+  return labels[status]
+}
+
+function readableExitStatus(status?: SessionStatus) {
+  if (status === 'exit_authorized') return 'Authorized'
+  if (status === 'completed') return 'Exited'
+  if (status === 'checkout_pending') return 'Waiting for payment'
+  if (status === 'active') return 'Not ready'
+  return 'Not loaded'
+}
+
+function actionHint(status: SessionStatus) {
+  if (status === 'active') return 'Review session and start checkout to create a pending payment.'
+  if (status === 'checkout_pending') return 'Collect cash, then confirm payment.'
+  if (status === 'exit_authorized') return 'Payment is paid. Confirm vehicle exited to release the slot.'
+  if (status === 'completed') return 'Checkout completed. Use Next Vehicle for the next operation.'
+  return 'This session cannot continue checkout.'
+}
+
+function DetailRow({
+  label,
+  value,
+  mono = false,
+  strong = false,
+}: {
+  label: string
+  value: string
+  mono?: boolean
+  strong?: boolean
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+      <span className="text-slate-500">{label}</span>
+      <span
+        className={`text-right ${mono ? 'font-mono' : ''} ${
+          strong ? 'font-black text-slate-950' : 'font-bold text-slate-700'
+        }`}
+      >
+        {value}
+      </span>
+    </div>
+  )
+}
+
+function StatusBadge({ status }: { status: SessionStatus }) {
+  const tone: Record<SessionStatus, string> = {
+    active: 'bg-blue-50 text-blue-700 ring-blue-200',
+    checkout_pending: 'bg-amber-50 text-amber-700 ring-amber-200',
+    exit_authorized: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+    completed: 'bg-slate-100 text-slate-700 ring-slate-200',
+    cancelled: 'bg-rose-50 text-rose-700 ring-rose-200',
+  }
+  return (
+    <span className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.12em] ring-1 ${tone[status]}`}>
+      {readableStatus(status)}
+    </span>
+  )
+}
+
+function PaymentBadge({ status }: { status: PaymentStatus | null }) {
+  if (!status) {
+    return (
+      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-slate-500 ring-1 ring-slate-200">
+        No Payment
+      </span>
+    )
+  }
+
+  const tone: Record<PaymentStatus, string> = {
+    pending: 'bg-amber-50 text-amber-700 ring-amber-200',
+    paid: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+    failed: 'bg-rose-50 text-rose-700 ring-rose-200',
+    cancelled: 'bg-slate-100 text-slate-700 ring-slate-200',
+    expired: 'bg-orange-50 text-orange-700 ring-orange-200',
+  }
+  return (
+    <span className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.12em] ring-1 ${tone[status]}`}>
+      {readablePaymentStatus(status)}
+    </span>
+  )
+}
+
+function LifecycleStep({
+  label,
+  active,
+  complete,
+}: {
+  label: string
+  active: boolean
+  complete: boolean
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <span
+        className={`grid h-8 w-8 place-items-center rounded-full border text-xs font-black ${
+          complete
+            ? 'border-emerald-400 bg-emerald-400 text-slate-950'
+            : active
+              ? 'border-white bg-white text-slate-950'
+              : 'border-slate-700 bg-slate-900 text-slate-500'
+        }`}
+      >
+        {complete ? 'OK' : active ? 'ON' : ''}
+      </span>
+      <span className={active || complete ? 'font-black text-white' : 'font-semibold text-slate-500'}>
+        {label}
+      </span>
+    </div>
   )
 }
