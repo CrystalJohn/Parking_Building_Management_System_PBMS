@@ -3,17 +3,24 @@ import { formatDateTimeVN } from '../../lib/date-time'
 
 interface ReceiptProps {
   data: ConfirmPaymentResponse
+  sessionCode?: string | null
 }
 
-const VND = (n: number) => `${n.toLocaleString('vi-VN')} VND`
+const VND = (n: number) =>
+  `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(Math.round(n))} VND`
 
 const formatDateTime = formatDateTimeVN
+
+function displaySessionCode(sessionId: string, sessionCode?: string | null) {
+  if (sessionCode) return sessionCode
+  return `PBMS-${sessionId.replace(/-/g, '').slice(0, 10).toUpperCase()}`
+}
 
 /**
  * Printable parking receipt. Use window.print() from the parent.
  * Hides app chrome via @media print rules in App.css.
  */
-export function Receipt({ data }: ReceiptProps) {
+export function Receipt({ data, sessionCode }: ReceiptProps) {
   return (
     <div
       id="receipt"
@@ -26,7 +33,9 @@ export function Receipt({ data }: ReceiptProps) {
 
       <dl className="grid grid-cols-2 gap-y-2 text-sm">
         <dt className="text-gray-500">Mã phiên</dt>
-        <dd className="font-mono text-right break-all">{data.sessionId}</dd>
+        <dd className="font-mono text-right font-semibold">
+          {displaySessionCode(data.sessionId, sessionCode)}
+        </dd>
 
         <dt className="text-gray-500">Biển số</dt>
         <dd className="text-right font-medium">{data.licensePlate}</dd>

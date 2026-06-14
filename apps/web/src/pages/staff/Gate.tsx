@@ -55,7 +55,8 @@ const STAFF_NAV = [
   { to: '/staff/lost-ticket', label: 'Mất vé' },
 ]
 
-const VND = (n: number) => `${n.toLocaleString('vi-VN')} VND`
+const VND = (n: number) =>
+  `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(Math.round(n))} VND`
 
 const isUuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -1172,83 +1173,162 @@ function CheckOutPanel({ toasts }: PanelProps) {
                 </div>
               </div>
               <div className="mt-4 print:block">
-                <Receipt data={receipt} />
+                <Receipt data={receipt} sessionCode={workflow?.session.sessionCode} />
               </div>
             </section>
           ) : null}
         </div>
 
-        <aside className="space-y-4">
-          <section className="rounded-2xl border border-slate-200 bg-slate-950 p-5 text-white shadow-sm">
-            <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">
-              Lifecycle Status
+        <aside className="space-y-4 xl:sticky xl:top-28 xl:self-start">
+          <section className={`overflow-hidden rounded-3xl border p-5 shadow-sm ${checkoutGuideTone(status)}`}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.2em] opacity-70">
+                  Gate Decision
+                </p>
+                <h3 className="mt-2 text-2xl font-black tracking-tight">
+                  {checkoutGuide(status).title}
+                </h3>
+              </div>
+              <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-slate-700 ring-1 ring-black/5">
+                {workflow ? readableStatus(workflow.session.status) : 'Ready'}
+              </span>
+            </div>
+
+            <p className="mt-4 text-sm font-semibold leading-6 opacity-80">
+              {checkoutGuide(status).description}
             </p>
-            <div className="mt-5 space-y-4">
-              <LifecycleStep label="Active" active={status === 'active'} complete={Boolean(status && status !== 'active')} />
-              <LifecycleStep label="Checkout Pending" active={status === 'checkout_pending'} complete={status === 'exit_authorized' || status === 'completed'} />
-              <LifecycleStep label="Payment Paid" active={paymentStatus === 'paid' && status === 'exit_authorized'} complete={status === 'completed'} />
-              <LifecycleStep label="Exit Authorized" active={status === 'exit_authorized'} complete={status === 'completed'} />
-              <LifecycleStep label="Completed / Slot Released" active={status === 'completed'} complete={status === 'completed'} />
+
+            {workflow ? (
+              <div className="mt-5 grid grid-cols-3 gap-2">
+                <OperatorSignal
+                  label="Payment"
+                  value={workflow.payment ? readablePaymentStatus(workflow.payment.status) : 'Not started'}
+                  tone={workflow.payment?.status === 'paid' ? 'good' : workflow.payment?.status === 'pending' ? 'warn' : 'idle'}
+                />
+                <OperatorSignal
+                  label="Exit"
+                  value={readableExitStatus(status)}
+                  tone={status === 'exit_authorized' || status === 'completed' ? 'good' : status === 'checkout_pending' ? 'warn' : 'idle'}
+                />
+                <OperatorSignal
+                  label="Slot"
+                  value={readableSlotStatus(workflow.slot.status)}
+                  tone={workflow.slot.status === 'available' ? 'good' : 'warn'}
+                />
+              </div>
+            ) : (
+              <div className="mt-5 rounded-2xl bg-white/70 p-4 text-sm font-semibold text-slate-600 ring-1 ring-black/5">
+                Scan Session QR or enter Session Code from the parking ticket.
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+                  Next Staff Action
+                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-500">
+                  Only the valid next step is shown.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5">
+              {!workflow ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm font-bold text-slate-500">
+                  Load a session first. Payment and exit actions stay hidden until then.
+                </div>
+              ) : null}
+
+              {canRequestCheckout ? (
+                <button
+                  type="button"
+                  onClick={handleRequestCheckout}
+                  disabled={Boolean(action)}
+                  className="w-full rounded-2xl bg-slate-950 px-4 py-4 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                >
+                  {action === 'checkout' ? 'Starting checkout...' : 'Calculate Fee & Start Checkout'}
+                </button>
+              ) : null}
+
+              {canConfirmPayment ? (
+                <div className="space-y-3">
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-amber-700">
+                      Cash collection
+                    </p>
+                    <p className="mt-1 text-2xl font-black text-amber-950">
+                      {workflow ? VND(workflow.fee.total) : ''}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-amber-800">
+                      Confirm only after staff has received cash.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleConfirmPayment}
+                    disabled={Boolean(action)}
+                    className="w-full rounded-2xl bg-emerald-600 px-4 py-4 text-sm font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                  >
+                    {action === 'payment' ? 'Confirming cash...' : 'Confirm Cash Payment'}
+                  </button>
+                </div>
+              ) : null}
+
+              {canConfirmExit ? (
+                <div className="space-y-3">
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-800">
+                    Payment confirmed. Vehicle is authorized to exit. Slot is still occupied until this button is pressed.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleConfirmExit}
+                    disabled={Boolean(action)}
+                    className="w-full rounded-2xl bg-primary-600 px-4 py-4 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                  >
+                    {action === 'exit' ? 'Releasing slot...' : 'Confirm Vehicle Exited'}
+                  </button>
+                </div>
+              ) : null}
+
+              {isCompleted ? (
+                <div className="space-y-3">
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-800">
+                    Checkout completed. Vehicle exited and slot released.
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {receipt ? (
+                      <button type="button" onClick={handlePrint} className="btn-secondary print:hidden">
+                        Print Receipt
+                      </button>
+                    ) : null}
+                    <button type="button" onClick={reset} className="btn-primary print:hidden">
+                      Next Vehicle
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {workflow && !canRequestCheckout && !canConfirmPayment && !canConfirmExit && !isCompleted ? (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-700">
+                  This session cannot continue checkout from the current status.
+                </div>
+              ) : null}
             </div>
           </section>
 
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
             <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
-              Actions
-            </p>
-            <p className="mt-2 text-sm text-slate-500">
-              {workflow ? actionHint(workflow.session.status) : 'Load a session before starting checkout.'}
-            </p>
-
-            <div className="mt-5 space-y-2">
-              <button
-                type="button"
-                onClick={handleRequestCheckout}
-                disabled={!canRequestCheckout || Boolean(action)}
-                className="w-full rounded-xl bg-slate-950 px-4 py-3 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
-              >
-                {action === 'checkout' ? 'Starting checkout...' : 'Calculate Fee & Start Checkout'}
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmPayment}
-                disabled={!canConfirmPayment || Boolean(action)}
-                className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
-              >
-                {action === 'payment' ? 'Confirming cash...' : 'Confirm Cash Payment'}
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmExit}
-                disabled={!canConfirmExit || Boolean(action)}
-                className="w-full rounded-xl bg-primary-600 px-4 py-3 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
-              >
-                {action === 'exit' ? 'Releasing slot...' : 'Confirm Vehicle Exited'}
-              </button>
-            </div>
-
-            {!canConfirmExit && workflow?.session.status === 'checkout_pending' ? (
-              <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
-                Chi xac nhan xe ra sau khi da thanh toan.
-              </p>
-            ) : null}
-
-            {workflow?.session.status === 'exit_authorized' ? (
-              <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
-                Da thanh toan. Xe duoc phep ra. Slot van occupied den khi nhan vien xac nhan xe da ra.
-              </p>
-            ) : null}
-          </section>
-
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
-              Exit Summary
+              Gate Summary
             </p>
             <div className="mt-4 space-y-3 text-sm">
               <DetailRow label="Slot status" value={workflow?.slot.status ?? 'Not loaded'} />
-              <DetailRow label="Exit authorization" value={readableExitStatus(status)} />
+              <DetailRow label="Exit status" value={readableExitStatus(status)} />
               <DetailRow
-                label="Final checkout"
+                label="Exit time"
                 value={
                   workflow?.session.checkOutTime
                     ? formatDateTime(workflow.session.checkOutTime)
@@ -1312,12 +1392,60 @@ function readableExitStatus(status?: SessionStatus) {
   return 'Not loaded'
 }
 
-function actionHint(status: SessionStatus) {
-  if (status === 'active') return 'Review session and start checkout to create a pending payment.'
-  if (status === 'checkout_pending') return 'Collect cash, then confirm payment.'
-  if (status === 'exit_authorized') return 'Payment is paid. Confirm vehicle exited to release the slot.'
-  if (status === 'completed') return 'Checkout completed. Use Next Vehicle for the next operation.'
-  return 'This session cannot continue checkout.'
+function readableSlotStatus(status: 'available' | 'occupied' | 'reserved' | 'maintenance') {
+  const labels: Record<typeof status, string> = {
+    available: 'Available',
+    occupied: 'Occupied',
+    reserved: 'Reserved',
+    maintenance: 'Maintenance',
+  }
+  return labels[status]
+}
+
+function checkoutGuide(status?: SessionStatus) {
+  if (status === 'active') {
+    return {
+      title: 'Ready to calculate fee',
+      description: 'Review plate, slot, and duration. Start checkout only when the vehicle is at the exit gate.',
+    }
+  }
+  if (status === 'checkout_pending') {
+    return {
+      title: 'Collect cash payment',
+      description: 'Payment is pending. Confirm cash only after staff has received the full amount.',
+    }
+  }
+  if (status === 'exit_authorized') {
+    return {
+      title: 'Allow vehicle exit',
+      description: 'Payment is paid. Confirm vehicle exited after the car has physically left the gate.',
+    }
+  }
+  if (status === 'completed') {
+    return {
+      title: 'Checkout completed',
+      description: 'Vehicle exited. The parking slot has been released for the next assignment.',
+    }
+  }
+  if (status === 'cancelled') {
+    return {
+      title: 'Session cancelled',
+      description: 'This session cannot continue checkout. Ask a supervisor if this status is unexpected.',
+    }
+  }
+  return {
+    title: 'Scan ticket to start',
+    description: 'Use the Session QR or Session Code first. Plate lookup is only a fallback for lost tickets.',
+  }
+}
+
+function checkoutGuideTone(status?: SessionStatus) {
+  if (status === 'checkout_pending') return 'border-amber-200 bg-amber-50 text-amber-950'
+  if (status === 'exit_authorized') return 'border-emerald-200 bg-emerald-50 text-emerald-950'
+  if (status === 'completed') return 'border-slate-200 bg-slate-950 text-white'
+  if (status === 'cancelled') return 'border-rose-200 bg-rose-50 text-rose-950'
+  if (status === 'active') return 'border-blue-200 bg-blue-50 text-blue-950'
+  return 'border-slate-200 bg-slate-50 text-slate-950'
 }
 
 function DetailRow({
@@ -1383,31 +1511,27 @@ function PaymentBadge({ status }: { status: PaymentStatus | null }) {
   )
 }
 
-function LifecycleStep({
+function OperatorSignal({
   label,
-  active,
-  complete,
+  value,
+  tone,
 }: {
   label: string
-  active: boolean
-  complete: boolean
+  value: string
+  tone: 'idle' | 'warn' | 'good'
 }) {
+  const toneClass = {
+    idle: 'bg-white/70 text-slate-600 ring-slate-200',
+    warn: 'bg-amber-100 text-amber-900 ring-amber-200',
+    good: 'bg-emerald-100 text-emerald-900 ring-emerald-200',
+  }[tone]
+
   return (
-    <div className="flex items-center gap-3">
-      <span
-        className={`grid h-8 w-8 place-items-center rounded-full border text-xs font-black ${
-          complete
-            ? 'border-emerald-400 bg-emerald-400 text-slate-950'
-            : active
-              ? 'border-white bg-white text-slate-950'
-              : 'border-slate-700 bg-slate-900 text-slate-500'
-        }`}
-      >
-        {complete ? 'OK' : active ? 'ON' : ''}
-      </span>
-      <span className={active || complete ? 'font-black text-white' : 'font-semibold text-slate-500'}>
+    <div className={`rounded-2xl p-3 ring-1 ${toneClass}`}>
+      <span className="block text-[10px] font-black uppercase tracking-[0.16em] opacity-70">
         {label}
       </span>
+      <span className="mt-1 block text-sm font-black leading-tight">{value}</span>
     </div>
   )
 }
