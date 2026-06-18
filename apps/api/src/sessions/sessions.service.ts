@@ -814,6 +814,9 @@ export class SessionsService {
             status: (session.payment as any).status,
             paidAt: session.payment.paidAt,
             receivedBy: session.payment.receivedBy,
+            checkoutUrl: (session.payment as any).checkoutUrl,
+            qrCode: (session.payment as any).qrCode,
+            expiredAt: (session.payment as any).expiredAt,
           }
         : null,
     };

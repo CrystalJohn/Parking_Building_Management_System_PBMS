@@ -120,6 +120,9 @@ export interface PaymentInfo {
   status: PaymentStatus
   paidAt: string | null
   receivedBy?: string | null
+  checkoutUrl?: string | null
+  qrCode?: string | null
+  expiredAt?: string | null
 }
 
 export interface CheckoutSessionInfo {
@@ -149,6 +152,12 @@ export interface CheckoutWorkflowResponse {
   session: CheckoutSessionInfo
   slot: CheckoutSlotInfo
   fee: FeeBreakdown
+  payment: PaymentInfo | null
+}
+
+export interface PaymentWorkflowResponse {
+  session: CheckoutSessionInfo
+  slot: CheckoutSlotInfo
   payment: PaymentInfo | null
 }
 
@@ -249,6 +258,9 @@ interface BackendCheckOutResponse {
     method: PaymentMethod
     status: PaymentStatus
     paidAt: string | null
+    checkoutUrl?: string | null
+    qrCode?: string | null
+    expiredAt?: string | null
   }
 }
 
@@ -423,6 +435,21 @@ export async function confirmPayment(sessionId: string): Promise<ConfirmPaymentR
 
 export async function confirmCashPayment(sessionId: string): Promise<ConfirmPaymentResponse> {
   return confirmPayment(sessionId)
+}
+
+export async function createBankQrPayment(sessionId: string): Promise<PaymentWorkflowResponse> {
+  const { data } = await api.post<PaymentWorkflowResponse>(
+    `/sessions/${sessionId}/payments/bank-qr`,
+    {},
+  )
+  return data
+}
+
+export async function getPaymentStatus(sessionId: string): Promise<PaymentWorkflowResponse> {
+  const { data } = await api.get<PaymentWorkflowResponse>(
+    `/sessions/${sessionId}/payment-status`,
+  )
+  return data
 }
 
 export async function confirmExit(sessionId: string): Promise<ConfirmExitResponse> {

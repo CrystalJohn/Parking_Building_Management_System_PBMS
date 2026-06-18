@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { isAxiosError } from 'axios'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { ToastContainer } from '../../components/ui/Toast'
@@ -10,6 +10,8 @@ import {
   confirmPayment,
   confirmCashPayment,
   confirmVehicleExited,
+  createBankQrPayment,
+  getPaymentStatus,
   lookupSessionForCheckout,
   requestCheckout,
   type CheckInResponse,
@@ -18,6 +20,8 @@ import {
   type CheckoutWorkflowResponse,
   type ConfirmExitResponse,
   type ConfirmPaymentResponse,
+  type PaymentMethod,
+  type PaymentWorkflowResponse,
   type PaymentStatus,
   type SessionStatus,
   type VehicleType,
@@ -835,15 +839,58 @@ function CheckOutPanel({ toasts }: PanelProps) {
   const [workflow, setWorkflow] = useState<CheckoutWorkflowResponse | null>(null)
   const [receipt, setReceipt] = useState<ConfirmPaymentResponse | null>(null)
   const [exitResult, setExitResult] = useState<ConfirmExitResponse | null>(null)
-  const [action, setAction] = useState<'lookup' | 'checkout' | 'payment' | 'exit' | null>(null)
+  const [action, setAction] = useState<'lookup' | 'checkout' | 'payment' | 'bankQr' | 'refresh' | 'exit' | null>(null)
   const [showScanner, setShowScanner] = useState(false)
 
   const status = workflow?.session.status
   const paymentStatus = workflow?.payment?.status ?? null
   const canRequestCheckout = status === 'active'
-  const canConfirmPayment = status === 'checkout_pending'
+  const isBankQrPending =
+    status === 'checkout_pending' &&
+    workflow?.payment?.method === 'bank_qr' &&
+    workflow.payment.status === 'pending'
+  const canConfirmPayment = status === 'checkout_pending' && !isBankQrPending
+  const canGenerateBankQr = status === 'checkout_pending' && !isBankQrPending
   const canConfirmExit = status === 'exit_authorized'
   const isCompleted = status === 'completed'
+
+  const mergePaymentWorkflow = (data: PaymentWorkflowResponse) => {
+    setWorkflow((current) =>
+      current
+        ? {
+            ...current,
+            session: { ...current.session, ...data.session },
+            slot: { ...current.slot, ...data.slot },
+            payment: data.payment,
+          }
+        : current,
+    )
+  }
+
+  const buildReceiptFromWorkflow = (
+    current: CheckoutWorkflowResponse,
+    checkOutTime: string,
+  ): ConfirmPaymentResponse | null => {
+    if (!current.payment || current.payment.status !== 'paid' || !current.payment.paidAt) {
+      return null
+    }
+
+    return {
+      sessionId: current.session.id,
+      licensePlate: current.session.licensePlate,
+      vehicleType: current.session.vehicleType,
+      checkInTime: current.session.checkInTime,
+      checkOutTime,
+      durationHours: current.fee.durationHours,
+      slotCode: current.slot.code,
+      fee: current.fee,
+      paymentId: current.payment.id,
+      paymentMethod: current.payment.method,
+      paymentStatus: current.payment.status,
+      exitAuthorizationStatus: current.session.status,
+      paidAt: current.payment.paidAt,
+    }
+  }
 
   const reset = () => {
     setSessionCode('')
@@ -931,6 +978,63 @@ function CheckOutPanel({ toasts }: PanelProps) {
     }
   }
 
+  const handleGenerateBankQr = async () => {
+    if (!workflow) return
+    setAction('bankQr')
+    try {
+      const data = await createBankQrPayment(workflow.session.id)
+      mergePaymentWorkflow(data)
+      setReceipt(null)
+      toasts.showSuccess('Bank QR generated. Waiting for payment.')
+    } catch (err) {
+      const { message } = extractError(err)
+      toasts.showError(message || 'Bank QR creation failed.')
+    } finally {
+      setAction(null)
+    }
+  }
+
+  const refreshPaymentStatus = async (showToast = true) => {
+    if (!workflow) return
+    if (showToast) setAction('refresh')
+    try {
+      const data = await getPaymentStatus(workflow.session.id)
+      mergePaymentWorkflow(data)
+      if (data.payment?.status === 'paid' && data.session.status === 'exit_authorized') {
+        toasts.showSuccess('Bank QR payment confirmed. Vehicle is authorized to exit.')
+      } else if (showToast) {
+        toasts.showInfo('Payment status refreshed.')
+      }
+    } catch (err) {
+      if (showToast) {
+        const { message } = extractError(err)
+        toasts.showError(message || 'Payment status refresh failed.')
+      }
+    } finally {
+      if (showToast) setAction(null)
+    }
+  }
+
+  useEffect(() => {
+    if (!workflow || !isBankQrPending) return
+
+    const intervalId = window.setInterval(() => {
+      void getPaymentStatus(workflow.session.id)
+        .then((data) => {
+          mergePaymentWorkflow(data)
+          if (data.payment?.status === 'paid' && data.session.status === 'exit_authorized') {
+            toasts.showSuccess('Bank QR payment confirmed. Vehicle is authorized to exit.')
+          }
+        })
+        .catch(() => {
+          // Keep polling quiet; manual refresh still shows errors.
+        })
+    }, 4000)
+
+    return () => window.clearInterval(intervalId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workflow?.session.id, isBankQrPending])
+
   const handleConfirmPayment = async () => {
     if (!workflow) return
     setAction('payment')
@@ -977,6 +1081,25 @@ function CheckOutPanel({ toasts }: PanelProps) {
     try {
       const response = await confirmVehicleExited(workflow.session.id)
       setExitResult(response)
+      const completedWorkflow: CheckoutWorkflowResponse = {
+        ...workflow,
+        session: {
+          ...workflow.session,
+          status: response.session.status,
+          checkOutTime: response.session.checkOutTime,
+        },
+        slot: {
+          ...workflow.slot,
+          status: response.slot.status,
+        },
+      }
+      const finalReceipt = buildReceiptFromWorkflow(
+        completedWorkflow,
+        response.session.checkOutTime,
+      )
+      if (finalReceipt) {
+        setReceipt(finalReceipt)
+      }
       setWorkflow((current) =>
         current
           ? {
@@ -1126,7 +1249,10 @@ function CheckOutPanel({ toasts }: PanelProps) {
                 <div className="mt-5 space-y-2 text-sm">
                   <DetailRow label="Base fee" value={VND(workflow.fee.baseFee)} />
                   <DetailRow label="Penalty" value={VND(workflow.fee.penalty)} />
-                  <DetailRow label="Method" value="Cash" />
+                  <DetailRow
+                    label="Method"
+                    value={workflow.payment ? readablePaymentMethod(workflow.payment.method) : 'Not selected'}
+                  />
                   <DetailRow
                     label="Payment"
                     value={workflow.payment ? readablePaymentStatus(workflow.payment.status) : 'Not created'}
@@ -1135,6 +1261,42 @@ function CheckOutPanel({ toasts }: PanelProps) {
                     <DetailRow label="Paid at" value={formatDateTime(workflow.payment.paidAt)} />
                   ) : null}
                 </div>
+
+                {workflow.payment?.method === 'bank_qr' ? (
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                      Bank QR payment
+                    </p>
+                    {workflow.payment.qrCode ? (
+                      workflow.payment.qrCode.startsWith('data:image') ? (
+                        <img
+                          src={workflow.payment.qrCode}
+                          alt="Bank QR"
+                          className="mx-auto mt-3 h-44 w-44 rounded-xl border border-slate-200 bg-white object-contain p-2"
+                        />
+                      ) : (
+                        <div className="mt-3 rounded-xl bg-white p-3 font-mono text-xs text-slate-700 ring-1 ring-slate-200 break-all">
+                          {workflow.payment.qrCode}
+                        </div>
+                      )
+                    ) : null}
+                    {workflow.payment.checkoutUrl ? (
+                      <a
+                        href={workflow.payment.checkoutUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-3 inline-flex w-full justify-center rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-black text-slate-700 transition hover:border-slate-950 hover:text-slate-950"
+                      >
+                        Open Payment Link
+                      </a>
+                    ) : null}
+                    {workflow.payment.expiredAt ? (
+                      <p className="mt-2 text-xs font-semibold text-slate-500">
+                        Expires at {formatDateTime(workflow.payment.expiredAt)}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 {workflow.fee.isOvertime || workflow.fee.isLostTicket ? (
                   <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
@@ -1258,23 +1420,69 @@ function CheckOutPanel({ toasts }: PanelProps) {
                 <div className="space-y-3">
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
                     <p className="text-xs font-black uppercase tracking-[0.16em] text-amber-700">
-                      Cash collection
+                      Choose payment method
                     </p>
                     <p className="mt-1 text-2xl font-black text-amber-950">
                       {workflow ? VND(workflow.fee.total) : ''}
                     </p>
                     <p className="mt-1 text-xs font-semibold text-amber-800">
-                      Confirm only after staff has received cash.
+                      Confirm cash immediately after receiving money, or generate Bank QR for transfer payment.
+                    </p>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                    <button
+                      type="button"
+                      onClick={handleConfirmPayment}
+                      disabled={Boolean(action)}
+                      className="w-full rounded-2xl bg-emerald-600 px-4 py-4 text-sm font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                    >
+                      {action === 'payment' ? 'Confirming cash...' : 'Confirm Cash Payment'}
+                    </button>
+                    {canGenerateBankQr ? (
+                      <button
+                        type="button"
+                        onClick={handleGenerateBankQr}
+                        disabled={Boolean(action)}
+                        className="w-full rounded-2xl bg-slate-950 px-4 py-4 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                      >
+                        {action === 'bankQr' ? 'Generating QR...' : 'Generate Bank QR'}
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
+              {isBankQrPending ? (
+                <div className="space-y-3">
+                  <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-700">
+                      Waiting for Bank QR payment
+                    </p>
+                    <p className="mt-1 text-2xl font-black text-blue-950">
+                      {workflow ? VND(workflow.payment?.amount ?? workflow.fee.total) : ''}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-blue-800">
+                      Slot remains occupied. Refresh or wait for webhook confirmation.
                     </p>
                   </div>
                   <button
                     type="button"
-                    onClick={handleConfirmPayment}
+                    onClick={() => void refreshPaymentStatus(true)}
                     disabled={Boolean(action)}
-                    className="w-full rounded-2xl bg-emerald-600 px-4 py-4 text-sm font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-4 text-sm font-black text-slate-700 transition hover:border-slate-950 hover:text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                   >
-                    {action === 'payment' ? 'Confirming cash...' : 'Confirm Cash Payment'}
+                    {action === 'refresh' ? 'Refreshing...' : 'Refresh Payment Status'}
                   </button>
+                  {workflow?.payment?.checkoutUrl ? (
+                    <a
+                      href={workflow.payment.checkoutUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex w-full justify-center rounded-2xl bg-slate-950 px-4 py-4 text-sm font-black text-white transition hover:bg-primary-700"
+                    >
+                      Open Payment Link
+                    </a>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -1382,6 +1590,14 @@ function readablePaymentStatus(status: PaymentStatus) {
     expired: 'Expired',
   }
   return labels[status]
+}
+
+function readablePaymentMethod(method: PaymentMethod) {
+  const labels: Record<PaymentMethod, string> = {
+    cash: 'Cash',
+    bank_qr: 'Bank QR',
+  }
+  return labels[method]
 }
 
 function readableExitStatus(status?: SessionStatus) {

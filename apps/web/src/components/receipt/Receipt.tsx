@@ -16,6 +16,12 @@ function displaySessionCode(sessionId: string, sessionCode?: string | null) {
   return `PBMS-${sessionId.replace(/-/g, '').slice(0, 10).toUpperCase()}`
 }
 
+function displayPaymentMethod(method: ConfirmPaymentResponse['paymentMethod']) {
+  if (method === 'cash') return 'Tiền mặt'
+  if (method === 'bank_qr') return 'Bank QR'
+  return method
+}
+
 /**
  * Printable parking receipt. Use window.print() from the parent.
  * Hides app chrome via @media print rules in App.css.
@@ -79,7 +85,7 @@ export function Receipt({ data, sessionCode }: ReceiptProps) {
         </div>
         <div className="flex justify-between text-gray-500 mt-2">
           <span>Hình thức</span>
-          <span>{data.paymentMethod === 'cash' ? 'Tiền mặt' : data.paymentMethod}</span>
+          <span>{displayPaymentMethod(data.paymentMethod)}</span>
         </div>
         <div className="flex justify-between text-gray-500">
           <span>Đã thanh toán lúc</span>

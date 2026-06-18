@@ -188,18 +188,27 @@ model Reservation {
 }
 
 model Payment {
-  id         String        @id @default(uuid())
-  sessionId  String        @unique @map("session_id")
-  amount     Int
-  method     PaymentMethod @default(cash)
-  status     PaymentStatus @default(pending)
-  paidAt     DateTime?     @map("paid_at") @db.Timestamptz(3)
-  receivedBy String?       @map("received_by")
+  id                String        @id @default(uuid())
+  sessionId         String        @unique @map("session_id")
+  amount            Int
+  method            PaymentMethod @default(cash)
+  status            PaymentStatus @default(pending)
+  paidAt            DateTime?     @map("paid_at") @db.Timestamptz(3)
+  receivedBy        String?       @map("received_by")
+  provider          String?
+  providerRef       String?       @map("provider_ref")
+  providerOrderCode String?       @map("provider_order_code")
+  checkoutUrl       String?       @map("checkout_url")
+  qrCode            String?       @map("qr_code")
+  expiredAt         DateTime?     @map("expired_at") @db.Timestamptz(3)
+  providerPayload   Json?         @map("provider_payload")
 
   // Relations
   session      ParkingSession @relation(fields: [sessionId], references: [id])
   receivedUser User?          @relation("ReceivedBy", fields: [receivedBy], references: [id])
 
+  @@index([providerOrderCode], map: "idx_payment_provider_order_code")
+  @@index([providerRef], map: "idx_payment_provider_ref")
   @@map("payments")
 }
 
