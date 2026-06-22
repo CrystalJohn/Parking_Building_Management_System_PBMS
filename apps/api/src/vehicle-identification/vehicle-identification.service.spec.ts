@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';import { VehicleIdentificationService } from './vehicle-identification.service';
 import { ManualPlateIdentifier } from './strategies/manual-plate.identifier';
 import { ReservationQrIdentifier } from './strategies/reservation-qr.identifier';
@@ -62,15 +62,43 @@ describe('ReservationQrIdentifier', () => {
   it('returns null when reservation does not exist', async () => {
     prisma.reservation.findUnique.mockResolvedValue(null);
 
-    const result = await identifier.identify({ reservationId: 'nonexistent' });
-    expect(result).toBeNull();
+    await expect(identifier.identify({ reservationId: 'nonexistent' }))
+      .rejects.toThrow(NotFoundException);
   });
 
-  it('returns null when reservation is expired', async () => {
+  it('throws ConflictException when reservation is expired', async () => {
     prisma.reservation.findUnique.mockResolvedValue({ id: 'res-uuid', status: 'expired' });
 
-    const result = await identifier.identify({ reservationId: 'res-uuid' });
-    expect(result).toBeNull();
+    await expect(identifier.identify({ reservationId: 'res-uuid' }))
+      .rejects.toThrow(ConflictException);
+  });
+
+  it('throws ConflictException when reservation is cancelled', async () => {
+    prisma.reservation.findUnique.mockResolvedValue({ id: 'res-uuid', status: 'cancelled' });
+
+    await expect(identifier.identify({ reservationId: 'res-uuid' }))
+      .rejects.toThrow(ConflictException);
+  });
+
+  it('throws ConflictException when reservation is fulfilled', async () => {
+    prisma.reservation.findUnique.mockResolvedValue({ id: 'res-uuid', status: 'fulfilled' });
+
+    await expect(identifier.identify({ reservationId: 'res-uuid' }))
+      .rejects.toThrow(ConflictException);
+  });
+
+  it('error message describes the status for expired reservation', async () => {
+    prisma.reservation.findUnique.mockResolvedValue({ id: 'res-abc', status: 'expired' });
+
+    await expect(identifier.identify({ reservationId: 'res-abc' }))
+      .rejects.toThrow(/expired/i);
+  });
+
+  it('error message describes the status for cancelled reservation', async () => {
+    prisma.reservation.findUnique.mockResolvedValue({ id: 'res-abc', status: 'cancelled' });
+
+    await expect(identifier.identify({ reservationId: 'res-abc' }))
+      .rejects.toThrow(/cancelled/i);
   });
 
   it('returns null for empty reservationId', async () => {
@@ -198,17 +226,65 @@ describe('VehicleIdentificationService — identifyForCheckIn()', () => {
     expect(result.licensePlate).toBe('59A-12345');
   });
 
-  it('falls back to MANUAL_PLATE when reservationId returns null', async () => {
-    reservationQr.identify.mockResolvedValue(null);
-    manualPlate.identify.mockResolvedValue(mockManualPlateResult);
+  it('throws ConflictException when reservationId resolves to expired reservation', async () => {
+    reservationQr.identify.mockRejectedValue(
+      new ConflictException('Reservation res-expired is expired and cannot be checked in'),
+    );
 
-    const result = await service.identifyForCheckIn({
-      reservationId: 'expired-res',
-      licensePlate: '59A-12345',
-    });
+    await expect(
+      service.identifyForCheckIn({
+        reservationId: 'res-expired',
+        licensePlate: '59A-12345',
+      }),
+    ).rejects.toThrow(ConflictException);
 
-    expect(result.source).toBe('MANUAL_PLATE');
-    expect(manualPlate.identify).toHaveBeenCalled();
+    // must NOT call manualPlate — no fallback to walk-in
+    expect(manualPlate.identify).not.toHaveBeenCalled();
+  });
+
+  it('throws NotFoundException when reservationId does not exist', async () => {
+    reservationQr.identify.mockRejectedValue(
+      new NotFoundException('Reservation nonexistent not found'),
+    );
+
+    await expect(
+      service.identifyForCheckIn({
+        reservationId: 'nonexistent',
+        licensePlate: '59A-12345',
+      }),
+    ).rejects.toThrow(NotFoundException);
+
+    expect(manualPlate.identify).not.toHaveBeenCalled();
+  });
+
+  it('throws ConflictException when reservationId resolves to cancelled reservation', async () => {
+    reservationQr.identify.mockRejectedValue(
+      new ConflictException('Reservation res-cancelled is cancelled and cannot be checked in'),
+    );
+
+    await expect(
+      service.identifyForCheckIn({
+        reservationId: 'res-cancelled',
+        licensePlate: '59A-12345',
+      }),
+    ).rejects.toThrow(ConflictException);
+
+    expect(manualPlate.identify).not.toHaveBeenCalled();
+  });
+
+  it('throws ConflictException when reservationId resolves to fulfilled reservation', async () => {
+    reservationQr.identify.mockRejectedValue(
+      new ConflictException('Reservation res-fulfilled is fulfilled and cannot be checked in'),
+    );
+
+    await expect(
+      service.identifyForCheckIn({
+        reservationId: 'res-fulfilled',
+        licensePlate: '59A-12345',
+      }),
+    ).rejects.toThrow(ConflictException);
+
+    expect(manualPlate.identify).not.toHaveBeenCalled();
   });
 
   it('uses OCR strategy when licensePlate + confidence are provided', async () => {

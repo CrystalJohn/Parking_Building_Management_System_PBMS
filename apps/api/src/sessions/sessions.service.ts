@@ -100,34 +100,13 @@ export class SessionsService {
     } | null = null;
 
     if (identity.reservationId) {
-      // Identity confirmed a reservation — load the full record for the transaction
+      // Identity confirmed a reservation — load the full record for the transaction.
+      // IMPORTANT: identity.reservationId is authoritative. If the reservation is
+      // invalid here, we must reject — NOT fall through to walk-in allocation.
       activeReservation = await this.prisma.reservation.findUnique({
         where: { id: identity.reservationId },
         include: { slot: { include: { floor: true } } },
       });
-
-      if (
-        activeReservation &&
-        activeReservation.status === 'active' &&
-        activeReservation.vehicleType === dto.vehicleType
-      ) {
-        // Resolve driver from reservation owner if not already resolved
-        if (!driverId && activeReservation.driverId) {
-          driverId = activeReservation.driverId;
-        }
-      } else {
-        // Reservation no longer valid — fall through to allocation
-        activeReservation = null;
-      }
-    }
-
-    if (identity.reservationId) {
-      if (!activeReservation) {
-        activeReservation = await this.prisma.reservation.findUnique({
-          where: { id: identity.reservationId },
-          include: { slot: { include: { floor: true } } },
-        });
-      }
 
       this.assertReservationCanBeFulfilled(activeReservation, dto.vehicleType);
 

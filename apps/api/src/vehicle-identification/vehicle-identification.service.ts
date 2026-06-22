@@ -45,7 +45,12 @@ export class VehicleIdentificationService {
    * @throws BadRequestException when no usable input is present.
    */
   async identifyForCheckIn(input: CheckInIdentityInput): Promise<VehicleIdentityResult> {
-    // Step 1: Reservation QR — most deterministic, highest priority
+    // Step 1: Reservation QR — most deterministic, highest priority.
+    // When reservationId is present, this strategy is AUTHORITATIVE:
+    //   - throws NotFoundException if reservation does not exist
+    //   - throws ConflictException if reservation exists but is not active
+    // It will NOT return null when a reservationId was supplied, so there
+    // is no silent fallback to walk-in check-in.
     if (input.reservationId) {
       const result = await this.reservationQrIdentifier.identify({
         reservationId: input.reservationId,
@@ -57,7 +62,9 @@ export class VehicleIdentificationService {
         }
         return result;
       }
-      // Reservation not found or not active — fall through to plate-based identification
+      // result is null only when reservationId was empty — should not reach
+      // here in practice, but fall through to plate-based identification as
+      // a last resort for the empty-string edge case.
     }
 
     // Step 2 & 3: OCR or Manual plate

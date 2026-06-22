@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { IVehicleIdentifier } from '../vehicle-identifier.interface';
 import type { VehicleIdentityResult } from '../vehicle-identity.types';
@@ -19,7 +19,15 @@ export interface ReservationQrInput {
  * Does NOT fulfill the reservation, update slot status, or create sessions.
  * The caller (SessionsService) decides what to do with the result.
  *
- * Returns null if the reservation is not found or already expired/cancelled.
+ * Returns null ONLY when no reservationId is provided (empty input).
+ *
+ * IMPORTANT — business contract:
+ *   When a reservationId IS provided, this identifier is authoritative.
+ *   - If the reservation does not exist → throws NotFoundException (404)
+ *   - If the reservation exists but is not active (expired, cancelled,
+ *     fulfilled, etc.) → throws ConflictException (409)
+ *   It MUST NOT return null and allow the caller to fall back to walk-in
+ *   check-in. That silent fallback violates the reservation identity contract.
  */
 @Injectable()
 export class ReservationQrIdentifier implements IVehicleIdentifier<ReservationQrInput> {
@@ -29,6 +37,7 @@ export class ReservationQrIdentifier implements IVehicleIdentifier<ReservationQr
 
   async identify(input: ReservationQrInput): Promise<VehicleIdentityResult | null> {
     const reservationId = input.reservationId?.trim();
+    // Empty input → this strategy does not apply; caller may try another.
     if (!reservationId) return null;
 
     const reservation = await this.prisma.reservation.findUnique({
@@ -36,8 +45,16 @@ export class ReservationQrIdentifier implements IVehicleIdentifier<ReservationQr
       select: { id: true, status: true },
     });
 
-    if (!reservation || reservation.status !== 'active') {
-      return null;
+    if (!reservation) {
+      throw new NotFoundException(
+        `Reservation ${reservationId} not found`,
+      );
+    }
+
+    if (reservation.status !== 'active') {
+      throw new ConflictException(
+        `Reservation ${reservationId} is ${reservation.status} and cannot be checked in`,
+      );
     }
 
     return {

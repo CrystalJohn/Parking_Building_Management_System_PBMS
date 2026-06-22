@@ -108,7 +108,6 @@ export default function Login() {
     } catch (err) {
       const message = extractErrorMessage(err)
       setErrorMessage(message)
-      toasts.showError(message)
     } finally {
       setSubmitting(false)
     }
