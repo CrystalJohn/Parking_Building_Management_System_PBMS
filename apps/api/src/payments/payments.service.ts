@@ -219,7 +219,11 @@ export class PaymentsService {
     // 2. Find payment by providerOrderCode (vnp_TxnRef)
     const payment = await (this.prisma as any).payment.findFirst({
       where: { providerOrderCode: verified.txnRef },
-      include: { session: { include: { slot: true } } },
+      include: {
+        session: {
+          select: { id: true, status: true, sessionCode: true, slotId: true, isPaid: true },
+        },
+      },
     });
 
     if (!payment) {
@@ -230,7 +234,6 @@ export class PaymentsService {
         `Payment not found for txnRef: ${verified.txnRef}`,
       );
     }
-
     // 3. Amount validation
     if (Number(payment.amount) !== verified.amount) {
       this.logger.warn(
@@ -251,6 +254,7 @@ export class PaymentsService {
         paid: true,
         idempotent: true,
         sessionId: payment.sessionId,
+        sessionCode: payment.session?.sessionCode ?? null,
       };
     }
 
@@ -285,7 +289,7 @@ export class PaymentsService {
         `VNPAY ${source} success | txnRef=${verified.txnRef} sessionId=${payment.sessionId} paidAt=${paidAt.toISOString()}`,
       );
 
-      return { ok: true, paid: true, sessionId: payment.sessionId };
+      return { ok: true, paid: true, sessionId: payment.sessionId, sessionCode: payment.session?.sessionCode ?? null };
     }
 
     // 5b. Failure/cancel path — update payment status, do NOT touch session
@@ -306,6 +310,7 @@ export class PaymentsService {
       ok: true,
       paid: false,
       sessionId: payment.sessionId,
+      sessionCode: payment.session?.sessionCode ?? null,
       reason: verified.responseCode,
     };
   }

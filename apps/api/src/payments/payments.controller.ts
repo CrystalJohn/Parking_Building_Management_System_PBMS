@@ -8,6 +8,7 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { Request } from 'express';
@@ -53,14 +54,58 @@ export class PaymentsController {
 
   /**
    * GET /payments/vnpay/return
-   * VNPAY return URL — called by the customer's browser after payment.
-   * All params are in the query string (VNPAY standard).
-   * No auth required (public callback from VNPAY).
+   * VNPAY return URL — browser redirect after payment completes/fails/cancels.
+   * Returns a simple HTML page so the user sees result and can close the tab.
+   * The staff gate UI uses polling to detect the payment status change.
    */
   @Get('payments/vnpay/return')
-  @HttpCode(HttpStatus.OK)
-  handleVnpayReturn(@Query() params: Record<string, string>) {
-    return this.paymentsService.handleVnpayReturn(params);
+  async handleVnpayReturn(
+    @Query() params: Record<string, string>,
+    @Res() res: import('express').Response,
+  ) {
+    let paid = false;
+    let message = 'Đang xử lý...';
+
+    try {
+      const result = await this.paymentsService.handleVnpayReturn(params);
+      paid = result.paid === true;
+      message = paid
+        ? 'Thanh toán thành công! Vui lòng quay lại quầy để nhân viên xác nhận xe ra.'
+        : 'Thanh toán thất bại hoặc đã bị hủy.';
+    } catch {
+      message = 'Có lỗi xảy ra khi xử lý thanh toán.';
+    }
+
+    const color = paid ? '#16a34a' : '#dc2626';
+    const icon = paid ? '✓' : '✗';
+    const title = paid ? 'Thanh toán thành công' : 'Thanh toán thất bại';
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(`<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title} - PBMS</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; background: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .card { background: white; border-radius: 16px; padding: 48px 40px; text-align: center; box-shadow: 0 4px 24px rgba(0,0,0,0.08); max-width: 400px; width: 90%; }
+    .icon { width: 72px; height: 72px; border-radius: 50%; background: ${color}; color: white; font-size: 36px; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; }
+    h1 { font-size: 22px; font-weight: 700; color: #0f172a; margin-bottom: 12px; }
+    p { font-size: 15px; color: #64748b; line-height: 1.6; margin-bottom: 28px; }
+    .note { font-size: 13px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">${icon}</div>
+    <h1>${title}</h1>
+    <p>${message}</p>
+    <p class="note">Bạn có thể đóng tab này.</p>
+  </div>
+</body>
+</html>`);
   }
 
   /**

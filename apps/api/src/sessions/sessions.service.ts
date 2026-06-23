@@ -26,6 +26,58 @@ export class SessionsService {
   ) {}
 
   /**
+   * Recent sessions for the gate history card.
+   * type=checkin  → sessions ordered by check_in_time desc (all statuses)
+   * type=checkout → sessions that have been checked out (completed/exit_authorized)
+   */
+  async findRecent(type?: 'checkin' | 'checkout', limit = 20) {
+    const where =
+      type === 'checkout'
+        ? { status: { in: ['completed', 'exit_authorized', 'checkout_pending'] as any } }
+        : {};
+
+    const orderBy =
+      type === 'checkout'
+        ? [{ checkOutTime: 'desc' as const }, { checkInTime: 'desc' as const }]
+        : [{ checkInTime: 'desc' as const }];
+
+    const sessions = await this.prisma.parkingSession.findMany({
+      where,
+      orderBy,
+      take: Math.min(limit, 50),
+      include: {
+        slot: { include: { floor: true } },
+        payment: { select: { method: true, status: true, amount: true } },
+      },
+    });
+
+    return sessions.map((s) => ({
+      id: s.id,
+      sessionCode: s.sessionCode,
+      licensePlate: s.licensePlate,
+      vehicleType: s.vehicleType,
+      status: s.status,
+      checkInTime: s.checkInTime,
+      checkOutTime: s.checkOutTime,
+      slot: {
+        code: s.slot.code,
+        zone: s.slot.zone,
+        floor: s.slot.floor.name,
+        floorNumber: s.slot.floor.floorNumber,
+      },
+      payment: s.payment
+        ? {
+            method: (s.payment as any).method,
+            status: (s.payment as any).status,
+            amount: (s.payment as any).amount,
+          }
+        : null,
+      feeAmount: s.feeAmount,
+      penaltyAmount: s.penaltyAmount,
+    }));
+  }
+
+  /**
    * 13.1–13.6 + Task 20 + P1-B: Check-in a vehicle.
    *
    * Flow:

@@ -108,6 +108,20 @@ export class SessionsController {
   }
 
   /**
+   * GET /sessions/recent?type=checkin|checkout&limit=20
+   * Staff only — recent check-in or check-out history for the gate UI history card.
+   */
+  @Get('recent')
+  @UseGuards(RolesGuard)
+  @Roles(Role.staff)
+  findRecent(
+    @Query('type') type?: 'checkin' | 'checkout',
+    @Query('limit') limit?: string,
+  ) {
+    return this.sessionsService.findRecent(type, Number(limit) || 20);
+  }
+
+  /**
    * GET /sessions/checkout-lookup?sessionCode=... or ?licensePlate=...
    * Staff only — read-only lookup for checkout workflow.
    */
