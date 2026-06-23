@@ -26,7 +26,7 @@ function describeError(err: unknown): string {
     const maybeMsg = (err as { message?: unknown }).message
     if (typeof maybeMsg === 'string' && maybeMsg) return maybeMsg
   }
-  return 'Không thể truy cập camera. Vui lòng cấp quyền camera trong trình duyệt.'
+  return 'Cannot access camera. Please grant camera permission in your browser.'
 }
 
 /**
@@ -40,11 +40,11 @@ export function QRScanner({
   onScan,
   onClose,
   onManualInput,
-  title = 'Quét mã QR',
-  instructions = 'Đặt mã QR cách camera 15-25cm, giữ thẳng và đủ sáng.',
-  manualToggleLabel = 'Camera không quét được? Nhập mã thủ công',
-  manualInputLabel = 'Nhập session ID (UUID từ QR)',
-  manualInputPlaceholder = 'VD: 5f3a9c1e-...',
+  title = 'Scan QR code',
+  instructions = 'Hold QR code 15-25cm from camera, keep it straight and well-lit.',
+  manualToggleLabel = 'Cannot scan? Enter code manually',
+  manualInputLabel = 'Enter session ID (UUID from QR)',
+  manualInputPlaceholder = 'e.g. 5f3a9c1e-...',
 }: QRScannerProps) {
   const scannerRef = useRef<Html5Qrcode | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -67,7 +67,7 @@ export function QRScanner({
           !navigator.mediaDevices?.getUserMedia
         ) {
           throw new Error(
-            'Trình duyệt không hỗ trợ camera. Hãy mở qua HTTPS hoặc localhost.',
+            'Browser does not support camera. Please open via HTTPS or localhost.',
           )
         }
 
@@ -167,7 +167,7 @@ export function QRScanner({
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
-            aria-label="Đóng"
+            aria-label="Close"
           >
             &times;
           </button>
@@ -178,14 +178,14 @@ export function QRScanner({
             <div className="text-center py-8">
               <p className="text-red-600 text-sm mb-4">{error}</p>
               <button onClick={onClose} className="btn-secondary">
-                Đóng
+                Close
               </button>
             </div>
           ) : (
             <>
               {starting && (
                 <p className="text-center text-sm text-gray-500 mb-2">
-                  Đang khởi động camera...
+                  Starting camera...
                 </p>
               )}
               <div
@@ -228,7 +228,7 @@ export function QRScanner({
                           className="btn-primary text-sm flex-1"
                           disabled={!manualInput.trim()}
                         >
-                          Xác nhận
+                          Confirm
                         </button>
                         <button
                           type="button"
@@ -238,7 +238,7 @@ export function QRScanner({
                           }}
                           className="btn-secondary text-sm"
                         >
-                          Hủy
+                          Cancel
                         </button>
                       </div>
                     </div>

@@ -52,20 +52,20 @@ export default function Register() {
     // Client-side validation
     const errors: Record<string, string> = {}
     if (!fullName.trim()) {
-      errors.fullName = 'Vui lòng nhập họ tên'
+      errors.fullName = 'Please enter your full name'
     }
     if (!phone.trim()) {
-      errors.phone = 'Vui lòng nhập số điện thoại'
+      errors.phone = 'Please enter your phone number'
     } else if (!isValidPhone(phone)) {
-      errors.phone = 'Số điện thoại không hợp lệ (10 chữ số, bắt đầu bằng 0)'
+      errors.phone = 'Invalid phone number (10 digits, starting with 0)'
     }
     if (!password) {
-      errors.password = 'Vui lòng nhập mật khẩu'
+      errors.password = 'Please enter your password'
     } else if (password.length < 6) {
-      errors.password = 'Mật khẩu tối thiểu 6 ký tự'
+      errors.password = 'Password must be at least 6 characters'
     }
     if (password !== confirmPassword) {
-      errors.confirmPassword = 'Mật khẩu xác nhận không khớp'
+      errors.confirmPassword = 'Passwords do not match'
     }
 
     setFieldErrors(errors)
@@ -81,7 +81,7 @@ export default function Register() {
 
       // Auto login after registration
       saveAuth(data.access_token, data.user)
-      toasts.showSuccess('Đăng ký thành công!')
+      toasts.showSuccess('Registration successful!')
       navigate('/driver/home', { replace: true })
     } catch (err) {
       if (isAxiosError(err)) {
@@ -89,17 +89,17 @@ export default function Register() {
         const msg = err.response?.data?.message
 
         if (status === 409) {
-          setFieldErrors({ phone: 'Số điện thoại đã được đăng ký' })
+          setFieldErrors({ phone: 'Phone number is already registered' })
         } else {
           const text = typeof msg === 'string'
             ? msg
             : Array.isArray(msg)
               ? msg.join(', ')
-              : 'Đăng ký thất bại'
+              : 'Registration failed'
           toasts.showError(text)
         }
       } else {
-        toasts.showError('Lỗi không xác định')
+        toasts.showError('Unknown error')
       }
     } finally {
       setSubmitting(false)
@@ -153,10 +153,10 @@ export default function Register() {
                 {/* Header */}
                 <div className="mb-6">
                   <h1 className="text-xl sm:text-2xl font-bold text-[#171717] dark:text-[#ededed] tracking-tight">
-                    Đăng ký tài khoản
+                    Create account
                   </h1>
                   <p className="text-[#888] text-[13px] mt-1">
-                    Tạo tài khoản tài xế để đặt chỗ và nhận QR check-out
+                    Create a driver account to reserve slots and receive check-out QR codes
                   </p>
                 </div>
 
@@ -165,7 +165,7 @@ export default function Register() {
                   {/* Full Name */}
                   <div>
                     <label className="block text-[12px] font-medium text-[#666] dark:text-[#888] mb-1.5">
-                      Họ và tên <span className="text-red-500">*</span>
+                      Full name <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
@@ -179,7 +179,7 @@ export default function Register() {
                             ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20'
                             : 'border-black/8 dark:border-white/10 focus:border-blue-500/50 focus:ring-blue-500/10 bg-white/50 dark:bg-white/[0.04]'
                         }`}
-                        placeholder="VD: Nguyễn Văn A"
+                        placeholder="e.g. Nguyen Van A"
                         value={fullName}
                         onChange={(e) => setFullName(e.target.value)}
                         autoFocus
@@ -198,7 +198,7 @@ export default function Register() {
                   {/* Phone */}
                   <div>
                     <label className="block text-[12px] font-medium text-[#666] dark:text-[#888] mb-1.5">
-                      Số điện thoại <span className="text-red-500">*</span>
+                      Phone number <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
@@ -213,7 +213,7 @@ export default function Register() {
                             ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20'
                             : 'border-black/8 dark:border-white/10 focus:border-blue-500/50 focus:ring-blue-500/10 bg-white/50 dark:bg-white/[0.04]'
                         }`}
-                        placeholder="VD: 0901234567"
+                        placeholder="e.g. 0901234567"
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
                       />
@@ -231,7 +231,7 @@ export default function Register() {
                   {/* Password */}
                   <div>
                     <label className="block text-[12px] font-medium text-[#666] dark:text-[#888] mb-1.5">
-                      Mật khẩu <span className="text-red-500">*</span>
+                      Password <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
@@ -246,7 +246,7 @@ export default function Register() {
                             ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20'
                             : 'border-black/8 dark:border-white/10 focus:border-blue-500/50 focus:ring-blue-500/10 bg-white/50 dark:bg-white/[0.04]'
                         }`}
-                        placeholder="Tối thiểu 6 ký tự"
+                        placeholder="Minimum 6 characters"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                       />
@@ -281,7 +281,7 @@ export default function Register() {
                   {/* Confirm Password */}
                   <div>
                     <label className="block text-[12px] font-medium text-[#666] dark:text-[#888] mb-1.5">
-                      Xác nhận mật khẩu <span className="text-red-500">*</span>
+                      Confirm password <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
@@ -296,7 +296,7 @@ export default function Register() {
                             ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20'
                             : 'border-black/8 dark:border-white/10 focus:border-blue-500/50 focus:ring-blue-500/10 bg-white/50 dark:bg-white/[0.04]'
                         }`}
-                        placeholder="Nhập lại mật khẩu"
+                        placeholder="Re-enter password"
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
                       />
@@ -323,10 +323,10 @@ export default function Register() {
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                         </svg>
-                        Đang đăng ký...
+                        Creating account...
                       </>
                     ) : (
-                      'Đăng ký'
+                      'Create account'
                     )}
                   </button>
                 </form>
@@ -337,24 +337,24 @@ export default function Register() {
                     <div className="w-full border-t border-black/5 dark:border-white/10" />
                   </div>
                   <div className="relative flex justify-center text-[11px]">
-                    <span className="bg-white/80 dark:bg-white/[0.06] px-3 text-[#888]">hoặc</span>
+                    <span className="bg-white/80 dark:bg-white/[0.06] px-3 text-[#888]">or</span>
                   </div>
                 </div>
 
                 {/* Login link */}
                 <p className="text-center text-[13px] text-[#888]">
-                  Đã có tài khoản?{' '}
+                  Already have an account?{' '}
                   <Link
                     to="/login"
                     className="font-semibold text-blue-600 hover:text-blue-700 transition-colors"
                   >
-                    Đăng nhập
+                    Sign in
                   </Link>
                 </p>
 
                 {/* Footer */}
                 <p className="text-center text-[10px] text-[#888] mt-6">
-                  © {new Date().getFullYear()} PBMS — Hệ thống quản lý bãi đỗ xe
+                  © {new Date().getFullYear()} PBMS — Parking Building Management System
                 </p>
                 </div>
               </div>

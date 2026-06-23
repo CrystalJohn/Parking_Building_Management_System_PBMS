@@ -19,9 +19,9 @@ interface User {
 
 const ROLE_LABELS: Record<Role, string> = {
   admin: 'Admin',
-  manager: 'Quản lý',
-  staff: 'Nhân viên',
-  driver: 'Tài xế',
+  manager: 'Manager',
+  staff: 'Staff',
+  driver: 'Driver',
 }
 
 const ROLE_COLORS: Record<Role, string> = {
@@ -56,15 +56,15 @@ export default function Users() {
       const { data } = await api.get('/users')
       setUsers(data)
     } catch {
-      toasts.showError('Không thể tải danh sách người dùng')
+      toasts.showError('Unable to load user list')
     } finally {
       setLoading(false)
     }
   }
 
   const handleToggleActive = async (user: User) => {
-    const action = user.isActive ? 'khóa' : 'mở khóa'
-    if (!confirm(`Bạn có chắc muốn ${action} tài khoản ${user.phone}?`)) return
+    const action = user.isActive ? 'deactivate' : 'activate'
+    if (!confirm(`Are you sure you want to ${action} account ${user.phone}?`)) return
 
     try {
       if (user.isActive) {
@@ -72,12 +72,12 @@ export default function Users() {
       } else {
         await api.patch(`/users/${user.id}`, { isActive: true })
       }
-      toasts.showSuccess(`Đã ${action} tài khoản ${user.phone}`)
+      toasts.showSuccess(`Account ${user.phone} has been ${action}d`)
       await loadUsers()
     } catch (err) {
       if (isAxiosError(err)) {
         const msg = err.response?.data?.message
-        toasts.showError(typeof msg === 'string' ? msg : `Lỗi ${action}`)
+        toasts.showError(typeof msg === 'string' ? msg : `Error: ${action}`)
       }
     }
   }
@@ -112,11 +112,11 @@ export default function Users() {
       <div className="max-w-5xl mx-auto space-y-6">
         <header className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Quản lý người dùng</h1>
-            <p className="text-sm text-gray-500">{users.length} tài khoản</p>
+            <h1 className="text-2xl font-bold">User management</h1>
+            <p className="text-sm text-gray-500">{users.length} accounts</p>
           </div>
           <button onClick={handleCreate} className="btn-primary">
-            + Tạo tài khoản
+            + Create account
           </button>
         </header>
 
@@ -132,7 +132,7 @@ export default function Users() {
                   : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
               }`}
             >
-              {role === 'all' ? 'Tất cả' : ROLE_LABELS[role]}
+              {role === 'all' ? 'All' : ROLE_LABELS[role]}
               {role !== 'all' && (
                 <span className="ml-1 text-xs opacity-70">
                   ({users.filter((u) => u.role === role).length})
@@ -142,18 +142,18 @@ export default function Users() {
           ))}
         </div>
 
-        {loading && <p className="text-gray-500">Đang tải...</p>}
+        {loading && <p className="text-gray-500">Loading...</p>}
 
         {!loading && (
           <div className="card overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-4 py-2 text-left">SĐT</th>
-                  <th className="px-4 py-2 text-left">Họ tên</th>
-                  <th className="px-4 py-2 text-left">Vai trò</th>
-                  <th className="px-4 py-2 text-center">Trạng thái</th>
-                  <th className="px-4 py-2 text-right">Thao tác</th>
+                  <th className="px-4 py-2 text-left">Phone</th>
+                  <th className="px-4 py-2 text-left">Name</th>
+                  <th className="px-4 py-2 text-left">Role</th>
+                  <th className="px-4 py-2 text-center">Status</th>
+                  <th className="px-4 py-2 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -168,9 +168,9 @@ export default function Users() {
                     </td>
                     <td className="px-4 py-2 text-center">
                       {user.isActive ? (
-                        <span className="text-xs text-green-700">Hoạt động</span>
+                        <span className="text-xs text-green-700">Active</span>
                       ) : (
-                        <span className="text-xs text-red-600">Đã khóa</span>
+                        <span className="text-xs text-red-600">Inactive</span>
                       )}
                     </td>
                     <td className="px-4 py-2 text-right space-x-2">
@@ -178,13 +178,13 @@ export default function Users() {
                         onClick={() => handleEdit(user)}
                         className="text-xs text-blue-600 hover:underline"
                       >
-                        Sửa
+                        Edit
                       </button>
                       <button
                         onClick={() => handleToggleActive(user)}
                         className={`text-xs ${user.isActive ? 'text-red-600' : 'text-green-600'} hover:underline`}
                       >
-                        {user.isActive ? 'Khóa' : 'Mở khóa'}
+                        {user.isActive ? 'Deactivate' : 'Activate'}
                       </button>
                     </td>
                   </tr>
@@ -192,7 +192,7 @@ export default function Users() {
                 {filteredUsers.length === 0 && (
                   <tr>
                     <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
-                      Không có người dùng nào.
+                      No users found.
                     </td>
                   </tr>
                 )}
@@ -247,15 +247,15 @@ function UserModal({
         const payload: Record<string, unknown> = { fullName, role }
         if (password) payload.password = password
         await api.patch(`/users/${user.id}`, payload)
-        toasts.showSuccess('Đã cập nhật tài khoản')
+        toasts.showSuccess('Account updated')
       } else {
         if (!password || password.length < 6) {
-          setError('Mật khẩu tối thiểu 6 ký tự')
+          setError('Password must be at least 6 characters')
           setSaving(false)
           return
         }
         await api.post('/users', { phone, password, fullName, role })
-        toasts.showSuccess('Đã tạo tài khoản mới')
+        toasts.showSuccess('Account created')
       }
       onSave()
     } catch (err) {
@@ -266,7 +266,7 @@ function UserModal({
             ? msg
             : Array.isArray(msg)
               ? msg.join(', ')
-              : 'Lỗi lưu dữ liệu',
+              : 'Error saving data',
         )
       }
     } finally {
@@ -283,12 +283,12 @@ function UserModal({
       <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
           <h3 className="text-lg font-semibold">
-            {isEdit ? 'Chỉnh sửa tài khoản' : 'Tạo tài khoản mới'}
+            {isEdit ? 'Edit account' : 'Create new account'}
           </h3>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
-            aria-label="Đóng"
+            aria-label="Close"
           >
             &times;
           </button>
@@ -297,7 +297,7 @@ function UserModal({
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Số điện thoại
+              Phone
             </label>
             <input
               className="input"
@@ -310,42 +310,42 @@ function UserModal({
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Họ tên
+              Full name
             </label>
             <input
               className="input"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              placeholder="Nguyễn Văn A"
+              placeholder="John Doe"
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Vai trò
+              Role
             </label>
             <select
               className="input"
               value={role}
               onChange={(e) => setRole(e.target.value as Role)}
             >
-              <option value="driver">Tài xế</option>
-              <option value="staff">Nhân viên</option>
-              <option value="manager">Quản lý</option>
+              <option value="driver">Driver</option>
+              <option value="staff">Staff</option>
+              <option value="manager">Manager</option>
               <option value="admin">Admin</option>
             </select>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              {isEdit ? 'Mật khẩu mới (để trống nếu không đổi)' : 'Mật khẩu'}
+              {isEdit ? 'New password (leave blank to keep current)' : 'Password'}
             </label>
             <input
               className="input"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder={isEdit ? '••••••' : 'Tối thiểu 6 ký tự'}
+              placeholder={isEdit ? '••••••' : 'At least 6 characters'}
             />
           </div>
 
@@ -357,10 +357,10 @@ function UserModal({
 
           <div className="flex gap-2 pt-2">
             <button type="submit" className="btn-primary flex-1" disabled={saving}>
-              {saving ? 'Đang lưu...' : isEdit ? 'Cập nhật' : 'Tạo'}
+              {saving ? 'Saving...' : isEdit ? 'Update' : 'Create'}
             </button>
             <button type="button" onClick={onClose} className="btn-secondary flex-1" disabled={saving}>
-              Hủy
+              Cancel
             </button>
           </div>
         </form>

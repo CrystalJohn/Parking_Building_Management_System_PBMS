@@ -53,16 +53,16 @@ export default function Reports() {
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-5xl mx-auto space-y-6">
         <header>
-          <h1 className="text-2xl font-bold">Báo cáo</h1>
-          <p className="text-sm text-gray-500">Doanh thu, lưu lượng, và tỷ lệ lấp đầy</p>
+          <h1 className="text-2xl font-bold">Reports</h1>
+          <p className="text-sm text-gray-500">Revenue, traffic, and occupancy</p>
         </header>
 
         {/* Tabs */}
         <nav className="flex gap-2" role="tablist">
           {([
-            ['revenue', 'Doanh thu'],
-            ['traffic', 'Lưu lượng'],
-            ['occupancy', 'Lấp đầy'],
+            ['revenue', 'Revenue'],
+            ['traffic', 'Traffic'],
+            ['occupancy', 'Occupancy'],
           ] as [Tab, string][]).map(([key, label]) => (
             <button
               key={key}
@@ -123,34 +123,34 @@ function RevenueTab() {
     <div className="space-y-4">
       <FilterBar period={period} setPeriod={setPeriod} date={date} setDate={setDate} />
 
-      {loading && <p className="text-gray-500 text-sm">Đang tải...</p>}
+      {loading && <p className="text-gray-500 text-sm">Loading...</p>}
 
       {!loading && (
         <>
           {/* Summary */}
           <div className="grid grid-cols-2 gap-4">
             <div className="card text-center">
-              <p className="text-sm text-gray-500">Tổng doanh thu</p>
+              <p className="text-sm text-gray-500">Total revenue</p>
               <p className="text-2xl font-bold text-green-700">{VND(totalRevenue)}</p>
             </div>
             <div className="card text-center">
-              <p className="text-sm text-gray-500">Tổng phiên</p>
+              <p className="text-sm text-gray-500">Total sessions</p>
               <p className="text-2xl font-bold">{totalSessions}</p>
             </div>
           </div>
 
           {/* Table + bars */}
           {data.length === 0 ? (
-            <p className="text-gray-500 text-sm text-center py-8">Không có dữ liệu cho khoảng thời gian này.</p>
+            <p className="text-gray-500 text-sm text-center py-8">No data for this period.</p>
           ) : (
             <div className="card overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-4 py-2 text-left">Thời gian</th>
-                    <th className="px-4 py-2 text-left">Loại xe</th>
-                    <th className="px-4 py-2 text-right">Phiên</th>
-                    <th className="px-4 py-2 text-right">Doanh thu</th>
+                    <th className="px-4 py-2 text-left">Period</th>
+                    <th className="px-4 py-2 text-left">Vehicle</th>
+                    <th className="px-4 py-2 text-right">Sessions</th>
+                    <th className="px-4 py-2 text-right">Revenue</th>
                     <th className="px-4 py-2 w-32"></th>
                   </tr>
                 </thead>
@@ -161,7 +161,7 @@ function RevenueTab() {
                         {formatDateTimeVN(row.period)}
                       </td>
                       <td className="px-4 py-2">
-                        {row.vehicleType === 'car' ? 'Ô tô' : 'Xe máy'}
+                        {row.vehicleType === 'car' ? 'Car' : 'Motorbike'}
                       </td>
                       <td className="px-4 py-2 text-right">{row.totalSessions}</td>
                       <td className="px-4 py-2 text-right font-medium">{VND(row.totalRevenue)}</td>
@@ -214,32 +214,32 @@ function TrafficTab() {
     <div className="space-y-4">
       <FilterBar period={period} setPeriod={setPeriod} date={date} setDate={setDate} />
 
-      {loading && <p className="text-gray-500 text-sm">Đang tải...</p>}
+      {loading && <p className="text-gray-500 text-sm">Loading...</p>}
 
       {!loading && (
         <>
           <div className="grid grid-cols-2 gap-4">
             <div className="card text-center">
-              <p className="text-sm text-gray-500">Tổng xe vào</p>
+              <p className="text-sm text-gray-500">Total check-ins</p>
               <p className="text-2xl font-bold text-blue-700">{totalEntry}</p>
             </div>
             <div className="card text-center">
-              <p className="text-sm text-gray-500">Tổng xe ra</p>
+              <p className="text-sm text-gray-500">Total check-outs</p>
               <p className="text-2xl font-bold text-orange-700">{totalExit}</p>
             </div>
           </div>
 
           {data.length === 0 ? (
-            <p className="text-gray-500 text-sm text-center py-8">Không có dữ liệu.</p>
+            <p className="text-gray-500 text-sm text-center py-8">No data.</p>
           ) : (
             <div className="card overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-4 py-2 text-left">Giờ</th>
-                    <th className="px-4 py-2 text-left">Tầng</th>
-                    <th className="px-4 py-2 text-right">Vào</th>
-                    <th className="px-4 py-2 text-right">Ra</th>
+                    <th className="px-4 py-2 text-left">Hours</th>
+                    <th className="px-4 py-2 text-left">Floor</th>
+                    <th className="px-4 py-2 text-right">In</th>
+                    <th className="px-4 py-2 text-right">Out</th>
                     <th className="px-4 py-2 w-40"></th>
                   </tr>
                 </thead>
@@ -285,10 +285,10 @@ function OccupancyTab() {
 
   return (
     <div className="space-y-4">
-      {loading && <p className="text-gray-500 text-sm">Đang tải...</p>}
+      {loading && <p className="text-gray-500 text-sm">Loading...</p>}
 
       {!loading && data.length === 0 && (
-        <p className="text-gray-500 text-sm text-center py-8">Không có dữ liệu.</p>
+        <p className="text-gray-500 text-sm text-center py-8">No data.</p>
       )}
 
       {!loading && data.length > 0 && (
@@ -296,11 +296,11 @@ function OccupancyTab() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="px-4 py-2 text-left">Tầng</th>
-                <th className="px-4 py-2 text-left">Khu</th>
-                <th className="px-4 py-2 text-left">Loại xe</th>
-                <th className="px-4 py-2 text-center">Tổng slot</th>
-                <th className="px-4 py-2 text-center">Tỷ lệ lấp đầy</th>
+                <th className="px-4 py-2 text-left">Floor</th>
+                <th className="px-4 py-2 text-left">Zone</th>
+                <th className="px-4 py-2 text-left">Vehicle</th>
+                <th className="px-4 py-2 text-center">Total slots</th>
+                <th className="px-4 py-2 text-center">Occupancy</th>
                 <th className="px-4 py-2 w-32"></th>
               </tr>
             </thead>
@@ -310,7 +310,7 @@ function OccupancyTab() {
                   <td className="px-4 py-2 font-medium">{row.floorName}</td>
                   <td className="px-4 py-2">{row.zone}</td>
                   <td className="px-4 py-2">
-                    {row.vehicleType === 'car' ? 'Ô tô' : 'Xe máy'}
+                    {row.vehicleType === 'car' ? 'Car' : 'Motorbike'}
                   </td>
                   <td className="px-4 py-2 text-center">{row.totalSlots}</td>
                   <td className="px-4 py-2 text-center font-medium">
@@ -353,9 +353,9 @@ function FilterBar({
         onChange={(e) => setPeriod(e.target.value as Period)}
         className="input w-auto"
       >
-        <option value="daily">Theo ngày</option>
-        <option value="weekly">Theo tuần</option>
-        <option value="monthly">Theo tháng</option>
+        <option value="daily">Daily</option>
+        <option value="weekly">Weekly</option>
+        <option value="monthly">Monthly</option>
       </select>
       <input
         type="date"

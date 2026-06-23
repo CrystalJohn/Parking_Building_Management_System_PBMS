@@ -7,8 +7,8 @@ export default function Profile() {
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="mx-auto max-w-2xl space-y-6">
         <header>
-          <h1 className="text-2xl font-bold">Hồ sơ của tôi</h1>
-          <p className="text-sm text-gray-500">Thông tin tài khoản tài xế</p>
+          <h1 className="text-2xl font-bold">My profile</h1>
+          <p className="text-sm text-gray-500">Driver account details</p>
         </header>
 
         <section className="card">
@@ -17,19 +17,19 @@ export default function Profile() {
               {getInitials(user?.fullName)}
             </div>
             <div className="min-w-0">
-              <h2 className="truncate text-lg font-semibold text-gray-900">{user?.fullName ?? 'Chưa có tên'}</h2>
-              <p className="text-sm text-gray-500">{user?.role === 'driver' ? 'Tài xế' : user?.role ?? 'User'}</p>
+              <h2 className="truncate text-lg font-semibold text-gray-900">{user?.fullName ?? 'No name set'}</h2>
+              <p className="text-sm text-gray-500">{user?.role === 'driver' ? 'Driver' : user?.role ?? 'User'}</p>
             </div>
           </div>
 
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <div className="rounded-xl border border-gray-200 bg-white p-4">
-              <p className="text-xs uppercase tracking-wide text-gray-500">Họ và tên</p>
-              <p className="mt-1 font-medium text-gray-900">{user?.fullName ?? 'Chưa có tên'}</p>
+              <p className="text-xs uppercase tracking-wide text-gray-500">Full name</p>
+              <p className="mt-1 font-medium text-gray-900">{user?.fullName ?? 'No name set'}</p>
             </div>
             <div className="rounded-xl border border-gray-200 bg-white p-4">
-              <p className="text-xs uppercase tracking-wide text-gray-500">Số điện thoại</p>
-              <p className="mt-1 font-medium text-gray-900">{user?.phone ?? 'Chưa có số điện thoại'}</p>
+              <p className="text-xs uppercase tracking-wide text-gray-500">Phone number</p>
+              <p className="mt-1 font-medium text-gray-900">{user?.phone ?? 'No phone set'}</p>
             </div>
           </div>
         </section>

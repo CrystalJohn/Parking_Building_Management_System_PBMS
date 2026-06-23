@@ -8,12 +8,12 @@ interface DurationSelectProps {
 }
 
 const OPTIONS: { value: DurationValue; label: string; detail: string }[] = [
-  { value: '1h', label: '1 giờ', detail: 'Nhanh' },
-  { value: '2h', label: '2 giờ', detail: 'Phổ biến' },
-  { value: '3h', label: '3 giờ', detail: 'Linh hoạt' },
-  { value: '4h', label: '4 giờ', detail: 'Nửa buổi' },
-  { value: '6h', label: '6 giờ', detail: 'Dài hơn' },
-  { value: 'day', label: 'Cả ngày', detail: 'All-day' },
+  { value: '1h', label: '1 hr', detail: 'Quick' },
+  { value: '2h', label: '2 hr', detail: 'Popular' },
+  { value: '3h', label: '3 hr', detail: 'Flexible' },
+  { value: '4h', label: '4 hr', detail: 'Half day' },
+  { value: '6h', label: '6 hr', detail: 'Extended' },
+  { value: 'day', label: 'All day', detail: 'All-day' },
 ]
 
 export default function DurationSelect({ value, onChange, disabled = false, className = '' }: DurationSelectProps) {
@@ -21,10 +21,10 @@ export default function DurationSelect({ value, onChange, disabled = false, clas
     <div className={className}>
       <div className="mb-3">
         <div className="text-[11px] font-mono uppercase tracking-[0.16em] text-neutral-500 dark:text-neutral-400">
-          Thời lượng dự kiến
+          Expected duration
         </div>
         <div className="mt-1 text-[13px] text-neutral-500 dark:text-neutral-400">
-          Hệ thống dùng thông tin này để ước tính khung giữ chỗ.
+          Used to estimate the reservation window.
         </div>
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">

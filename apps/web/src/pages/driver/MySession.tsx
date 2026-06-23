@@ -45,7 +45,7 @@ export default function MySession() {
       }
       setQrCodes(qrs)
     } catch {
-      setError('Không thể tải thông tin phiên gửi xe')
+      setError('Unable to load session information')
     } finally {
       setLoading(false)
     }
@@ -55,20 +55,20 @@ export default function MySession() {
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-md mx-auto space-y-6">
         <header>
-          <h1 className="text-2xl font-bold">Phiên gửi xe</h1>
+          <h1 className="text-2xl font-bold">My session</h1>
           <p className="text-sm text-gray-500">
-            Xuất trình mã QR cho nhân viên khi ra cổng
+            Show this QR code to staff at the exit gate
           </p>
         </header>
 
-        {loading && <p className="text-gray-500">Đang tải...</p>}
+        {loading && <p className="text-gray-500">Loading...</p>}
         {error && <p className="text-red-600 text-sm">{error}</p>}
 
         {!loading && sessions.length === 0 && (
           <div className="text-center py-12">
-            <p className="text-gray-500 text-lg mb-2">Không có phiên gửi xe nào</p>
+            <p className="text-gray-500 text-lg mb-2">No active session</p>
             <p className="text-gray-400 text-sm">
-              Bạn chưa check-in hoặc phiên đã kết thúc.
+              You have not checked in or your session has ended.
             </p>
           </div>
         )}
@@ -76,44 +76,44 @@ export default function MySession() {
         {sessions.map((session) => (
           <div key={session.id} className="card text-center space-y-4">
             <div>
-              <p className="text-sm text-gray-500">Biển số</p>
+              <p className="text-sm text-gray-500">Plate</p>
               <p className="text-2xl font-bold font-mono">{session.licensePlate}</p>
             </div>
 
             <div className="grid grid-cols-2 gap-2 text-sm">
               <div>
-                <p className="text-gray-500">Vị trí</p>
+                <p className="text-gray-500">Slot</p>
                 <p className="font-bold">{session.slot.code}</p>
               </div>
               <div>
-                <p className="text-gray-500">Tầng</p>
+                <p className="text-gray-500">Floor</p>
                 <p className="font-bold">{session.slot.floor.name}</p>
               </div>
               <div>
-                <p className="text-gray-500">Loại xe</p>
-                <p>{session.vehicleType === 'car' ? 'Ô tô' : 'Xe máy'}</p>
+                <p className="text-gray-500">Vehicle</p>
+                <p>{session.vehicleType === 'car' ? 'Car' : 'Motorbike'}</p>
               </div>
               <div>
-                <p className="text-gray-500">Giờ vào</p>
+                <p className="text-gray-500">Check-in time</p>
                 <p>{formatDateTime(session.checkInTime)}</p>
               </div>
             </div>
 
             {qrCodes[session.id] ? (
               <div className="border-t border-gray-200 pt-4">
-                <p className="text-sm font-medium mb-2">Mã QR check-out</p>
+                <p className="text-sm font-medium mb-2">Check-out QR</p>
                 <img
                   src={qrCodes[session.id]}
                   alt="QR Code"
                   className="w-56 h-56 mx-auto border border-gray-200 rounded-md"
                 />
                 <p className="text-xs text-gray-500 mt-2">
-                  Đưa mã này cho nhân viên khi ra cổng.
+                  Show this code to staff at the exit gate.
                 </p>
               </div>
             ) : (
               <p className="text-sm text-gray-400 border-t border-gray-200 pt-4">
-                Không có mã QR cho phiên này.
+                No QR code available for this session.
               </p>
             )}
           </div>
@@ -121,7 +121,7 @@ export default function MySession() {
 
         {sessions.length > 0 && (
           <button onClick={loadSessions} className="btn-secondary text-sm w-full">
-            Làm mới
+            Refresh
           </button>
         )}
       </div>

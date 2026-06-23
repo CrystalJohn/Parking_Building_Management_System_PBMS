@@ -13,7 +13,7 @@ gsap.registerPlugin(ScrollTrigger)
 /* ──────────────────────────────────────────────────────────
    PBMS Landing — Glassmorphism + Accurate README data
    
-   Tòa nhà 3 tầng · 90 slots · Zone A (ô tô) + Zone B (xe máy)
+   3-floor building · 90 slots · Zone A (cars) + Zone B (motorbikes)
    Smart Slot Allocation · QR Flow · Reservation · Auto Pricing
    ────────────────────────────────────────────────────────── */
 
@@ -212,7 +212,7 @@ export default function Landing() {
           </Link>
           <div className="hidden md:flex items-center gap-1">
             {[
-              { label: 'Tính năng', href: '#features' },
+              { label: 'Features', href: '#features' },
             ].map((t) => (
               <a
                 key={t.label}
@@ -243,13 +243,13 @@ export default function Landing() {
               to="/login"
               className="h-8 px-3 sm:px-4 flex items-center text-[13px] font-medium bg-white/50 dark:bg-white/10 border border-white/30 dark:border-white/10 rounded-xl hover:bg-white/80 dark:hover:bg-white/20 backdrop-blur-sm transition-all"
             >
-              Đăng nhập
+              Sign in
             </Link>
             <Link
               to="/register"
               className="h-8 px-3 sm:px-4 max-[420px]:hidden flex items-center text-[13px] font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl shadow-lg shadow-blue-600/25 hover:shadow-blue-600/40 transition-all"
             >
-              Đăng ký
+              Sign up
             </Link>
           </div>
         </div>
@@ -293,8 +293,8 @@ export default function Landing() {
 
               {/* Brand description — full width paragraph */}
               <p className="hero-desc text-[14px] sm:text-[17px] leading-[24px] sm:leading-[28px] text-white/65 max-w-lg mb-7 sm:mb-10">
-                Hệ thống quản lý tòa nhà đỗ xe đa tầng — tự động phân bổ slot, tính phí theo giờ,
-                QR check-in/out, đặt chỗ trước. Thiết kế cho 3 tầng, 2 zone, 90 slot.
+                Multi-floor parking building management system — automatic slot allocation, hourly billing,
+                QR check-in/out, advance reservation. Designed for 3 floors, 2 zones, 90 slots.
               </p>
 
               {/* Buttons */}
@@ -303,7 +303,7 @@ export default function Landing() {
                   to={startPath}
                   className="inline-flex items-center justify-center gap-2 h-12 px-7 bg-white text-[#171717] text-[14px] font-semibold rounded-full shadow-lg shadow-black/20 hover:shadow-xl hover:bg-white/90 transition-all"
                 >
-                  Bắt đầu miễn phí
+                  Get started
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
                   </svg>
@@ -312,7 +312,7 @@ export default function Landing() {
                   href="#specs"
                   className="inline-flex items-center justify-center gap-2 h-12 px-7 bg-white/10 backdrop-blur-xl text-[14px] font-medium rounded-full border border-white/20 text-white hover:bg-white/20 transition-all"
                 >
-                  + Xem thông số
+                  + View specs
                 </a>
               </div>
             </div>
@@ -330,9 +330,9 @@ export default function Landing() {
                 <div className="grid grid-cols-2 gap-4 mb-5">
                   {[
                     { num: '90', label: '[SLOTS]', sub: '3 floors × 30' },
-                    { num: '55%', label: '[OCCUPIED]', sub: '50/90 hiện tại' },
-                    { num: '4.2M', label: '[DOANH THU]', sub: 'VNĐ hôm nay' },
-                    { num: '142', label: '[XE RA/VÀO]', sub: 'Hôm nay' },
+                    { num: '55%', label: '[OCCUPIED]', sub: '50/90 current' },
+                    { num: '4.2M', label: '[REVENUE]', sub: 'VND today' },
+                    { num: '142', label: '[VEHICLES]', sub: 'Today' },
                   ].map((s) => (
                     <div key={s.label} className="stat-item">
                       <div className="text-[28px] font-bold text-white leading-none">{s.num}</div>
@@ -345,9 +345,9 @@ export default function Landing() {
                 {/* Floor occupancy bars */}
                 <div className="space-y-3 mb-5">
                   {[
-                    { floor: 'Tầng 1', pct: 77, color: 'from-amber-400 to-orange-500' },
-                    { floor: 'Tầng 2', pct: 57, color: 'from-blue-400 to-indigo-500' },
-                    { floor: 'Tầng 3', pct: 33, color: 'from-emerald-400 to-cyan-500' },
+                    { floor: 'Floor 1', pct: 77, color: 'from-amber-400 to-orange-500' },
+                    { floor: 'Floor 2', pct: 57, color: 'from-blue-400 to-indigo-500' },
+                    { floor: 'Floor 3', pct: 33, color: 'from-emerald-400 to-cyan-500' },
                   ].map((f) => (
                     <div key={f.floor}>
                       <div className="flex justify-between text-[11px] text-white/50 mb-1">
@@ -415,13 +415,13 @@ export default function Landing() {
                   </svg>
                 </div>
                 <div>
-                  <h3 className="text-[16px] font-semibold text-[#171717] dark:text-[#ededed]">Đặt chỗ trước</h3>
-                  <p className="text-[12px] text-[#888] font-mono">Tòa nhà đỗ xe đa tầng — 90 slot</p>
+                  <h3 className="text-[16px] font-semibold text-[#171717] dark:text-[#ededed]">Reserve</h3>
+                  <p className="text-[12px] text-[#888] font-mono">Multi-floor parking building — 90 slots</p>
                 </div>
               </div>
               <div className="flex items-center gap-1.5 px-3 py-1 bg-green-500/10 rounded-full">
                 <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-                <span className="text-[11px] font-medium text-green-600 dark:text-green-400">Đang mở</span>
+                <span className="text-[11px] font-medium text-green-600 dark:text-green-400">Open</span>
               </div>
             </div>
 
@@ -432,19 +432,19 @@ export default function Landing() {
                   <div className="mb-1 flex items-center gap-2">
                     <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-500" />
                     <span className="text-[11px] font-mono uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
-                      {displaySummary.available > 0 ? 'Vẫn còn nhận xe' : 'Hết chỗ'}
+                      {displaySummary.available > 0 ? 'Slots available' : 'Full'}
                     </span>
                   </div>
                   <h4 className="text-[18px] font-semibold tracking-[-0.3px] text-[#171717] dark:text-[#ededed]">
-                    Parking building hiện đang sử dụng {displaySummary.percent}% / 100%
+                    Parking building is currently at {displaySummary.percent}% / 100%
                   </h4>
                   <p className="mt-1 text-[13px] leading-5 text-[#666] dark:text-[#aaa]">
-                    Còn khoảng {displaySummary.available}/{displaySummary.total} slot trống. Bạn có thể đến đỗ hoặc đặt chỗ trước ngay bây giờ.
+                    Approximately {displaySummary.available}/{displaySummary.total} slots available. You can park now or reserve in advance.
                   </p>
                 </div>
                 <div className="min-w-[140px] rounded-2xl border border-white/50 bg-white/50 px-4 py-3 text-center dark:border-white/[0.08] dark:bg-white/[0.05]">
                   <div className="text-[32px] font-bold leading-none text-emerald-600 dark:text-emerald-300">{displaySummary.available}</div>
-                  <div className="mt-1 text-[11px] font-mono uppercase tracking-wider text-[#777] dark:text-[#aaa]">slot còn trống</div>
+                  <div className="mt-1 text-[11px] font-mono uppercase tracking-wider text-[#777] dark:text-[#aaa]">slots available</div>
                 </div>
               </div>
               <div className="mt-4 h-3 overflow-hidden rounded-full bg-white/50 dark:bg-white/[0.08]">
@@ -454,9 +454,9 @@ export default function Landing() {
 
             {/* Reservation controls */}
             <div className="resv-control grid sm:grid-cols-2 gap-6 mb-6">
-              {/* Loại xe */}
+              {/* Vehicle type */}
               <div>
-                <label className="block text-[11px] font-mono text-[#888] uppercase tracking-wider mb-3">Loại xe</label>
+                <label className="block text-[11px] font-mono text-[#888] uppercase tracking-wider mb-3">Vehicle type</label>
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
@@ -475,8 +475,8 @@ export default function Landing() {
                       />
                     </span>
                     <div className="text-left">
-                      <div className="text-[14px] font-semibold text-[#171717] dark:text-[#ededed]">Ô tô</div>
-                      <div className="text-[11px] font-mono text-blue-600 dark:text-blue-400">Zone A · còn {displaySummary.zoneA.available}</div>
+                      <div className="text-[14px] font-semibold text-[#171717] dark:text-[#ededed]">Car</div>
+                      <div className="text-[11px] font-mono text-blue-600 dark:text-blue-400">Zone A · {displaySummary.zoneA.available} left</div>
                     </div>
                   </button>
                   <button
@@ -496,16 +496,16 @@ export default function Landing() {
                       />
                     </span>
                     <div className="text-left">
-                      <div className="text-[14px] font-semibold text-[#171717] dark:text-[#ededed]">Xe máy</div>
-                      <div className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400">Zone B · còn {displaySummary.zoneB.available}</div>
+                      <div className="text-[14px] font-semibold text-[#171717] dark:text-[#ededed]">Motorbike</div>
+                      <div className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400">Zone B · {displaySummary.zoneB.available} left</div>
                     </div>
                   </button>
                 </div>
               </div>
 
-              {/* Ngày giờ */}
+              {/* Date/time */}
               <div>
-                <label className="block text-[11px] font-mono text-[#888] uppercase tracking-wider mb-3">Thời gian đặt</label>
+                <label className="block text-[11px] font-mono text-[#888] uppercase tracking-wider mb-3">Reservation time</label>
                 <input
                   type="datetime-local"
                   min={minReservationTime}
@@ -514,12 +514,12 @@ export default function Landing() {
                   className="h-[52px] w-full px-4 bg-white/40 dark:bg-white/[0.04] border border-white/50 dark:border-white/[0.08] rounded-2xl text-[13px] text-[#171717] dark:text-[#ededed] outline-none focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/10 backdrop-blur-sm transition-all"
                 />
                 <p className="mt-2 text-[11px] leading-4 text-[#888]">
-                  Chỉ có thể chọn thời gian hiện tại hoặc tương lai. Không cho phép đặt về quá khứ.
+                  Only current or future times are allowed. Past dates cannot be selected.
                 </p>
               </div>
             </div>
 
-            {/* Nút đặt */}
+            {/* Reserve button */}
             <div className="resv-action flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <Link
                 to={`${startPath}${startPath.includes('/driver/') ? '' : `?redirect=${encodeURIComponent(`/driver/reservations?vehicleType=${vehicleType}&time=${reservationTime}`)}`}`}
@@ -528,10 +528,10 @@ export default function Landing() {
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
                 </svg>
-                Tiến hành reservation
+                Proceed to reservation
               </Link>
               <p className="text-[12px] leading-5 text-[#777] dark:text-[#aaa] sm:max-w-[320px]">
-                Sau khi xác nhận, hệ thống sẽ tự động phân bổ slot phù hợp theo loại xe và tình trạng bãi hiện tại.
+                After confirmation, the system will automatically assign the best available slot based on vehicle type and current occupancy.
               </p>
             </div>
           </div>
@@ -543,10 +543,10 @@ export default function Landing() {
         <div className="max-w-[1200px] mx-auto px-4 sm:px-6">
           <div className="text-center max-w-xl mx-auto mb-14">
             <span className="inline-block text-[12px] font-mono text-[#888] uppercase tracking-[0.05em] mb-3">
-              Tính năng
+              Features
             </span>
             <h2 className="text-[32px] sm:text-[40px] font-semibold leading-[1.15] tracking-[-1.28px] mb-3">
-              Giải quyết bài toán bãi đỗ xe.
+              Solving the parking management problem.
             </h2>
           </div>
 
@@ -559,19 +559,19 @@ export default function Landing() {
                   Check-in / Check-out
                 </h3>
                 <p className="text-[14px] leading-[20px] text-[#4d4d4d] dark:text-[#999] max-w-sm">
-                  Staff thao tác tại cổng qua web. Tự động phân bổ slot khi xe vào, giải phóng slot khi xe ra.
+                  Staff operate at the gate via web. Automatic slot allocation on vehicle entry, slot release on exit.
                 </p>
               </div>
               {/* UI Mockup — Check-in terminal */}
               <div className="bg-black/80 dark:bg-black/60 backdrop-blur-xl rounded-xl p-4 font-mono text-[11px] leading-[18px] border border-white/10">
                 <div className="flex items-center gap-2 mb-2">
                   <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-                  <span className="text-green-400">Hệ thống sẵn sàng</span>
+                  <span className="text-green-400">System ready</span>
                 </div>
                 <div className="text-[#666]">{'>'} pbms checkin --plate 29A-12345 --type car</div>
-                <div className="text-emerald-400">✓ Phân bổ tầng 2 — Zone A, slot 7</div>
+                <div className="text-emerald-400">✓ Assigned floor 2 — Zone A, slot 7</div>
                 <div className="text-[#666]">{'>'} pbms checkin --plate 59B1-67890 --type motor</div>
-                <div className="text-emerald-400">✓ Phân bổ tầng 1 — Zone B, slot 14</div>
+                <div className="text-emerald-400">✓ Assigned floor 1 — Zone B, slot 14</div>
                 <div className="text-[#666] mt-2">{'>'} pbms status</div>
                 <div className="text-blue-400">█ Occupied: 50/90 (55.6%)</div>
               </div>
@@ -584,7 +584,7 @@ export default function Landing() {
                   Smart Slot Allocation
                 </h3>
                 <p className="text-[14px] leading-[20px] text-[#4d4d4d] dark:text-[#999] max-w-sm">
-                  Thuật toán phân bổ slot cân bằng tải giữa 3 tầng — tránh tình trạng tầng đầy tầng trống.
+                  Load-balancing slot allocation algorithm across 3 floors — prevents some floors filling up while others remain empty.
                 </p>
               </div>
               {/* UI Mockup — Floor occupancy bars */}
@@ -594,9 +594,9 @@ export default function Landing() {
                   <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400">Balanced ✓</span>
                 </div>
                 {[
-                  { floor: 'Tầng 1', pct: 60, color: 'from-blue-500 to-indigo-500' },
-                  { floor: 'Tầng 2', pct: 53, color: 'from-amber-500 to-orange-500' },
-                  { floor: 'Tầng 3', pct: 47, color: 'from-emerald-500 to-cyan-500' },
+                  { floor: 'Floor 1', pct: 60, color: 'from-blue-500 to-indigo-500' },
+                  { floor: 'Floor 2', pct: 53, color: 'from-amber-500 to-orange-500' },
+                  { floor: 'Floor 3', pct: 47, color: 'from-emerald-500 to-cyan-500' },
                 ].map((f) => (
                   <div key={f.floor} className="mb-2 last:mb-0">
                     <div className="flex justify-between text-[11px] text-[#666] dark:text-[#888] mb-1">
@@ -614,24 +614,24 @@ export default function Landing() {
 
           {/* ── Bottom row: 3 cards ── */}
           <div className="grid md:grid-cols-3 gap-4">
-            {/* Card 3: Tính phí tự động */}
+            {/* Card 3: Automated billing */}
             <div className="feature-card group bg-white/50 dark:bg-white/[0.04] backdrop-blur-2xl rounded-[1.5rem] p-6 border border-white/50 dark:border-white/[0.08] shadow-[0_4px_30px_rgba(0,0,0,0.06)] dark:shadow-[0_4px_30px_rgba(0,0,0,0.3)] hover:bg-white/70 dark:hover:bg-white/[0.08] hover:-translate-y-1 ring-1 ring-black/[0.02] dark:ring-white/[0.02] transition-all duration-300 overflow-hidden">
               <h3 className="text-[18px] font-semibold leading-[24px] tracking-[-0.28px] mb-2">
-                Tính phí tự động
+                Automated billing
               </h3>
               <p className="text-[14px] leading-[20px] text-[#4d4d4d] dark:text-[#999] mb-4">
-                Làm tròn theo giờ, phụ thu overtime, tính phí mất vé.
+                Rounded by hour, overtime surcharge, lost ticket fee.
               </p>
               {/* UI Mockup — Pricing table */}
               <div className="bg-white/60 dark:bg-white/[0.06] backdrop-blur-xl rounded-xl p-3 border border-white/40 dark:border-white/[0.08]">
                 <div className="grid grid-cols-2 gap-2 text-[11px]">
-                  <div className="font-mono text-[#888]">Giờ đầu</div>
+                  <div className="font-mono text-[#888]">First hour</div>
                   <div className="font-semibold text-right text-[#171717] dark:text-[#ededed]">5,000đ</div>
-                  <div className="font-mono text-[#888]">Giờ 2-4</div>
+                  <div className="font-mono text-[#888]">Hours 2–4</div>
                   <div className="font-semibold text-right text-[#171717] dark:text-[#ededed]">3,000đ/h</div>
                   <div className="font-mono text-[#888]">Overtime</div>
                   <div className="font-semibold text-right text-amber-600 dark:text-amber-400">+50%</div>
-                  <div className="font-mono text-[#888]">Mất vé</div>
+                  <div className="font-mono text-[#888]">Lost ticket</div>
                   <div className="font-semibold text-right text-red-500">100,000đ</div>
                 </div>
               </div>
@@ -643,7 +643,7 @@ export default function Landing() {
                 QR Code Flow
               </h3>
               <p className="text-[14px] leading-[20px] text-[#4d4d4d] dark:text-[#999] mb-4">
-                Driver nhận QR khi check-in. Staff scan QR khi check-out.
+                Driver receives QR at check-in. Staff scans QR at check-out.
               </p>
               {/* UI Mockup — QR flow diagram */}
               <div className="flex items-center justify-center gap-3 py-4">
@@ -688,13 +688,13 @@ export default function Landing() {
               </div>
             </div>
 
-            {/* Card 5: Báo cáo vận hành */}
+            {/* Card 5: Operations report */}
             <div className="feature-card group bg-white/50 dark:bg-white/[0.04] backdrop-blur-2xl rounded-[1.5rem] p-6 border border-white/50 dark:border-white/[0.08] shadow-[0_4px_30px_rgba(0,0,0,0.06)] dark:shadow-[0_4px_30px_rgba(0,0,0,0.3)] hover:bg-white/70 dark:hover:bg-white/[0.08] hover:-translate-y-1 ring-1 ring-black/[0.02] dark:ring-white/[0.02] transition-all duration-300 overflow-hidden">
               <h3 className="text-[18px] font-semibold leading-[24px] tracking-[-0.28px] mb-2">
-                Báo cáo vận hành
+                Operations report
               </h3>
               <p className="text-[14px] leading-[20px] text-[#4d4d4d] dark:text-[#999] mb-4">
-                Doanh thu, lưu lượng, tỷ lệ occupancy theo ngày/tuần/tháng.
+                Revenue, traffic volume, occupancy rate by day/week/month.
               </p>
               {/* UI Mockup — Bar chart */}
               <div className="bg-white/60 dark:bg-white/[0.06] backdrop-blur-xl rounded-xl p-4 border border-white/40 dark:border-white/[0.08]">
@@ -733,17 +733,17 @@ export default function Landing() {
             />
             <div className="relative">
               <h2 className="text-[27px] sm:text-[40px] font-semibold leading-[1.15] tracking-[-1px] sm:tracking-[-1.28px] text-white mb-3">
-                Sẵn sàng quản lý tòa nhà đỗ xe?
+                Ready to manage your parking building?
               </h2>
               <p className="text-[16px] leading-[24px] text-blue-100 mb-8 max-w-md mx-auto">
-                90 slot · 3 tầng · Tự động phân bổ & tính phí. Miễn phí.
+                90 slots · 3 floors · Automatic allocation &amp; billing. Free.
               </p>
               <div className="flex flex-col sm:flex-row sm:flex-wrap justify-center gap-3">
                 <Link
                   to={startPath}
                   className="inline-flex items-center justify-center gap-2 h-11 px-6 bg-white text-blue-700 text-[15px] font-semibold rounded-full shadow-lg hover:shadow-xl hover:bg-blue-50 transition-all"
                 >
-                  Đăng ký miễn phí
+                  Sign up for free
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
                   </svg>
@@ -752,7 +752,7 @@ export default function Landing() {
                   to="/login"
                   className="inline-flex items-center justify-center h-11 px-6 text-white text-[15px] font-medium rounded-full border border-white/30 hover:bg-white/10 transition-all"
                 >
-                  Đăng nhập
+                  Sign in
                 </Link>
               </div>
             </div>
@@ -772,7 +772,7 @@ export default function Landing() {
                 <span className="text-[14px] font-medium text-[#4d4d4d] dark:text-[#888]">PBMS</span>
               </div>
               <div className="flex items-center gap-5">
-                {['Tính năng'].map((t) => (
+                {['Features'].map((t) => (
                   <a
                     key={t}
                     href="#features"

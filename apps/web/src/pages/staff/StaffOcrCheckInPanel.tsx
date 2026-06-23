@@ -4,6 +4,7 @@ import { QRScanner } from '../../components/qr-scanner/QRScanner'
 import { getUser } from '../../lib/auth'
 import { formatDateTimeVN } from '../../lib/date-time'
 import { useToasts } from '../../lib/use-toasts'
+import { RecentSessionsCard } from '../../components/ui/RecentSessionsCard'
 import {
   checkIn,
   issueSessionTicket,
@@ -48,12 +49,12 @@ const CHECK_IN_MODES: Array<{
   {
     id: 'walk-in',
     title: 'No reservation',
-    subtitle: 'Xe vãng lai, chưa đặt chỗ',
+    subtitle: 'Walk-in, no reservation',
   },
   {
     id: 'reservation',
     title: 'Reservation valid',
-    subtitle: 'Khách đã đặt chỗ trên mobile',
+    subtitle: 'Customer reserved via mobile',
   },
 ]
 
@@ -74,6 +75,7 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
   const [issuedAt, setIssuedAt] = useState<string | null>(null)
   const [showReservationScanner, setShowReservationScanner] = useState(false)
   const [now, setNow] = useState(new Date())
+  const [checkInCount, setCheckInCount] = useState(0)
 
   const user = getUser()
   const activeMode = CHECK_IN_MODES.find((mode) => mode.id === serviceMode) ?? CHECK_IN_MODES[0]
@@ -159,13 +161,13 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
     const code = decodedText.trim()
     setShowReservationScanner(false)
     if (!code) {
-      toasts.showError('Reservation QR không hợp lệ')
+      toasts.showError('Invalid reservation QR')
       return
     }
 
     setServiceMode('reservation')
     setReservationId(code)
-    toasts.showSuccess('Đã nhận Reservation QR')
+    toasts.showSuccess('Reservation QR received')
   }, [toasts])
 
   const captureAndRecognize = useCallback(async () => {
@@ -268,8 +270,10 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
 
       if (response.ticket) {
         setTicket(normalizeSessionTicket(response.ticket, response.slot))
+        setCheckInCount((c) => c + 1)
         window.setTimeout(() => setStatus('TICKET_READY'), 250)
       } else {
+        setCheckInCount((c) => c + 1)
         setStatus('CHECKIN_SUCCESS')
       }
     } catch (error) {
@@ -368,7 +372,7 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Staff Check-in Service</h2>
           <p className="text-sm text-gray-500">
-            Chọn đúng loại phục vụ trước khi OCR. Space capture OCR, Enter confirm, Esc reset.
+            Select the correct service mode before OCR. Space to capture, Enter to confirm, Esc to reset.
           </p>
         </div>
         <div className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm">
@@ -592,8 +596,8 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
       {showReservationScanner && (
         <QRScanner
           title="Scan Reservation QR"
-          instructions="Quét Reservation QR trên mobile của driver. QR payload MVP là reservation.id."
-          manualToggleLabel="Camera không quét được? Nhập Reservation ID thủ công"
+          instructions="Scan the Reservation QR on the driver's mobile. QR payload is the reservation ID."
+          manualToggleLabel="Cannot scan? Enter Reservation ID manually"
           manualInputLabel="Reservation ID / Code"
           manualInputPlaceholder="Reservation UUID/code"
           onScan={handleReservationQrScanned}
@@ -601,6 +605,7 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
           onManualInput={handleReservationQrScanned}
         />
       )}
+      <RecentSessionsCard type="checkin" refreshTrigger={checkInCount} />
     </div>
   )
 }

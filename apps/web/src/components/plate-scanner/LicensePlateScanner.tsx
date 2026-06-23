@@ -63,7 +63,7 @@ function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
  * NOTE: this can only reliably reject a *blank* frame. A busy scene with no
  * plate (e.g. an office, a face) still scores high — only the cloud engine can
  * confirm an actual plate. Tune EMPTY_EDGE_THRESHOLD for your camera using the
- * live "Tín hiệu" readout shown under the capture button.
+ * live "Signal" readout shown under the capture button.
  *
  * Returns a value in 0..1.
  */
@@ -119,7 +119,7 @@ export function LicensePlateScanner({ onDetected, onClose }: LicensePlateScanner
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const [state, setState] = useState<ScanState>('initializing')
-  const [statusMsg, setStatusMsg] = useState('Đang khởi động camera...')
+  const [statusMsg, setStatusMsg] = useState('Starting camera...')
   const [detectedPlate, setDetectedPlate] = useState<string | null>(null)
   const [score, setScore] = useState(0)
   const [cooldown, setCooldown] = useState(0)   // seconds remaining before next scan
@@ -179,7 +179,7 @@ export function LicensePlateScanner({ onDetected, onClose }: LicensePlateScanner
       ctx.fillStyle = 'white'
       ctx.font = 'bold 14px sans-serif'
       ctx.textAlign = 'center'
-      ctx.fillText('Đặt biển số xe vào khung', w / 2, zY - 12)
+      ctx.fillText('Place license plate in frame', w / 2, zY - 12)
 
       animRef.current = requestAnimationFrame(draw)
     }
@@ -206,7 +206,7 @@ export function LicensePlateScanner({ onDetected, onClose }: LicensePlateScanner
         }
         if (!cancelled) {
           setState('ready')
-          setStatusMsg('Nhấn nút bên dưới để quét')
+          setStatusMsg('Press the button below to scan')
         }
       })
       .catch((err) => {
@@ -215,8 +215,8 @@ export function LicensePlateScanner({ onDetected, onClose }: LicensePlateScanner
         const msg = err instanceof Error ? err.message : String(err)
         setStatusMsg(
           msg.includes('Permission') || msg.includes('NotAllowed')
-            ? 'Không có quyền truy cập camera. Vui lòng cho phép trong trình duyệt.'
-            : `Không thể khởi động camera: ${msg}`,
+            ? 'Camera access denied. Please allow camera access in your browser.'
+            : `Unable to start camera: ${msg}`,
         )
       })
 
@@ -287,7 +287,7 @@ export function LicensePlateScanner({ onDetected, onClose }: LicensePlateScanner
     try {
       canvas = cropFrameToCanvas(video, overlay)
     } catch {
-      setStatusMsg('Camera chưa sẵn sàng, thử lại sau giây lát.')
+      setStatusMsg('Camera not ready, please try again in a moment.')
       return
     }
 
@@ -296,7 +296,7 @@ export function LicensePlateScanner({ onDetected, onClose }: LicensePlateScanner
       // Frame looks empty — do NOT call the cloud API. Apply cooldown to
       // discourage rapid repeated presses on an empty scene.
       setState('ready')
-      setStatusMsg('Không thấy biển số trong khung — bỏ qua, không gọi dịch vụ.')
+      setStatusMsg('No plate detected in frame — skipping, not calling service.')
       startCooldown()
       return
     }
@@ -304,7 +304,7 @@ export function LicensePlateScanner({ onDetected, onClose }: LicensePlateScanner
     // 2) Looks like there's a plate — spend an API call.
     didScanRef.current = true
     setState('scanning')
-    setStatusMsg('Đang nhận diện...')
+    setStatusMsg('Recognizing...')
 
     try {
       const blob = await canvasToBlob(canvas)
@@ -314,21 +314,21 @@ export function LicensePlateScanner({ onDetected, onClose }: LicensePlateScanner
         setDetectedPlate(result.plate)
         setScore(result.score)
         setState('done')
-        setStatusMsg(`Phát hiện: ${result.plate}`)
+        setStatusMsg(`Detected: ${result.plate}`)
         // Auto-fill immediately — Plate Recognizer confidence is always near-perfect
         onDetected(result.plate)
       } else {
         // API ran but found nothing — allow retry after cooldown
         didScanRef.current = false
         setState('ready')
-        setStatusMsg('Không nhận ra biển số. Điều chỉnh góc camera và thử lại.')
+        setStatusMsg('Plate not recognized. Adjust the camera angle and try again.')
         startCooldown()
       }
     } catch (err) {
       didScanRef.current = false
       setState('ready')
       const msg = err instanceof Error ? err.message : String(err)
-      setStatusMsg(`Lỗi: ${msg}. Thử lại.`)
+      setStatusMsg(`Error: ${msg}. Please try again.`)
       startCooldown()
     }
   }
@@ -342,9 +342,9 @@ export function LicensePlateScanner({ onDetected, onClose }: LicensePlateScanner
         <div className="flex items-center justify-between px-4 py-3 bg-gray-800">
           <div className="flex items-center gap-2">
             <span className="text-2xl">🔍</span>
-            <span className="text-white font-semibold text-sm">Quét biển số xe</span>
+            <span className="text-white font-semibold text-sm">Scan license plate</span>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-gray-700" aria-label="Đóng">
+          <button onClick={onClose} className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-gray-700" aria-label="Close">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -359,14 +359,14 @@ export function LicensePlateScanner({ onDetected, onClose }: LicensePlateScanner
           {state === 'initializing' && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70">
               <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-3" />
-              <p className="text-white text-sm">Đang khởi động camera...</p>
+              <p className="text-white text-sm">Starting camera...</p>
             </div>
           )}
 
           {state === 'scanning' && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50">
               <div className="w-10 h-10 border-4 border-blue-400 border-t-transparent rounded-full animate-spin mb-3" />
-              <p className="text-white text-sm font-medium">Đang nhận diện...</p>
+              <p className="text-white text-sm font-medium">Recognizing...</p>
             </div>
           )}
 
@@ -406,10 +406,10 @@ export function LicensePlateScanner({ onDetected, onClose }: LicensePlateScanner
               className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-colors text-sm"
             >
               {cooldown > 0 ? (
-                <>⏳ Vui lòng chờ {cooldown}s</>
+                <>⏳ Please wait {cooldown}s</>
               ) : (
                 <>
-                  📸 Chụp &amp; nhận diện biển số
+                  📸 Capture &amp; recognize plate
                   <span className="ml-2 text-blue-200 text-xs font-normal">[Space]</span>
                 </>
               )}
@@ -420,7 +420,7 @@ export function LicensePlateScanner({ onDetected, onClose }: LicensePlateScanner
             <>
               {/* Live local signal — helps calibrate the empty-frame gate. */}
               <div className="flex items-center gap-2 text-[11px] text-gray-400">
-                <span className="flex-shrink-0">Tín hiệu:</span>
+                <span className="flex-shrink-0">Signal:</span>
                 <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all ${
@@ -435,8 +435,8 @@ export function LicensePlateScanner({ onDetected, onClose }: LicensePlateScanner
               </div>
               <p className="text-gray-500 text-xs text-center">
                 💡 {signal < EMPTY_EDGE_THRESHOLD
-                  ? 'Khung trống — đưa biển số vào để bật nút quét.'
-                  : 'Giữ camera thẳng, đủ ánh sáng, biển số chiếm phần lớn khung.'}
+                  ? 'Frame is empty — bring the license plate into view to enable scanning.'
+                  : 'Hold the camera steady with good lighting; the plate should fill most of the frame.'}
               </p>
             </>
           )}

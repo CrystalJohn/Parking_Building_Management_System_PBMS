@@ -47,8 +47,8 @@ export default function Config() {
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-3xl mx-auto space-y-8">
         <header>
-          <h1 className="text-2xl font-bold">Cấu hình hệ thống</h1>
-          <p className="text-sm text-gray-500">Quản lý giá và cấu trúc tòa nhà</p>
+          <h1 className="text-2xl font-bold">System configuration</h1>
+          <p className="text-sm text-gray-500">Manage pricing and building structure</p>
         </header>
 
         <PricingSection toasts={toasts} />
@@ -81,7 +81,7 @@ function PricingSection({ toasts }: { toasts: ReturnType<typeof useToasts> }) {
       }
       setEditValues(map)
     } catch {
-      toasts.showError('Không thể tải cấu hình giá')
+      toasts.showError('Unable to load pricing configuration')
     } finally {
       setLoading(false)
     }
@@ -100,12 +100,12 @@ function PricingSection({ toasts }: { toasts: ReturnType<typeof useToasts> }) {
         lostTicketPenalty: values.lostTicketPenalty,
         overtimeThresholdHours: values.overtimeThresholdHours,
       })
-      toasts.showSuccess(`Đã cập nhật giá ${vehicleType === 'car' ? 'ô tô' : 'xe máy'}`)
+      toasts.showSuccess(`Pricing updated for ${vehicleType === 'car' ? 'car' : 'motorbike'}`)
       await loadPricing()
     } catch (err) {
       if (isAxiosError(err)) {
         const msg = err.response?.data?.message
-        toasts.showError(typeof msg === 'string' ? msg : 'Lỗi cập nhật')
+        toasts.showError(typeof msg === 'string' ? msg : 'Update error')
       }
     } finally {
       setSaving(false)
@@ -123,24 +123,24 @@ function PricingSection({ toasts }: { toasts: ReturnType<typeof useToasts> }) {
     }))
   }
 
-  if (loading) return <p className="text-gray-500">Đang tải...</p>
+  if (loading) return <p className="text-gray-500">Loading...</p>
 
   return (
     <section className="card">
-      <h2 className="text-lg font-semibold mb-4">Bảng giá</h2>
+      <h2 className="text-lg font-semibold mb-4">Pricing</h2>
 
       <div className="grid md:grid-cols-2 gap-6">
         {(['car', 'motorbike'] as const).map((type) => {
           const values = editValues[type]
           if (!values) return null
-          const label = type === 'car' ? 'Ô tô (Zone A)' : 'Xe máy (Zone B)'
+          const label = type === 'car' ? 'Car (Zone A)' : 'Motorbike (Zone B)'
 
           return (
             <div key={type} className="space-y-3 border border-gray-200 rounded-md p-4">
               <h3 className="font-medium">{label}</h3>
 
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Giá/giờ (VND)</label>
+                <label className="block text-xs text-gray-500 mb-1">Hourly rate (VND)</label>
                 <input
                   type="number"
                   className="input"
@@ -150,7 +150,7 @@ function PricingSection({ toasts }: { toasts: ReturnType<typeof useToasts> }) {
               </div>
 
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Phụ thu quá giờ (VND)</label>
+                <label className="block text-xs text-gray-500 mb-1">Overtime surcharge (VND)</label>
                 <input
                   type="number"
                   className="input"
@@ -160,7 +160,7 @@ function PricingSection({ toasts }: { toasts: ReturnType<typeof useToasts> }) {
               </div>
 
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Phụ thu mất vé (VND)</label>
+                <label className="block text-xs text-gray-500 mb-1">Lost ticket surcharge (VND)</label>
                 <input
                   type="number"
                   className="input"
@@ -170,7 +170,7 @@ function PricingSection({ toasts }: { toasts: ReturnType<typeof useToasts> }) {
               </div>
 
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Ngưỡng quá giờ (giờ)</label>
+                <label className="block text-xs text-gray-500 mb-1">Overtime threshold (hours)</label>
                 <input
                   type="number"
                   className="input"
@@ -184,7 +184,7 @@ function PricingSection({ toasts }: { toasts: ReturnType<typeof useToasts> }) {
                 className="btn-primary text-sm w-full"
                 disabled={saving}
               >
-                {saving ? 'Đang lưu...' : 'Lưu'}
+                {saving ? 'Saving...' : 'Save'}
               </button>
             </div>
           )
@@ -210,30 +210,30 @@ function BuildingSection({ toasts }: { toasts: ReturnType<typeof useToasts> }) {
       const { data } = await api.get('/config/building')
       setBuilding(data)
     } catch {
-      toasts.showError('Không thể tải cấu hình tòa nhà')
+      toasts.showError('Unable to load building configuration')
     } finally {
       setLoading(false)
     }
   }
 
-  if (loading) return <p className="text-gray-500">Đang tải...</p>
+  if (loading) return <p className="text-gray-500">Loading...</p>
   if (!building) return null
 
   return (
     <section className="card">
-      <h2 className="text-lg font-semibold mb-4">Cấu trúc tòa nhà</h2>
+      <h2 className="text-lg font-semibold mb-4">Building structure</h2>
 
       <div className="grid grid-cols-3 gap-2 text-sm text-center mb-4">
         <div className="bg-gray-50 rounded p-2">
-          <p className="text-gray-500 text-xs">Số tầng</p>
+          <p className="text-gray-500 text-xs">Floors</p>
           <p className="font-bold text-lg">{building.summary.totalFloors}</p>
         </div>
         <div className="bg-gray-50 rounded p-2">
-          <p className="text-gray-500 text-xs">Ô tô/tầng</p>
+          <p className="text-gray-500 text-xs">Car slots/floor</p>
           <p className="font-bold text-lg">{building.summary.slotsPerFloorZoneA}</p>
         </div>
         <div className="bg-gray-50 rounded p-2">
-          <p className="text-gray-500 text-xs">Xe máy/tầng</p>
+          <p className="text-gray-500 text-xs">Motorbike slots/floor</p>
           <p className="font-bold text-lg">{building.summary.slotsPerFloorZoneB}</p>
         </div>
       </div>
@@ -241,18 +241,18 @@ function BuildingSection({ toasts }: { toasts: ReturnType<typeof useToasts> }) {
       <div className="space-y-4">
         {building.floors.map((floor) => (
           <div key={floor.id} className="border border-gray-200 rounded-md p-3">
-            <h3 className="font-medium mb-2">{floor.name} (Tầng {floor.floorNumber})</h3>
+            <h3 className="font-medium mb-2">{floor.name} (Floor {floor.floorNumber})</h3>
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <p className="text-xs text-gray-500 mb-1">Zone A — Ô tô</p>
+                <p className="text-xs text-gray-500 mb-1">Zone A — Car</p>
                 <p>
-                  Tổng: {floor.zoneA.total} | Đang dùng: {floor.zoneA.occupied} | Bảo trì: {floor.zoneA.maintenance}
+                  Total: {floor.zoneA.total} | In use: {floor.zoneA.occupied} | Maintenance: {floor.zoneA.maintenance}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-gray-500 mb-1">Zone B — Xe máy</p>
+                <p className="text-xs text-gray-500 mb-1">Zone B — Motorbike</p>
                 <p>
-                  Tổng: {floor.zoneB.total} | Đang dùng: {floor.zoneB.occupied} | Bảo trì: {floor.zoneB.maintenance}
+                  Total: {floor.zoneB.total} | In use: {floor.zoneB.occupied} | Maintenance: {floor.zoneB.maintenance}
                 </p>
               </div>
             </div>
@@ -261,7 +261,7 @@ function BuildingSection({ toasts }: { toasts: ReturnType<typeof useToasts> }) {
       </div>
 
       <p className="text-xs text-gray-400 mt-4">
-        Để đặt slot bảo trì, sử dụng trang Bảng điều khiển hoặc API PATCH /slots/:id/status.
+        To set a slot to maintenance, use the Dashboard page or API PATCH /slots/:id/status.
       </p>
     </section>
   )

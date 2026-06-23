@@ -57,10 +57,10 @@ const STATUS_STYLES: Record<SlotStatus, { bg: string; border: string; text: stri
 }
 
 const STATUS_LABELS: Record<SlotStatus, string> = {
-  available: 'Trống',
-  occupied: 'Có xe',
-  reserved: 'Đặt trước',
-  maintenance: 'Bảo trì',
+  available: 'Available',
+  occupied: 'Occupied',
+  reserved: 'Reserved',
+  maintenance: 'Maintenance',
 }
 
 const STATUS_DOT: Record<SlotStatus, string> = {
@@ -89,7 +89,7 @@ export default function Dashboard() {
       setLastUpdated(new Date())
       setError(null)
     } catch {
-      setError('Không thể tải dữ liệu slot')
+      setError('Unable to load slot data')
     } finally {
       setLoading(false)
     }
@@ -128,10 +128,10 @@ export default function Dashboard() {
         <header className="flex items-center justify-between">
           <div>
             <h1 className="text-[28px] font-bold text-[#171717] dark:text-[#ededed] tracking-tight">
-              Bảng điều khiển
+              Dashboard
             </h1>
             <p className="text-[13px] text-[#888] mt-1">
-              Sơ đồ slot thời gian thực — tự động cập nhật mỗi 5 giây
+              Real-time slot map — auto-updates every 5 seconds
             </p>
           </div>
           {lastUpdated && (
@@ -159,11 +159,11 @@ export default function Dashboard() {
           <>
             {/* Summary stats */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <StatCard label="Tổng slot" value={totalSlots} icon="📊" />
-              <StatCard label="Trống" value={totalAvailable} color="text-emerald-600 dark:text-emerald-400" icon="🟢" />
-              <StatCard label="Có xe" value={totalOccupied} color="text-red-600 dark:text-red-400" icon="🔴" />
+              <StatCard label="Total slots" value={totalSlots} icon="📊" />
+              <StatCard label="Available" value={totalAvailable} color="text-emerald-600 dark:text-emerald-400" icon="🟢" />
+              <StatCard label="Occupied" value={totalOccupied} color="text-red-600 dark:text-red-400" icon="🔴" />
               <StatCard
-                label="Tỷ lệ lấp đầy"
+                label="Occupancy rate"
                 value={`${overallOccupancy}%`}
                 color={overallOccupancy > 80 ? 'text-red-600 dark:text-red-400' : 'text-[#171717] dark:text-[#ededed]'}
                 icon="📈"
@@ -236,19 +236,19 @@ function FloorMap({ floor }: { floor: FloorGroup }) {
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/20">
-            <span className="text-white text-sm font-bold">T{floor.floorNumber}</span>
+            <span className="text-white text-sm font-bold">F{floor.floorNumber}</span>
           </div>
           <div>
             <h2 className="text-[16px] font-semibold text-[#171717] dark:text-[#ededed]">
               {floor.floorName}
             </h2>
-            <p className="text-[11px] text-[#888]">Tầng {floor.floorNumber}</p>
+            <p className="text-[11px] text-[#888]">Floor {floor.floorNumber}</p>
           </div>
         </div>
         <div className="flex items-center gap-4">
           <div className="text-right">
             <span className="text-emerald-600 dark:text-emerald-400 text-[14px] font-semibold">{available}</span>
-            <span className="text-[#888] text-[12px] ml-1">trống</span>
+            <span className="text-[#888] text-[12px] ml-1">available</span>
           </div>
           <div className="w-24">
             <div className="flex justify-between text-[10px] text-[#888] mb-1">
@@ -265,10 +265,10 @@ function FloorMap({ floor }: { floor: FloorGroup }) {
       <div className="mb-5">
         <div className="flex items-center justify-between mb-3">
           <p className="text-[11px] font-mono text-[#888] uppercase tracking-wider">
-            Zone A — Ô tô
+            Zone A — Car
           </p>
           <span className="text-[11px] font-mono text-blue-600 dark:text-blue-400">
-            {floor.zoneA.filter((s) => s.status === 'available').length}/{floor.zoneA.length} trống
+            {floor.zoneA.filter((s) => s.status === 'available').length}/{floor.zoneA.length} available
           </span>
         </div>
         <div className="grid grid-cols-5 md:grid-cols-10 gap-2">
@@ -282,10 +282,10 @@ function FloorMap({ floor }: { floor: FloorGroup }) {
       <div>
         <div className="flex items-center justify-between mb-3">
           <p className="text-[11px] font-mono text-[#888] uppercase tracking-wider">
-            Zone B — Xe máy
+            Zone B — Motorbike
           </p>
           <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400">
-            {floor.zoneB.filter((s) => s.status === 'available').length}/{floor.zoneB.length} trống
+            {floor.zoneB.filter((s) => s.status === 'available').length}/{floor.zoneB.length} available
           </span>
         </div>
         <div className="grid grid-cols-5 md:grid-cols-10 gap-2">

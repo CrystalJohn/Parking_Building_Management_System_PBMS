@@ -13,10 +13,10 @@ import { formatDateTimeVN } from '../../lib/date-time'
 const formatDateTime = formatDateTimeVN
 
 const STATUS_LABELS: Record<string, { text: string; color: string }> = {
-  active: { text: 'Đang giữ', color: 'bg-green-100 text-green-800' },
-  fulfilled: { text: 'Đã sử dụng', color: 'bg-blue-100 text-blue-800' },
-  expired: { text: 'Hết hạn', color: 'bg-gray-100 text-gray-600' },
-  cancelled: { text: 'Đã hủy', color: 'bg-red-100 text-red-700' },
+  active: { text: 'Active', color: 'bg-green-100 text-green-800' },
+  fulfilled: { text: 'Fulfilled', color: 'bg-blue-100 text-blue-800' },
+  expired: { text: 'Expired', color: 'bg-gray-100 text-gray-600' },
+  cancelled: { text: 'Cancelled', color: 'bg-red-100 text-red-700' },
 }
 
 /**
@@ -48,7 +48,7 @@ export default function Reservations() {
       const data = await getMyReservations()
       setReservations(data)
     } catch {
-      setError('Không thể tải danh sách đặt chỗ')
+      setError('Unable to load reservations')
     } finally {
       setLoading(false)
     }
@@ -63,9 +63,9 @@ export default function Reservations() {
     } catch (err) {
       if (isAxiosError(err)) {
         const msg = err.response?.data?.message
-        setError(typeof msg === 'string' ? msg : 'Không thể đặt chỗ')
+        setError(typeof msg === 'string' ? msg : 'Unable to reserve slot')
       } else {
-        setError('Lỗi không xác định')
+        setError('Unknown error')
       }
     } finally {
       setCreating(false)
@@ -73,14 +73,14 @@ export default function Reservations() {
   }
 
   const handleCancel = async (id: string) => {
-    if (!confirm('Bạn có chắc muốn hủy đặt chỗ này?')) return
+    if (!confirm('Are you sure you want to cancel this reservation?')) return
     try {
       await cancelReservation(id)
       await loadReservations()
     } catch (err) {
       if (isAxiosError(err)) {
         const msg = err.response?.data?.message
-        setError(typeof msg === 'string' ? msg : 'Không thể hủy')
+        setError(typeof msg === 'string' ? msg : 'Unable to cancel')
       }
     }
   }
@@ -92,9 +92,9 @@ export default function Reservations() {
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-2xl mx-auto space-y-6">
         <header>
-          <h1 className="text-2xl font-bold">Đặt chỗ trước</h1>
+          <h1 className="text-2xl font-bold">Reserve a slot</h1>
           <p className="text-sm text-gray-500">
-            Giữ chỗ trong 30 phút. Đến cổng check-in trước khi hết hạn.
+            Hold slot for 30 minutes. Arrive at the gate before it expires.
           </p>
         </header>
 
@@ -111,17 +111,17 @@ export default function Reservations() {
               Smart reservation
             </p>
             <h2 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-neutral-950 dark:text-white">
-              Đặt chỗ mới
+              New reservation
             </h2>
             <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-              Chọn loại xe. Hệ thống sẽ tự động phân bổ slot tốt nhất.
+              Select vehicle type. The system will automatically assign the best slot.
             </p>
           </div>
 
           <div className="space-y-6">
             <div>
               <div className="mb-3 text-[11px] font-mono uppercase tracking-[0.16em] text-neutral-500 dark:text-neutral-400">
-                Loại xe
+                Vehicle type
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <button
@@ -134,8 +134,8 @@ export default function Reservations() {
                       : 'border-gray-200 bg-white hover:border-blue-200 hover:bg-blue-50/30 dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/[0.08]'
                   }`}
                 >
-                  <span className="block text-[15px] font-semibold text-neutral-950 dark:text-white">Ô tô</span>
-                  <span className="mt-1 block text-[12px] text-neutral-500 dark:text-neutral-400">Zone A tự động</span>
+                  <span className="block text-[15px] font-semibold text-neutral-950 dark:text-white">Car</span>
+                  <span className="mt-1 block text-[12px] text-neutral-500 dark:text-neutral-400">Zone A auto-assign</span>
                 </button>
                 <button
                   type="button"
@@ -147,8 +147,8 @@ export default function Reservations() {
                       : 'border-gray-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/30 dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/[0.08]'
                   }`}
                 >
-                  <span className="block text-[15px] font-semibold text-neutral-950 dark:text-white">Xe máy</span>
-                  <span className="mt-1 block text-[12px] text-neutral-500 dark:text-neutral-400">Zone B tự động</span>
+                  <span className="block text-[15px] font-semibold text-neutral-950 dark:text-white">Motorbike</span>
+                  <span className="mt-1 block text-[12px] text-neutral-500 dark:text-neutral-400">Zone B auto-assign</span>
                 </button>
               </div>
             </div>
@@ -159,17 +159,17 @@ export default function Reservations() {
               disabled={creating}
               className="flex h-12 w-full items-center justify-center rounded-2xl bg-blue-600 px-5 text-[15px] font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:pointer-events-none disabled:opacity-60"
             >
-              {creating ? 'Đang tìm slot...' : 'Tìm slot phù hợp'}
+              {creating ? 'Finding slot...' : 'Find available slot'}
             </button>
           </div>
         </div>
 
-        {loading && <p className="text-gray-500">Đang tải...</p>}
+        {loading && <p className="text-gray-500">Loading...</p>}
 
         {/* Active reservations */}
         {activeReservations.length > 0 && (
           <div className="space-y-3">
-            <h2 className="text-lg font-semibold">Đang giữ chỗ</h2>
+            <h2 className="text-lg font-semibold">Active reservation</h2>
             {activeReservations.map((r) => (
               <ReservationCard key={r.id} reservation={r} onCancel={handleCancel} />
             ))}
@@ -179,7 +179,7 @@ export default function Reservations() {
         {/* Past reservations */}
         {pastReservations.length > 0 && (
           <div className="space-y-3">
-            <h2 className="text-lg font-semibold text-gray-600">Lịch sử đặt chỗ</h2>
+            <h2 className="text-lg font-semibold text-gray-600">Reservation history</h2>
             {pastReservations.map((r) => (
               <ReservationCard key={r.id} reservation={r} />
             ))}
@@ -188,7 +188,7 @@ export default function Reservations() {
 
         {!loading && reservations.length === 0 && (
           <p className="text-gray-500 text-sm text-center py-8">
-            Chưa có lịch sử đặt chỗ.
+            No reservation history yet.
           </p>
         )}
       </div>
@@ -220,11 +220,11 @@ function ReservationCard({
             </span>
           </div>
           <p className="text-sm text-gray-600">
-            {reservation.vehicleType === 'car' ? 'Ô tô' : 'Xe máy'}
+            {reservation.vehicleType === 'car' ? 'Car' : 'Motorbike'}
             {slot?.floor ? ` — ${slot.floor.name}` : ''}
           </p>
           <p className="text-xs text-gray-500">
-            Đặt lúc: {formatDateTime(reservation.createdAt)}
+            Reserved at: {formatDateTime(reservation.createdAt)}
           </p>
           {isActive && (
             <Countdown expiresAt={reservation.expiresAt} />
@@ -236,7 +236,7 @@ function ReservationCard({
             onClick={() => onCancel(reservation.id)}
             className="text-sm text-red-600 hover:text-red-800 font-medium"
           >
-            Hủy
+            Cancel
           </button>
         )}
       </div>
@@ -262,7 +262,7 @@ function Countdown({ expiresAt }: { expiresAt: string }) {
   if (remaining <= 0) {
     return (
       <p className="text-xs text-red-600 font-bold">
-        ⏰ Đã hết hạn
+        ⏰ Expired
       </p>
     )
   }
@@ -273,7 +273,7 @@ function Countdown({ expiresAt }: { expiresAt: string }) {
 
   return (
     <div className={`flex items-center gap-2 ${isUrgent ? 'text-red-600' : 'text-gray-700'}`}>
-      <span className="text-xs">⏱ Còn lại:</span>
+      <span className="text-xs">⏱ Remaining:</span>
       <span className={`font-mono text-sm font-bold ${isUrgent ? 'animate-pulse' : ''}`}>
         {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
       </span>

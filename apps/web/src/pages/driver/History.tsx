@@ -29,7 +29,7 @@ export default function History() {
       const data = await getMyHistory()
       setSessions(data)
     } catch {
-      setError('Không thể tải lịch sử')
+      setError('Unable to load history')
     } finally {
       setLoading(false)
     }
@@ -39,16 +39,16 @@ export default function History() {
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-2xl mx-auto space-y-6">
         <header>
-          <h1 className="text-2xl font-bold">Lịch sử đỗ xe</h1>
-          <p className="text-sm text-gray-500">Các phiên gửi xe đã hoàn thành</p>
+          <h1 className="text-2xl font-bold">Parking history</h1>
+          <p className="text-sm text-gray-500">Completed parking sessions</p>
         </header>
 
-        {loading && <p className="text-gray-500">Đang tải...</p>}
+        {loading && <p className="text-gray-500">Loading...</p>}
         {error && <p className="text-red-600 text-sm">{error}</p>}
 
         {!loading && sessions.length === 0 && (
           <p className="text-gray-500 text-sm text-center py-8">
-            Chưa có lịch sử gửi xe.
+            No parking history yet.
           </p>
         )}
 
@@ -72,18 +72,18 @@ function SessionCard({ session }: { session: ParkingSessionHistory }) {
           <div className="flex items-center gap-2">
             <span className="font-mono font-bold">{session.licensePlate}</span>
             <span className="text-xs text-gray-500">
-              {session.vehicleType === 'car' ? 'Ô tô' : 'Xe máy'}
+              {session.vehicleType === 'car' ? 'Car' : 'Motorbike'}
             </span>
           </div>
           <p className="text-sm text-gray-600">
-            Vị trí: {session.slot.code} — {session.slot.floor.name}
+            Slot: {session.slot.code} — {session.slot.floor.name}
           </p>
           <p className="text-xs text-gray-500">
-            Vào: {formatDateTime(session.checkInTime)}
+            In: {formatDateTime(session.checkInTime)}
           </p>
           {session.checkOutTime && (
             <p className="text-xs text-gray-500">
-              Ra: {formatDateTime(session.checkOutTime)}
+              Out: {formatDateTime(session.checkOutTime)}
             </p>
           )}
         </div>
@@ -92,12 +92,12 @@ function SessionCard({ session }: { session: ParkingSessionHistory }) {
           <p className="font-bold text-lg">{VND(totalFee)}</p>
           {session.isOvertime && (
             <span className="text-xs text-yellow-700 bg-yellow-50 px-1.5 py-0.5 rounded">
-              Quá giờ
+              Overtime
             </span>
           )}
           {session.isLostTicket && (
             <span className="text-xs text-red-700 bg-red-50 px-1.5 py-0.5 rounded ml-1">
-              Mất vé
+              Lost ticket
             </span>
           )}
         </div>

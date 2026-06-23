@@ -28,6 +28,7 @@ import {
 } from '../../lib/sessions-api'
 import { Receipt } from '../../components/receipt/Receipt'
 import { QRScanner } from '../../components/qr-scanner/QRScanner'
+import { RecentSessionsCard } from '../../components/ui/RecentSessionsCard'
 import { LicensePlateScanner } from '../../components/plate-scanner/LicensePlateScanner'
 import { formatDateTimeVN } from '../../lib/date-time'
 import { StaffOcrCheckInPanel } from './StaffOcrCheckInPanel'
@@ -43,20 +44,20 @@ const GATE_TABS: Array<{
   {
     id: 'check-in',
     title: 'Check-in',
-    subtitle: 'Xe vào bãi',
-    activeHint: 'OCR, đặt chỗ, cấp vé',
+    subtitle: 'Vehicle entry',
+    activeHint: 'OCR, reserve, issue ticket',
   },
   {
     id: 'check-out',
     title: 'Check-out',
-    subtitle: 'Xe ra khỏi bãi',
-    activeHint: 'QR, biển số, thu phí',
+    subtitle: 'Vehicle exit',
+    activeHint: 'QR, plate, collect fee',
   },
 ]
 
 const STAFF_NAV = [
-  { to: '/staff/gate', label: 'Cổng ra/vào' },
-  { to: '/staff/lost-ticket', label: 'Mất vé' },
+  { to: '/staff/gate', label: 'Gate' },
+  { to: '/staff/lost-ticket', label: 'Lost Ticket' },
 ]
 
 const VND = (n: number) =>
@@ -87,18 +88,23 @@ function extractError(err: unknown): { message: string; isFull: boolean } {
     if (status === 409) {
       // Distinguish between "building full" and "duplicate plate" conflicts
       const isDuplicate = text && /đang có phiên|already|duplicate/i.test(text)
-      return { message: text ?? 'Bãi đã đầy', isFull: !isDuplicate }
+      return { message: text ?? 'Parking lot full', isFull: !isDuplicate }
     }
     if (status === 404) {
-      return { message: text ?? 'Không tìm thấy phiên gửi xe', isFull: false }
+      return { message: text ?? 'Parking session not found', isFull: false }
     }
-    return { message: text ?? `Lỗi (${status ?? 'network'})`, isFull: false }
+    return { message: text ?? `Error (${status ?? 'network'})`, isFull: false }
   }
-  return { message: 'Lỗi không xác định', isFull: false }
+  return { message: 'Unknown error', isFull: false }
 }
 
 export default function Gate() {
-  const [tab, setTab] = useState<Tab>('check-in')
+  // Read initial tab from URL query param (e.g. ?tab=check-out from VNPAY return)
+  const initialTab = (() => {
+    const p = new URLSearchParams(window.location.search).get('tab')
+    return p === 'check-out' ? 'check-out' : 'check-in'
+  })()
+  const [tab, setTab] = useState<Tab>(initialTab as Tab)
   const toasts = useToasts()
   const navigate = useNavigate()
   const user = getUser()
@@ -124,7 +130,7 @@ export default function Gate() {
                   {user?.fullName || user?.phone || 'Gate Staff'}
                 </p>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Nhân viên cổng
+                  Gate Staff
                 </p>
               </div>
             </div>
@@ -153,10 +159,10 @@ export default function Gate() {
               </p>
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                 <h1 className="text-xl font-black tracking-tight text-slate-950">
-                  Cổng ra/vào
+                  Gate
                 </h1>
                 <span className="text-sm font-medium text-slate-500">
-                  Đang dùng: {activeTab.title}
+                  Active: {activeTab.title}
                 </span>
               </div>
             </header>
@@ -208,7 +214,7 @@ export default function Gate() {
               onClick={handleLogout}
               className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-600 shadow-sm transition-all hover:bg-slate-950 hover:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
             >
-              Đăng xuất
+              Sign out
             </button>
           </div>
         </div>
@@ -267,25 +273,25 @@ export function CheckInPanel({ toasts }: PanelProps) {
     setPlateIdentificationMethod('OCR')
     setShowPlateScanner(false)
     setShowManualInput(true)
-    toasts.showSuccess(`Quét được biển số: ${plate}`)
+    toasts.showSuccess(`Plate detected: ${plate}`)
   }, [toasts])
 
   const handleReservationQrScanned = useCallback((decodedText: string) => {
     const code = decodedText.trim()
     setShowReservationScanner(false)
     if (!code) {
-      toasts.showError('Mã reservation QR không hợp lệ')
+      toasts.showError('Invalid reservation QR code')
       return
     }
 
     setReservationId(code)
-    toasts.showSuccess('Đã nhận reservation ID từ QR')
+    toasts.showSuccess('Reservation ID received from QR')
   }, [toasts])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!licensePlate.trim()) {
-      toasts.showError('Vui lòng nhập biển số xe')
+      toasts.showError('Please enter the license plate')
       return
     }
 
@@ -301,11 +307,11 @@ export function CheckInPanel({ toasts }: PanelProps) {
           : plateIdentificationMethod,
       })
       setResult(response)
-      toasts.showSuccess(`Đã gán slot ${response.slot.code}`)
+      toasts.showSuccess(`Slot ${response.slot.code} assigned`)
     } catch (err) {
       const { message, isFull } = extractError(err)
       if (isFull) {
-        toasts.showError(`Bãi đã đầy: ${message}`)
+        toasts.showError(`Parking lot full: ${message}`)
       } else {
         toasts.showError(message)
       }
@@ -321,7 +327,7 @@ export function CheckInPanel({ toasts }: PanelProps) {
   return (
     <>
       <form onSubmit={handleSubmit} className="space-y-5">
-        <h2 className="text-lg font-semibold">Check-in xe vào bãi</h2>
+        <h2 className="text-lg font-semibold">Check-in vehicle entry</h2>
 
         <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 space-y-3">
           <div>
@@ -370,7 +376,7 @@ export function CheckInPanel({ toasts }: PanelProps) {
         {/* ── License plate section ── */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Biển số xe <span className="text-red-500">*</span>
+            License plate <span className="text-red-500">*</span>
           </label>
 
           {/* Primary: camera scan button */}
@@ -387,14 +393,14 @@ export function CheckInPanel({ toasts }: PanelProps) {
                   />
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
-                📸 Quét biển số xe bằng camera
+                📸 Scan license plate with camera
               </button>
               <button
                 type="button"
                 onClick={() => setShowManualInput(true)}
                 className="w-full text-sm text-gray-500 hover:text-gray-700 py-2 underline underline-offset-2 transition-colors"
               >
-                ✏️ Nhập tay biển số (fallback)
+                ✏️ Enter plate manually (fallback)
               </button>
             </div>
           )}
@@ -411,7 +417,7 @@ export function CheckInPanel({ toasts }: PanelProps) {
                     onClick={() => setShowManualInput(true)}
                     className="text-xs text-blue-600 hover:text-blue-800 underline"
                   >
-                    Sửa
+                    Edit
                   </button>
                 </div>
               )}
@@ -452,7 +458,7 @@ export function CheckInPanel({ toasts }: PanelProps) {
                         />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                       </svg>
-                      Quét lại bằng camera
+                      Rescan with camera
                     </button>
                   </div>
                 </div>
@@ -464,7 +470,7 @@ export function CheckInPanel({ toasts }: PanelProps) {
         {/* ── Vehicle type ── */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Loại xe <span className="text-red-500">*</span>
+            Vehicle type <span className="text-red-500">*</span>
           </label>
           <div className="flex gap-3">
             <label className="flex items-center gap-2 cursor-pointer">
@@ -475,7 +481,7 @@ export function CheckInPanel({ toasts }: PanelProps) {
                 checked={vehicleType === 'car'}
                 onChange={() => setVehicleType('car')}
               />
-              <span>Ô tô (Khu A)</span>
+              <span>Car (Zone A)</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -485,7 +491,7 @@ export function CheckInPanel({ toasts }: PanelProps) {
                 checked={vehicleType === 'motorbike'}
                 onChange={() => setVehicleType('motorbike')}
               />
-              <span>Xe máy (Khu B)</span>
+              <span>Motorbike (Zone B)</span>
             </label>
           </div>
         </div>
@@ -493,16 +499,16 @@ export function CheckInPanel({ toasts }: PanelProps) {
         {/* ── Driver phone ── */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            SĐT tài xế <span className="text-gray-400 font-normal">(không bắt buộc)</span>
+            Driver phone <span className="text-gray-400 font-normal">(optional)</span>
           </label>
           <input
             className="input"
-            placeholder="VD: 0901234567 — nhập nếu khách có tài khoản để gửi QR"
+            placeholder="e.g. 0901234567 — enter if the customer has an account to receive QR"
             value={driverPhone}
             onChange={(e) => setDriverPhone(e.target.value)}
           />
           <p className="text-xs text-gray-500 mt-1">
-            Nếu khách đã đăng ký, hệ thống sẽ tạo mã QR để check-out.
+            If the customer is registered, the system will generate a QR code for check-out.
           </p>
         </div>
 
@@ -510,7 +516,7 @@ export function CheckInPanel({ toasts }: PanelProps) {
         {(licensePlate || showManualInput) && (
           <div className="flex gap-2">
             <button type="submit" className="btn-primary" disabled={submitting || !licensePlate.trim()}>
-              {submitting ? 'Đang xử lý...' : 'Check-in'}
+              {submitting ? 'Processing...' : 'Check-in'}
             </button>
             <button
               type="button"
@@ -518,7 +524,7 @@ export function CheckInPanel({ toasts }: PanelProps) {
               className="btn-secondary"
               disabled={submitting}
             >
-              Hủy
+              Cancel
             </button>
           </div>
         )}
@@ -558,32 +564,32 @@ function CheckInResult({
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-semibold text-green-700">
-        ✓ Check-in thành công
+      ✓ Check-in successful
       </h2>
 
       <dl className="grid grid-cols-2 gap-y-2 text-sm">
-        <dt className="text-gray-500">Biển số</dt>
+        <dt className="text-gray-500">License plate</dt>
         <dd className="font-medium">{data.session.licensePlate}</dd>
 
-        <dt className="text-gray-500">Loại xe</dt>
-        <dd>{data.session.vehicleType === 'car' ? 'Ô tô' : 'Xe máy'}</dd>
+        <dt className="text-gray-500">Vehicle type</dt>
+        <dd>{data.session.vehicleType === 'car' ? 'Car' : 'Motorbike'}</dd>
 
-        <dt className="text-gray-500">Vị trí gán</dt>
+        <dt className="text-gray-500">Assigned slot</dt>
         <dd className="font-mono text-lg font-bold">{data.slot.code}</dd>
 
-        <dt className="text-gray-500">Tầng</dt>
+        <dt className="text-gray-500">Floor</dt>
         <dd>
-          {data.slot.floor.name} (Tầng {data.slot.floor.floorNumber}) — Khu {data.slot.zone}
+          {data.slot.floor.name} (Floor {data.slot.floor.floorNumber}) — Zone {data.slot.zone}
         </dd>
 
-        <dt className="text-gray-500">Giờ vào</dt>
+        <dt className="text-gray-500">Check-in time</dt>
         <dd>{formatDateTime(data.session.checkInTime)}</dd>
       </dl>
 
       {data.qr_code && (
         <div className="border-t border-gray-200 pt-4">
           <p className="text-sm font-medium mb-2">
-            Mã QR cho tài xế (đã đăng ký):
+            QR code for driver (registered):
           </p>
           <img
             src={data.qr_code}
@@ -591,14 +597,14 @@ function CheckInResult({
             className="w-48 h-48 border border-gray-200 rounded-md"
           />
           <p className="text-xs text-gray-500 mt-2">
-            Tài xế xuất trình QR này khi ra để check-out.
+            Driver presents this QR at exit for check-out.
           </p>
         </div>
       )}
 
       <div className="flex gap-2 pt-2">
         <button onClick={onNext} className="btn-primary">
-          Xe tiếp theo
+          Next vehicle
         </button>
       </div>
     </div>
@@ -649,7 +655,7 @@ export function LegacyCheckOutPanel({ toasts }: PanelProps) {
   const handleLookupByPlate = (e: React.FormEvent) => {
     e.preventDefault()
     if (!licensePlate.trim()) {
-      toasts.showError('Vui lòng nhập biển số xe')
+      toasts.showError('Please enter the license plate')
       return
     }
     lookup({ licensePlate: licensePlate.trim().toUpperCase() })
@@ -673,7 +679,7 @@ export function LegacyCheckOutPanel({ toasts }: PanelProps) {
       if (sessionId) {
         lookup({ sessionId })
       } else {
-        toasts.showError('Mã QR không hợp lệ')
+        toasts.showError('Invalid QR code')
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -690,7 +696,7 @@ export function LegacyCheckOutPanel({ toasts }: PanelProps) {
     try {
       const response = await confirmPayment(feePreview.sessionId)
       setReceipt(response)
-      toasts.showSuccess('Đã xác nhận thanh toán')
+      toasts.showSuccess('Payment confirmed')
     } catch (err) {
       const { message } = extractError(err)
       toasts.showError(message)
@@ -707,15 +713,15 @@ export function LegacyCheckOutPanel({ toasts }: PanelProps) {
     return (
       <div className="space-y-4">
         <h2 className="text-lg font-semibold text-green-700">
-          ✓ Thanh toán thành công
+          ✓ Payment successful
         </h2>
         <Receipt data={receipt} />
         <div className="flex gap-2 print:hidden">
           <button onClick={handlePrint} className="btn-primary">
-            In biên lai
+            Print receipt
           </button>
           <button onClick={reset} className="btn-secondary">
-            Xe tiếp theo
+            Next vehicle
           </button>
         </div>
       </div>
@@ -725,49 +731,49 @@ export function LegacyCheckOutPanel({ toasts }: PanelProps) {
   if (feePreview) {
     return (
       <div className="space-y-4">
-        <h2 className="text-lg font-semibold">Xác nhận thanh toán</h2>
+        <h2 className="text-lg font-semibold">Confirm payment</h2>
 
         <dl className="grid grid-cols-2 gap-y-2 text-sm">
-          <dt className="text-gray-500">Biển số</dt>
+          <dt className="text-gray-500">License plate</dt>
           <dd className="font-medium">{feePreview.licensePlate}</dd>
 
-          <dt className="text-gray-500">Vị trí</dt>
+          <dt className="text-gray-500">Slot</dt>
           <dd className="font-mono">{feePreview.slotCode}</dd>
 
-          <dt className="text-gray-500">Vào</dt>
+          <dt className="text-gray-500">Check-in</dt>
           <dd>{formatDateTime(feePreview.checkInTime)}</dd>
 
-          <dt className="text-gray-500">Ra</dt>
+          <dt className="text-gray-500">Check-out</dt>
           <dd>{formatDateTime(feePreview.checkOutTime)}</dd>
 
-          <dt className="text-gray-500">Thời gian</dt>
-          <dd>{feePreview.fee.durationHours} giờ</dd>
+          <dt className="text-gray-500">Duration</dt>
+          <dd>{feePreview.fee.durationHours} hour(s)</dd>
         </dl>
 
         <div className="border-t border-gray-200 pt-4 space-y-1 text-sm">
           <div className="flex justify-between">
-            <span className="text-gray-500">Phí cơ bản</span>
+            <span className="text-gray-500">Base fee</span>
             <span>{VND(feePreview.fee.baseFee)}</span>
           </div>
           {feePreview.fee.penalty > 0 && (
             <div className="flex justify-between text-yellow-700">
               <span>
-                Phụ thu
-                {feePreview.fee.isOvertime && ' (quá giờ > 24h)'}
-                {feePreview.fee.isLostTicket && ' (mất vé)'}
+                Surcharge
+                {feePreview.fee.isOvertime && ' (overtime > 24h)'}
+                {feePreview.fee.isLostTicket && ' (lost ticket)'}
               </span>
               <span>{VND(feePreview.fee.penalty)}</span>
             </div>
           )}
           <div className="flex justify-between font-bold text-lg pt-2 border-t border-gray-200">
-            <span>Tổng cộng</span>
+            <span>Total</span>
             <span>{VND(feePreview.fee.total)}</span>
           </div>
         </div>
 
         {feePreview.fee.isOvertime && (
           <p className="text-sm text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-md p-2">
-            ⚠ Phiên này quá 24 giờ — đã áp dụng phụ thu.
+            ⚠ This session exceeded 24 hours — overtime surcharge applied.
           </p>
         )}
 
@@ -777,10 +783,10 @@ export function LegacyCheckOutPanel({ toasts }: PanelProps) {
             className="btn-primary"
             disabled={confirming}
           >
-            {confirming ? 'Đang xác nhận...' : 'Xác nhận đã thu tiền mặt'}
+            {confirming ? 'Confirming...' : 'Confirm cash received'}
           </button>
           <button onClick={reset} className="btn-secondary" disabled={confirming}>
-            Hủy
+            Cancel
           </button>
         </div>
       </div>
@@ -789,11 +795,11 @@ export function LegacyCheckOutPanel({ toasts }: PanelProps) {
 
   return (
     <form onSubmit={handleLookupByPlate} className="space-y-4">
-      <h2 className="text-lg font-semibold">Check-out xe ra khỏi bãi</h2>
+      <h2 className="text-lg font-semibold">Check-out vehicle exit</h2>
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
-          Biển số xe
+          License plate
         </label>
         <input
           className="input uppercase"
@@ -806,7 +812,7 @@ export function LegacyCheckOutPanel({ toasts }: PanelProps) {
 
       <div className="flex gap-2">
         <button type="submit" className="btn-primary" disabled={submitting}>
-          {submitting ? 'Đang tra cứu...' : 'Tra cứu theo biển số'}
+          {submitting ? 'Searching...' : 'Search by plate'}
         </button>
         <button
           type="button"
@@ -814,12 +820,12 @@ export function LegacyCheckOutPanel({ toasts }: PanelProps) {
           className="btn-secondary"
           disabled={submitting}
         >
-          📷 Quét QR
+          📷 Scan QR
         </button>
       </div>
 
       <p className="text-xs text-gray-500">
-        Khách có tài khoản: quét QR từ app. Khách vãng lai: nhập biển số.
+        Registered customers: scan QR from app. Walk-in customers: enter plate number.
       </p>
 
       {showScanner && (
@@ -841,16 +847,34 @@ function CheckOutPanel({ toasts }: PanelProps) {
   const [exitResult, setExitResult] = useState<ConfirmExitResponse | null>(null)
   const [action, setAction] = useState<'lookup' | 'checkout' | 'payment' | 'bankQr' | 'refresh' | 'exit' | null>(null)
   const [showScanner, setShowScanner] = useState(false)
+  const [checkOutCount, setCheckOutCount] = useState(0)
 
   const status = workflow?.session.status
   const paymentStatus = workflow?.payment?.status ?? null
   const canRequestCheckout = status === 'active'
+  const paymentExpired =
+    workflow?.payment?.method === 'bank_qr' &&
+    workflow.payment.status === 'pending' &&
+    !!workflow.payment.expiredAt &&
+    new Date(workflow.payment.expiredAt).getTime() <= Date.now()
   const isBankQrPending =
     status === 'checkout_pending' &&
     workflow?.payment?.method === 'bank_qr' &&
-    workflow.payment.status === 'pending'
-  const canConfirmPayment = status === 'checkout_pending' && !isBankQrPending
-  const canGenerateBankQr = status === 'checkout_pending' && !isBankQrPending
+    workflow.payment.status === 'pending' &&
+    !paymentExpired
+  const isBankQrExpired =
+    status === 'checkout_pending' &&
+    workflow?.payment?.method === 'bank_qr' &&
+    paymentExpired
+  // Payment failed/cancelled on VNPAY side — allow staff to regenerate link
+  const isBankQrFailed =
+    status === 'checkout_pending' &&
+    workflow?.payment?.method === 'bank_qr' &&
+    (workflow.payment.status === 'failed' ||
+      workflow.payment.status === 'cancelled' ||
+      workflow.payment.status === 'expired')
+  const canConfirmPayment = status === 'checkout_pending' && !isBankQrPending && !isBankQrExpired && !isBankQrFailed
+  const canGenerateBankQr = status === 'checkout_pending' && !isBankQrPending && !isBankQrExpired && !isBankQrFailed
   const canConfirmExit = status === 'exit_authorized'
   const isCompleted = status === 'completed'
 
@@ -911,7 +935,7 @@ function CheckOutPanel({ toasts }: PanelProps) {
     const code = input.sessionCode ? normalizeSessionCode(input.sessionCode) : ''
     const plate = input.licensePlate?.trim().toUpperCase() ?? ''
     if (!code && !plate) {
-      toasts.showError('Nhap Session Code/QR hoac bien so de tra cuu.')
+      toasts.showError('Please enter a Session Code/QR or license plate to look up.')
       return
     }
 
@@ -925,13 +949,13 @@ function CheckOutPanel({ toasts }: PanelProps) {
       setReceipt(null)
       setExitResult(null)
       if (data.session.status === 'completed') {
-        toasts.showInfo('Session nay da hoan tat checkout.')
+        toasts.showInfo('This session has already completed checkout.')
       } else {
-        toasts.showSuccess('Da tai session checkout.')
+        toasts.showSuccess('Session loaded.')
       }
     } catch (err) {
       const { message } = extractError(err)
-      toasts.showError(message || 'Khong tim thay session.')
+      toasts.showError(message || 'Session not found.')
     } finally {
       setAction(null)
     }
@@ -1081,6 +1105,7 @@ function CheckOutPanel({ toasts }: PanelProps) {
     try {
       const response = await confirmVehicleExited(workflow.session.id)
       setExitResult(response)
+      setCheckOutCount((c) => c + 1)
       const completedWorkflow: CheckoutWorkflowResponse = {
         ...workflow,
         session: {
@@ -1138,7 +1163,7 @@ function CheckOutPanel({ toasts }: PanelProps) {
             Staff Check-out
           </h2>
           <p className="mt-1 max-w-3xl text-sm text-slate-500">
-            Khach dua Session Ticket/QR khi ra bai. Nhap Session Code hoac quet QR de bat dau checkout.
+            Customer presents Session Ticket/QR at exit. Enter Session Code or scan QR to begin checkout.
           </p>
         </div>
         <button
@@ -1188,7 +1213,7 @@ function CheckOutPanel({ toasts }: PanelProps) {
 
             <form onSubmit={handleLookupByPlate} className="mt-4 border-t border-slate-200 pt-4">
               <label className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
-                Tim bang bien so neu khach mat ve
+                Search by plate if customer lost ticket
               </label>
               <div className="mt-2 flex flex-col gap-2 sm:flex-row">
                 <input
@@ -1452,6 +1477,62 @@ function CheckOutPanel({ toasts }: PanelProps) {
                 </div>
               ) : null}
 
+              {isBankQrFailed ? (
+                <div className="space-y-3">
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-rose-700">
+                      Payment failed / cancelled
+                    </p>
+                    <p className="mt-1 text-2xl font-black text-rose-950">
+                      {workflow ? VND(workflow.payment?.amount ?? workflow.fee.total) : ''}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-rose-800">
+                      Customer cancelled or payment failed. Regenerate link or switch to cash.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleGenerateBankQr}
+                    disabled={Boolean(action)}
+                    className="w-full rounded-2xl bg-slate-950 px-4 py-4 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                  >
+                    {action === 'bankQr' ? 'Generating new link...' : 'Regenerate VNPAY Payment Link'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmPayment}
+                    disabled={Boolean(action)}
+                    className="w-full rounded-2xl bg-emerald-600 px-4 py-4 text-sm font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                  >
+                    {action === 'payment' ? 'Confirming cash...' : 'Confirm Cash Payment Instead'}
+                  </button>
+                </div>
+              ) : null}
+
+              {isBankQrExpired ? (
+                <div className="space-y-3">
+                  <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4">
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-700">
+                      VNPAY link expired
+                    </p>
+                    <p className="mt-1 text-2xl font-black text-orange-950">
+                      {workflow ? VND(workflow.payment?.amount ?? workflow.fee.total) : ''}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-orange-800">
+                      Payment link has expired. Generate a new link to continue.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleGenerateBankQr}
+                    disabled={Boolean(action)}
+                    className="w-full rounded-2xl bg-slate-950 px-4 py-4 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                  >
+                    {action === 'bankQr' ? 'Generating new link...' : 'Regenerate VNPAY Payment Link'}
+                  </button>
+                </div>
+              ) : null}
+
               {isBankQrPending ? (
                 <div className="space-y-3">
                   <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
@@ -1562,6 +1643,8 @@ function CheckOutPanel({ toasts }: PanelProps) {
           onManualInput={handleQRScanned}
         />
       ) : null}
+
+      <RecentSessionsCard type="checkout" refreshTrigger={checkOutCount} />
     </div>
   )
 }

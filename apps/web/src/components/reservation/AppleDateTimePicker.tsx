@@ -13,18 +13,18 @@ interface AppleDateTimePickerProps {
 
 const WEEKDAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']
 const MONTHS = [
-  'Tháng 1',
-  'Tháng 2',
-  'Tháng 3',
-  'Tháng 4',
-  'Tháng 5',
-  'Tháng 6',
-  'Tháng 7',
-  'Tháng 8',
-  'Tháng 9',
-  'Tháng 10',
-  'Tháng 11',
-  'Tháng 12',
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
 ]
 
 function pad(value: number): string {
@@ -41,7 +41,7 @@ function isSameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 }
 
-function formatDisplay(date?: Date, placeholder = 'Chọn ngày và giờ'): string {
+function formatDisplay(date?: Date, placeholder = 'Select date and time'): string {
   if (!date) return placeholder
   return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} • ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
@@ -70,8 +70,8 @@ function buildCalendarDays(monthDate: Date): (Date | null)[] {
 export default function AppleDateTimePicker({
   value,
   onChange,
-  label = 'Thời gian đặt',
-  placeholder = 'Chọn ngày và giờ',
+  label = 'Reservation time',
+  placeholder = 'Select date and time',
   disabled = false,
   className = '',
   minDate,
@@ -154,17 +154,17 @@ export default function AppleDateTimePicker({
           <div className="mb-4 flex items-start justify-between gap-4">
             <div>
               <h3 className="text-[17px] font-semibold tracking-[-0.02em] text-neutral-950 dark:text-white">
-                Chọn thời gian đặt chỗ
+                Select reservation time
               </h3>
               <p className="mt-1 text-[12px] text-neutral-500 dark:text-neutral-400">
-                Chọn ngày và giờ bắt đầu reservation
+                Select start date and time for reservation
               </p>
             </div>
             <button
               type="button"
               onClick={cancel}
               className="rounded-xl p-2 text-neutral-500 transition hover:bg-neutral-100 hover:text-neutral-900 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:hover:bg-white/10 dark:hover:text-white"
-              aria-label="Đóng"
+              aria-label="Close"
             >
               <X className="h-4 w-4" />
             </button>
@@ -222,19 +222,19 @@ export default function AppleDateTimePicker({
           <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50/70 p-3 dark:border-white/10 dark:bg-white/[0.04]">
             <div className="mb-3 flex items-center gap-2 text-[12px] font-medium text-neutral-500 dark:text-neutral-400">
               <Clock className="h-4 w-4" />
-              Wheel picker 24 giờ
+              24-hour wheel picker
             </div>
             <div className="relative grid grid-cols-2 gap-3">
               <div className="pointer-events-none absolute left-0 right-0 top-1/2 h-11 -translate-y-1/2 rounded-xl bg-blue-100/70 ring-1 ring-blue-200 dark:bg-blue-500/10 dark:ring-blue-400/15" />
               <WheelColumn
-                label="Giờ"
+                label="Hour"
                 values={Array.from({ length: 24 }, (_, hour) => hour)}
                 selected={draft.getHours()}
                 format={pad}
                 onSelect={(hour) => updateTimePart(hour, draft.getMinutes())}
               />
               <WheelColumn
-                label="Phút"
+                label="Minute"
                 values={Array.from({ length: 60 }, (_, minute) => minute)}
                 selected={draft.getMinutes()}
                 format={pad}
@@ -249,7 +249,7 @@ export default function AppleDateTimePicker({
               onClick={applyNow}
               className="rounded-xl px-4 py-2 text-[13px] font-medium text-blue-600 transition hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:text-blue-300 dark:hover:bg-white/10"
             >
-              Hôm nay
+              Today
             </button>
             <div className="flex items-center gap-2">
               <button
@@ -257,7 +257,7 @@ export default function AppleDateTimePicker({
                 onClick={cancel}
                 className="rounded-xl px-4 py-2 text-[13px] font-medium text-neutral-600 transition hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:text-neutral-300 dark:hover:bg-white/10"
               >
-                Hủy
+                Cancel
               </button>
               <button
                 type="button"
@@ -265,7 +265,7 @@ export default function AppleDateTimePicker({
                 className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
               >
                 <Check className="h-4 w-4" />
-                Xong
+                Done
               </button>
             </div>
           </div>

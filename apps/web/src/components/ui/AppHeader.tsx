@@ -4,9 +4,9 @@ import { useTheme } from '../../lib/ThemeContext'
 
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Admin',
-  manager: 'Quản lý',
-  staff: 'Nhân viên',
-  driver: 'Tài xế',
+  manager: 'Manager',
+  staff: 'Staff',
+  driver: 'Driver',
 }
 
 interface NavItem {
@@ -16,23 +16,23 @@ interface NavItem {
 
 const NAV_BY_ROLE: Record<AuthUser['role'], NavItem[]> = {
   driver: [
-    { to: '/driver/home', label: 'Chỗ trống' },
-    { to: '/driver/reservations', label: 'Đặt chỗ' },
-    { to: '/driver/my-session', label: 'QR của tôi' },
-    { to: '/driver/history', label: 'Lịch sử' },
-    { to: '/driver/profile', label: 'Hồ sơ' },
+    { to: '/driver/home', label: 'Availability' },
+    { to: '/driver/reservations', label: 'Reserve' },
+    { to: '/driver/my-session', label: 'My QR' },
+    { to: '/driver/history', label: 'History' },
+    { to: '/driver/profile', label: 'Profile' },
   ],
   staff: [
-    { to: '/staff/gate', label: 'Cổng ra/vào' },
-    { to: '/staff/lost-ticket', label: 'Mất vé' },
+    { to: '/staff/gate', label: 'Gate' },
+    { to: '/staff/lost-ticket', label: 'Lost Ticket' },
   ],
   manager: [
-    { to: '/manager/dashboard', label: 'Bảng điều khiển' },
-    { to: '/manager/reports', label: 'Báo cáo' },
-    { to: '/manager/config', label: 'Cấu hình' },
+    { to: '/manager/dashboard', label: 'Dashboard' },
+    { to: '/manager/reports', label: 'Reports' },
+    { to: '/manager/config', label: 'Config' },
   ],
   admin: [
-    { to: '/admin/users', label: 'Người dùng' },
+    { to: '/admin/users', label: 'Users' },
   ],
 }
 
@@ -98,7 +98,7 @@ export default function AppHeader() {
           {/* Theme toggle */}
           <button
             onClick={toggle}
-            aria-label={theme === 'dark' ? 'Chuyển sang light mode' : 'Chuyển sang dark mode'}
+            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             className="w-8 h-8 flex items-center justify-center rounded-xl bg-white/50 dark:bg-white/10 border border-white/30 dark:border-white/10 hover:bg-white/80 dark:hover:bg-white/20 backdrop-blur-sm transition-all text-[#666] dark:text-[#888] hover:text-[#171717] dark:hover:text-[#ededed]"
           >
             {theme === 'dark' ? (
@@ -119,7 +119,7 @@ export default function AppHeader() {
             onClick={handleLogout}
             className="h-8 px-4 flex items-center text-[13px] font-medium bg-white/50 dark:bg-white/10 border border-white/30 dark:border-white/10 rounded-xl hover:bg-white/80 dark:hover:bg-white/20 backdrop-blur-sm transition-all text-[#666] dark:text-[#888] hover:text-[#171717] dark:hover:text-[#ededed]"
           >
-            Đăng xuất
+            Sign out
           </button>
         </div>
       </div>

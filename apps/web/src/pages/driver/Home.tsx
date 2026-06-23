@@ -25,7 +25,7 @@ export default function DriverHome() {
       const avail = await getAvailability()
       setAvailability(avail)
     } catch (err) {
-      setError(isAxiosError(err) ? 'Không thể tải dữ liệu' : 'Lỗi không xác định')
+      setError(isAxiosError(err) ? 'Unable to load data' : 'Unknown error')
     } finally {
       setLoading(false)
     }
@@ -43,11 +43,11 @@ export default function DriverHome() {
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-2xl mx-auto space-y-6">
         <header>
-          <h1 className="text-2xl font-bold">Bãi đỗ xe</h1>
-          <p className="text-sm text-gray-500">Thông tin chỗ trống theo tầng</p>
+          <h1 className="text-2xl font-bold">Parking</h1>
+          <p className="text-sm text-gray-500">Availability by floor</p>
         </header>
 
-        {loading && <p className="text-gray-500">Đang tải...</p>}
+        {loading && <p className="text-gray-500">Loading...</p>}
         {error && <p className="text-red-600 text-sm">{error}</p>}
 
         {!loading && !error && (
@@ -55,13 +55,13 @@ export default function DriverHome() {
             {/* Summary cards */}
             <div className="grid grid-cols-2 gap-4">
               <SummaryCard
-                label="Ô tô (Zone A)"
+                label="Car (Zone A)"
                 available={totalAvailable(carSlots)}
                 total={totalSlots(carSlots)}
                 rate="8.000 VND/h"
               />
               <SummaryCard
-                label="Xe máy (Zone B)"
+                label="Motorbike (Zone B)"
                 available={totalAvailable(motorbikeSlots)}
                 total={totalSlots(motorbikeSlots)}
                 rate="5.000 VND/h"
@@ -73,11 +73,11 @@ export default function DriverHome() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-4 py-2 text-left font-medium text-gray-600">Tầng</th>
-                    <th className="px-4 py-2 text-left font-medium text-gray-600">Khu</th>
-                    <th className="px-4 py-2 text-center font-medium text-gray-600">Trống</th>
-                    <th className="px-4 py-2 text-center font-medium text-gray-600">Tổng</th>
-                    <th className="px-4 py-2 text-center font-medium text-gray-600">Tỷ lệ</th>
+                    <th className="px-4 py-2 text-left font-medium text-gray-600">Floor</th>
+                    <th className="px-4 py-2 text-left font-medium text-gray-600">Zone</th>
+                    <th className="px-4 py-2 text-center font-medium text-gray-600">Available</th>
+                    <th className="px-4 py-2 text-center font-medium text-gray-600">Total</th>
+                    <th className="px-4 py-2 text-center font-medium text-gray-600">Rate</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -89,7 +89,7 @@ export default function DriverHome() {
                       <tr key={idx}>
                         <td className="px-4 py-2 font-medium">{item.floorName}</td>
                         <td className="px-4 py-2">
-                          {item.zone === 'A' ? 'A (Ô tô)' : 'B (Xe máy)'}
+                          {item.zone === 'A' ? 'A (Car)' : 'B (Motorbike)'}
                         </td>
                         <td className="px-4 py-2 text-center">
                           <span className={item.available === 0 ? 'text-red-600 font-bold' : 'text-green-700 font-bold'}>
@@ -115,28 +115,28 @@ export default function DriverHome() {
 
             {/* Pricing info */}
             <div className="card">
-              <h2 className="text-lg font-semibold mb-3">Bảng giá</h2>
+              <h2 className="text-lg font-semibold mb-3">Pricing</h2>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="space-y-1">
-                  <p className="font-medium">Ô tô</p>
-                  <p className="text-gray-600">8.000 VND / giờ</p>
-                  <p className="text-gray-600">Quá 24h: +50.000 VND</p>
-                  <p className="text-gray-600">Mất vé: +100.000 VND</p>
+                  <p className="font-medium">Car</p>
+                  <p className="text-gray-600">8.000 VND / hour</p>
+                  <p className="text-gray-600">Over 24h: +50.000 VND</p>
+                  <p className="text-gray-600">Lost ticket: +100.000 VND</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="font-medium">Xe máy</p>
-                  <p className="text-gray-600">5.000 VND / giờ</p>
-                  <p className="text-gray-600">Quá 24h: +50.000 VND</p>
-                  <p className="text-gray-600">Mất vé: +100.000 VND</p>
+                  <p className="font-medium">Motorbike</p>
+                  <p className="text-gray-600">5.000 VND / hour</p>
+                  <p className="text-gray-600">Over 24h: +50.000 VND</p>
+                  <p className="text-gray-600">Lost ticket: +100.000 VND</p>
                 </div>
               </div>
               <p className="text-xs text-gray-400 mt-3">
-                Thời gian gửi làm tròn lên theo giờ. VD: 2h15p tính 3 giờ.
+                Parking time is rounded up to the nearest hour. e.g. 2h15m is charged as 3 hours.
               </p>
             </div>
 
             <button onClick={loadData} className="btn-secondary text-sm">
-              Làm mới dữ liệu
+              Refresh
             </button>
           </>
         )}

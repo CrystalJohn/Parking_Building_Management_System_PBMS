@@ -34,67 +34,67 @@ export function Receipt({ data, sessionCode }: ReceiptProps) {
     >
       <div className="text-center mb-4">
         <h2 className="text-xl font-bold">PARKING RECEIPT</h2>
-        <p className="text-sm text-gray-500">Hệ thống quản lý bãi đỗ xe</p>
+        <p className="text-sm text-gray-500">Parking Management System</p>
       </div>
 
       <dl className="grid grid-cols-2 gap-y-2 text-sm">
-        <dt className="text-gray-500">Mã phiên</dt>
+        <dt className="text-gray-500">Session Code</dt>
         <dd className="font-mono text-right font-semibold">
           {displaySessionCode(data.sessionId, sessionCode)}
         </dd>
 
-        <dt className="text-gray-500">Biển số</dt>
+        <dt className="text-gray-500">Plate</dt>
         <dd className="text-right font-medium">{data.licensePlate}</dd>
 
-        <dt className="text-gray-500">Loại xe</dt>
+        <dt className="text-gray-500">Vehicle</dt>
         <dd className="text-right">
-          {data.vehicleType === 'car' ? 'Ô tô' : 'Xe máy'}
+          {data.vehicleType === 'car' ? 'Car' : 'Motorbike'}
         </dd>
 
-        <dt className="text-gray-500">Vị trí</dt>
+        <dt className="text-gray-500">Slot</dt>
         <dd className="text-right font-mono">{data.slotCode}</dd>
 
-        <dt className="text-gray-500">Vào</dt>
+        <dt className="text-gray-500">Check-in</dt>
         <dd className="text-right">{formatDateTime(data.checkInTime)}</dd>
 
-        <dt className="text-gray-500">Ra</dt>
+        <dt className="text-gray-500">Check-out</dt>
         <dd className="text-right">{formatDateTime(data.checkOutTime)}</dd>
 
-        <dt className="text-gray-500">Thời gian gửi</dt>
-        <dd className="text-right">{data.durationHours} giờ</dd>
+        <dt className="text-gray-500">Duration</dt>
+        <dd className="text-right">{data.durationHours} hr</dd>
       </dl>
 
       <div className="border-t border-gray-200 mt-4 pt-4 space-y-1 text-sm">
         <div className="flex justify-between">
-          <span className="text-gray-500">Phí cơ bản</span>
+          <span className="text-gray-500">Base fee</span>
           <span>{VND(data.fee.baseFee)}</span>
         </div>
         {data.fee.penalty > 0 && (
           <div className="flex justify-between">
             <span className="text-gray-500">
-              Phụ thu
-              {data.fee.isOvertime && ' (quá giờ)'}
-              {data.fee.isLostTicket && ' (mất vé)'}
+              Surcharge
+              {data.fee.isOvertime && ' (overtime)'}
+              {data.fee.isLostTicket && ' (lost ticket)'}
             </span>
             <span>{VND(data.fee.penalty)}</span>
           </div>
         )}
         <div className="flex justify-between font-bold text-base pt-2 border-t border-gray-200">
-          <span>Tổng cộng</span>
+          <span>Total</span>
           <span>{VND(data.fee.total)}</span>
         </div>
         <div className="flex justify-between text-gray-500 mt-2">
-          <span>Hình thức</span>
+          <span>Method</span>
           <span>{displayPaymentMethod(data.paymentMethod)}</span>
         </div>
         <div className="flex justify-between text-gray-500">
-          <span>Đã thanh toán lúc</span>
+          <span>Paid at</span>
           <span>{formatDateTime(data.paidAt)}</span>
         </div>
       </div>
 
       <p className="text-center text-xs text-gray-400 mt-6">
-        Cảm ơn quý khách. Vui lòng giữ biên lai để đối soát.
+        Thank you. Please keep this receipt for reference.
       </p>
     </div>
   )

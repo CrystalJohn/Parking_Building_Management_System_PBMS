@@ -77,12 +77,12 @@ export default function Login() {
     // Client-side validation
     const errors: { phone?: string; password?: string } = {}
     if (!phone.trim()) {
-      errors.phone = 'Vui lòng nhập số điện thoại'
+      errors.phone = 'Please enter your phone number'
     } else if (!isValidPhone(phone)) {
-      errors.phone = 'Số điện thoại không hợp lệ (9–11 chữ số)'
+      errors.phone = 'Invalid phone number (9–11 digits)'
     }
     if (!password) {
-      errors.password = 'Vui lòng nhập mật khẩu'
+      errors.password = 'Please enter your password'
     }
     setFieldErrors(errors)
     if (Object.keys(errors).length > 0) return
@@ -94,7 +94,7 @@ export default function Login() {
         password,
       })
       saveAuth(data.access_token, data.user)
-      toasts.showSuccess(`Xin chào, ${data.user.fullName}`)
+      toasts.showSuccess(`Welcome, ${data.user.fullName}`)
 
       // Honor the original destination if RequireAuth bounced the user here,
       // or if a ?redirect= query param was passed (e.g. from landing page).
@@ -160,10 +160,10 @@ export default function Login() {
                 {/* Header */}
                 <div className="mb-5 sm:mb-6">
                   <h1 className="text-xl sm:text-2xl font-bold text-[#171717] dark:text-[#ededed] tracking-tight">
-                    Đăng nhập
+                    Sign in
                   </h1>
                   <p className="text-[#888] text-[13px] mt-1">
-                    Chào mừng trở lại! Vui lòng nhập thông tin.
+                    Welcome back! Please enter your details.
                   </p>
                 </div>
 
@@ -198,7 +198,7 @@ export default function Login() {
                       htmlFor="phone"
                       className="block text-[12px] font-medium text-[#666] dark:text-[#888] mb-1.5"
                     >
-                      Số điện thoại <span className="text-red-500">*</span>
+                      Phone number <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
@@ -227,7 +227,7 @@ export default function Login() {
                             ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20'
                             : 'border-black/8 dark:border-white/10 focus:border-blue-500/50 focus:ring-blue-500/10 bg-white/50 dark:bg-white/[0.04]'
                         }`}
-                        placeholder="VD: 0901234567"
+                        placeholder="e.g. 0901234567"
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
                         aria-invalid={!!fieldErrors.phone}
@@ -264,7 +264,7 @@ export default function Login() {
                       htmlFor="password"
                       className="block text-[12px] font-medium text-[#666] dark:text-[#888] mb-1.5"
                     >
-                      Mật khẩu <span className="text-red-500">*</span>
+                      Password <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
@@ -306,7 +306,7 @@ export default function Login() {
                         className="absolute inset-y-0 right-0 flex items-center pr-3 text-[#888] hover:text-[#666] transition-colors"
                         tabIndex={-1}
                         aria-label={
-                          showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'
+                          showPassword ? 'Hide password' : 'Show password'
                         }
                       >
                         {showPassword ? (
@@ -393,10 +393,10 @@ export default function Login() {
                             d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
                           />
                         </svg>
-                        Đang đăng nhập...
+                        Signing in...
                       </>
                     ) : (
-                      'Đăng nhập'
+                      'Sign in'
                     )}
                   </button>
                 </form>
@@ -407,24 +407,24 @@ export default function Login() {
                     <div className="w-full border-t border-black/5 dark:border-white/10" />
                   </div>
                   <div className="relative flex justify-center text-[11px]">
-                    <span className="bg-white/80 dark:bg-white/[0.06] px-3 text-[#888]">hoặc</span>
+                    <span className="bg-white/80 dark:bg-white/[0.06] px-3 text-[#888]">or</span>
                   </div>
                 </div>
 
                 {/* Register link */}
                 <p className="text-center text-[13px] text-[#888]">
-                  Chưa có tài khoản?{' '}
+                  Don't have an account?{' '}
                   <Link
                     to="/register"
                     className="font-semibold text-blue-600 hover:text-blue-700 transition-colors"
                   >
-                    Đăng ký ngay
+                    Sign up
                   </Link>
                 </p>
 
                 {/* Footer */}
                 <p className="text-center text-[10px] text-[#888] mt-6">
-                  © {new Date().getFullYear()} PBMS — Hệ thống quản lý bãi đỗ xe
+                  © {new Date().getFullYear()} PBMS — Parking Building Management System
                 </p>
                 </div>
               </div>
@@ -440,7 +440,7 @@ export default function Login() {
 
 /**
  * Extracts a user-friendly error message from a login failure.
- * - 401 → "Sai số điện thoại hoặc mật khẩu" (or backend message if it's a deactivation notice)
+ * - 401 → "Incorrect phone number or password" (or backend message if it's a deactivation notice)
  * - Network / other → generic message
  */
 function extractErrorMessage(err: unknown): string {
@@ -453,17 +453,17 @@ function extractErrorMessage(err: unknown): string {
     if (status === 401) {
       // Backend differentiates between invalid creds and deactivated account.
       if (text && /deactivat/i.test(text)) {
-        return 'Tài khoản đã bị khóa. Liên hệ quản trị viên.'
+        return 'Account is deactivated. Contact an administrator.'
       }
-      return 'Sai số điện thoại hoặc mật khẩu'
+      return 'Incorrect phone number or password'
     }
     if (status === 400) {
-      return text ?? 'Dữ liệu không hợp lệ'
+      return text ?? 'Invalid data'
     }
     if (!err.response) {
-      return 'Không kết nối được máy chủ. Vui lòng thử lại.'
+      return 'Cannot connect to server. Please try again.'
     }
-    return text ?? `Lỗi (${status})`
+    return text ?? `Error (${status})`
   }
-  return 'Đã xảy ra lỗi không xác định'
+  return 'An unexpected error occurred'
 }
