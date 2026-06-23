@@ -40,6 +40,7 @@ coverage
 
 # Cache
 .cache
+.firecrawl/
 .expo
 .parcel-cache
 .eslintcache
