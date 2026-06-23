@@ -18,7 +18,7 @@ function displaySessionCode(sessionId: string, sessionCode?: string | null) {
 
 function displayPaymentMethod(method: ConfirmPaymentResponse['paymentMethod']) {
   if (method === 'cash') return 'Tiền mặt'
-  if (method === 'bank_qr') return 'Bank QR'
+  if (method === 'bank_qr') return 'VNPAY / Bank QR'
   return method
 }
 

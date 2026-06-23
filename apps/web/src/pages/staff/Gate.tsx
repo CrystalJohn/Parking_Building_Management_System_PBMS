@@ -1265,13 +1265,13 @@ function CheckOutPanel({ toasts }: PanelProps) {
                 {workflow.payment?.method === 'bank_qr' ? (
                   <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
-                      Bank QR payment
+                      VNPAY Bank QR payment
                     </p>
                     {workflow.payment.qrCode ? (
                       workflow.payment.qrCode.startsWith('data:image') ? (
                         <img
                           src={workflow.payment.qrCode}
-                          alt="Bank QR"
+                          alt="VNPAY Bank QR"
                           className="mx-auto mt-3 h-44 w-44 rounded-xl border border-slate-200 bg-white object-contain p-2"
                         />
                       ) : (
@@ -1287,7 +1287,7 @@ function CheckOutPanel({ toasts }: PanelProps) {
                         rel="noreferrer"
                         className="mt-3 inline-flex w-full justify-center rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-black text-slate-700 transition hover:border-slate-950 hover:text-slate-950"
                       >
-                        Open Payment Link
+                        Open VNPAY Payment Page
                       </a>
                     ) : null}
                     {workflow.payment.expiredAt ? (
@@ -1445,7 +1445,7 @@ function CheckOutPanel({ toasts }: PanelProps) {
                         disabled={Boolean(action)}
                         className="w-full rounded-2xl bg-slate-950 px-4 py-4 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
                       >
-                        {action === 'bankQr' ? 'Generating QR...' : 'Generate Bank QR'}
+                        {action === 'bankQr' ? 'Generating VNPAY QR...' : 'Generate VNPAY Payment Link'}
                       </button>
                     ) : null}
                   </div>
@@ -1456,13 +1456,13 @@ function CheckOutPanel({ toasts }: PanelProps) {
                 <div className="space-y-3">
                   <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
                     <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-700">
-                      Waiting for Bank QR payment
+                      Waiting for VNPAY Bank QR payment
                     </p>
                     <p className="mt-1 text-2xl font-black text-blue-950">
                       {workflow ? VND(workflow.payment?.amount ?? workflow.fee.total) : ''}
                     </p>
                     <p className="mt-1 text-xs font-semibold text-blue-800">
-                      Slot remains occupied. Refresh or wait for webhook confirmation.
+                      Slot remains occupied. Refresh or wait for VNPAY confirmation.
                     </p>
                   </div>
                   <button
@@ -1480,7 +1480,7 @@ function CheckOutPanel({ toasts }: PanelProps) {
                       rel="noreferrer"
                       className="inline-flex w-full justify-center rounded-2xl bg-slate-950 px-4 py-4 text-sm font-black text-white transition hover:bg-primary-700"
                     >
-                      Open Payment Link
+                      Open VNPAY Payment Page
                     </a>
                   ) : null}
                 </div>

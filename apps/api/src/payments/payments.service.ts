@@ -1,21 +1,39 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PaymentMethod, PaymentStatus, SessionStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { PayosService } from './payos.service';
-import { VerifiedPayosWebhook } from './payos.types';
+import { VnpayService } from './vnpay.service';
+import type { VerifiedVnpayCallback } from './vnpay.types';
 
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
-    private readonly payosService: PayosService,
+    private readonly vnpayService: VnpayService,
   ) {}
 
-  async createBankQrPayment(sessionId: string, _staffUserId: string) {
+  /**
+   * POST /sessions/:id/payments/bank-qr
+   *
+   * Creates a VNPAY payment URL for a checkout_pending session.
+   * Idempotent: reuses an existing unexpired pending bank_qr payment if present.
+   *
+   * Business rules:
+   * - Does NOT move session to exit_authorized.
+   * - Does NOT release slot.
+   * - Only checkout_pending sessions are eligible.
+   */
+  async createBankQrPayment(
+    sessionId: string,
+    staffUserId: string,
+    ipAddr = '127.0.0.1',
+  ) {
     const session = await this.prisma.parkingSession.findUnique({
       where: { id: sessionId },
       include: {
@@ -29,7 +47,9 @@ export class PaymentsService {
     }
 
     if ((session.status as string) === SessionStatus.completed) {
-      throw new ConflictException('Completed sessions cannot create Bank QR payment');
+      throw new ConflictException(
+        'Completed sessions cannot create Bank QR payment',
+      );
     }
 
     if ((session.status as string) !== SessionStatus.checkout_pending) {
@@ -38,24 +58,37 @@ export class PaymentsService {
       );
     }
 
-    if (session.isPaid || (session.payment as any)?.status === PaymentStatus.paid) {
+    const existingPayment = session.payment as any;
+    if (
+      existingPayment?.status === PaymentStatus.paid ||
+      session.isPaid
+    ) {
       throw new ConflictException('This session is already paid');
     }
 
-    const existingPayment = session.payment as any;
+    // Idempotent reuse of an unexpired pending VNPAY payment
     if (this.isReusablePendingBankQr(existingPayment)) {
+      this.logger.log(
+        `Reusing existing pending bank_qr payment | sessionId=${sessionId} paymentId=${existingPayment.id}`,
+      );
       return this.formatPaymentWorkflow(session, existingPayment);
     }
 
     const amount =
-      existingPayment?.amount ?? Number(session.feeAmount) + Number(session.penaltyAmount);
+      existingPayment?.amount ??
+      Number(session.feeAmount) + Number(session.penaltyAmount);
 
-    const paymentLink = await this.payosService.createPaymentLink({
+    const paymentResult = this.vnpayService.createPaymentUrl({
       sessionId: session.id,
       sessionCode: session.sessionCode,
       licensePlate: session.licensePlate,
       amount,
+      ipAddr,
     });
+
+    this.logger.log(
+      `VNPAY payment URL created | sessionId=${sessionId} txnRef=${paymentResult.providerOrderCode} amount=${amount}`,
+    );
 
     const payment = await this.prisma.$transaction(async (tx) => {
       return (tx as any).payment.upsert({
@@ -67,13 +100,13 @@ export class PaymentsService {
           status: PaymentStatus.pending,
           paidAt: null,
           receivedBy: null,
-          provider: paymentLink.provider,
-          providerRef: paymentLink.providerRef,
-          providerOrderCode: paymentLink.providerOrderCode,
-          checkoutUrl: paymentLink.checkoutUrl,
-          qrCode: paymentLink.qrCode,
-          expiredAt: paymentLink.expiredAt,
-          providerPayload: paymentLink.providerPayload,
+          provider: paymentResult.provider,
+          providerRef: paymentResult.providerRef,
+          providerOrderCode: paymentResult.providerOrderCode,
+          checkoutUrl: paymentResult.checkoutUrl,
+          qrCode: paymentResult.qrCode,
+          expiredAt: paymentResult.expiredAt,
+          providerPayload: paymentResult.providerPayload,
         },
         update: {
           amount,
@@ -81,13 +114,13 @@ export class PaymentsService {
           status: PaymentStatus.pending,
           paidAt: null,
           receivedBy: null,
-          provider: paymentLink.provider,
-          providerRef: paymentLink.providerRef,
-          providerOrderCode: paymentLink.providerOrderCode,
-          checkoutUrl: paymentLink.checkoutUrl,
-          qrCode: paymentLink.qrCode,
-          expiredAt: paymentLink.expiredAt,
-          providerPayload: paymentLink.providerPayload,
+          provider: paymentResult.provider,
+          providerRef: paymentResult.providerRef,
+          providerOrderCode: paymentResult.providerOrderCode,
+          checkoutUrl: paymentResult.checkoutUrl,
+          qrCode: paymentResult.qrCode,
+          expiredAt: paymentResult.expiredAt,
+          providerPayload: paymentResult.providerPayload,
         },
       });
     });
@@ -95,6 +128,10 @@ export class PaymentsService {
     return this.formatPaymentWorkflow(session, payment);
   }
 
+  /**
+   * GET /sessions/:id/payment-status
+   * Returns current payment and session/slot state for the checkout polling loop.
+   */
   async getPaymentStatus(sessionId: string) {
     const session = await this.prisma.parkingSession.findUnique({
       where: { id: sessionId },
@@ -111,35 +148,104 @@ export class PaymentsService {
     return this.formatPaymentWorkflow(session, (session as any).payment);
   }
 
-  async handlePayosWebhook(payload: unknown) {
-    const verified = this.payosService.verifyWebhook(payload);
+  /**
+   * VNPAY Return URL handler (GET /payments/vnpay/return).
+   *
+   * Called by VNPAY when customer completes/cancels on their payment page.
+   * Business rules:
+   * - Verifies signature before any state change.
+   * - Amount must match.
+   * - Success (00/00) → payment paid, session exit_authorized, slot stays occupied.
+   * - Failure → update payment status, do NOT authorize exit.
+   * - Idempotent: already-paid payments are a no-op.
+   */
+  async handleVnpayReturn(params: Record<string, string>) {
+    return this.processVnpayCallback(params, 'return');
+  }
 
+  /**
+   * VNPAY IPN handler (GET /payments/vnpay/ipn).
+   *
+   * Called server-to-server by VNPAY.
+   * Same logic as return but must always return { RspCode, Message }.
+   * Idempotent.
+   */
+  async handleVnpayIpn(params: Record<string, string>): Promise<{
+    RspCode: string;
+    Message: string;
+  }> {
+    try {
+      await this.processVnpayCallback(params, 'ipn');
+      return { RspCode: '00', Message: 'Confirm Success' };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`VNPAY IPN error: ${message}`);
+
+      // Return specific VNPAY error codes
+      if (message.includes('signature') || message.includes('SecureHash')) {
+        return { RspCode: '97', Message: 'Invalid Checksum' };
+      }
+      if (message.includes('not found') || message.includes('txnRef')) {
+        return { RspCode: '01', Message: 'Order Not Found' };
+      }
+      if (message.includes('Amount mismatch') || message.includes('amount mismatch') || message.includes('mismatch')) {
+        return { RspCode: '04', Message: 'Invalid Amount' };
+      }
+      return { RspCode: '99', Message: 'Unknown Error' };
+    }
+  }
+
+  // ─── Private helpers ──────────────────────────────────────────────────────
+
+  private async processVnpayCallback(
+    params: Record<string, string>,
+    source: 'return' | 'ipn',
+  ) {
+    // 1. Verify signature — throws on invalid
+    let verified: VerifiedVnpayCallback;
+    try {
+      verified = this.vnpayService.verifyReturnOrIpn(params);
+    } catch (err) {
+      this.logger.warn(
+        `VNPAY ${source} invalid signature | params=${JSON.stringify(params)}`,
+      );
+      throw err;
+    }
+
+    this.logger.log(
+      `VNPAY ${source} | txnRef=${verified.txnRef} success=${verified.success} amount=${verified.amount}`,
+    );
+
+    // 2. Find payment by providerOrderCode (vnp_TxnRef)
     const payment = await (this.prisma as any).payment.findFirst({
-      where: {
-        OR: [
-          { providerOrderCode: verified.orderCode },
-          { providerRef: verified.paymentLinkId },
-          { providerRef: verified.reference },
-        ],
-      },
-      include: {
-        session: {
-          include: {
-            slot: true,
-          },
-        },
-      },
+      where: { providerOrderCode: verified.txnRef },
+      include: { session: { include: { slot: true } } },
     });
 
     if (!payment) {
-      return { ok: true, ignored: true, reason: 'payment_not_found' };
+      this.logger.warn(
+        `VNPAY ${source}: payment not found | txnRef=${verified.txnRef}`,
+      );
+      throw new NotFoundException(
+        `Payment not found for txnRef: ${verified.txnRef}`,
+      );
     }
 
-    if (Number(payment.amount) !== Number(verified.amount)) {
-      return { ok: true, ignored: true, reason: 'amount_mismatch' };
+    // 3. Amount validation
+    if (Number(payment.amount) !== verified.amount) {
+      this.logger.warn(
+        `VNPAY ${source} amount mismatch | expected=${payment.amount} got=${verified.amount} txnRef=${verified.txnRef}`,
+      );
+      throw new ConflictException(
+        `Amount mismatch: expected ${payment.amount}, got ${verified.amount}`,
+      );
     }
 
+    // 4. Idempotent — already paid
     if (payment.status === PaymentStatus.paid) {
+      this.logger.log(
+        `VNPAY ${source} duplicate (already paid) | txnRef=${verified.txnRef}`,
+      );
       return {
         ok: true,
         paid: true,
@@ -148,36 +254,87 @@ export class PaymentsService {
       };
     }
 
-    if (!verified.success) {
-      return { ok: true, ignored: true, reason: 'not_paid' };
+    // 5a. Success path
+    if (verified.success) {
+      const paidAt = this.parseVnpayPayDate(verified.payDate) ?? new Date();
+
+      await this.prisma.$transaction(async (tx) => {
+        await (tx as any).payment.update({
+          where: { id: payment.id },
+          data: {
+            status: PaymentStatus.paid,
+            method: PaymentMethod.bank_qr,
+            paidAt,
+            providerPayload: verified.rawParams,
+          },
+        });
+
+        // Move session to exit_authorized — slot stays occupied
+        await tx.parkingSession.update({
+          where: { id: payment.sessionId },
+          data: {
+            status: SessionStatus.exit_authorized,
+            isPaid: true,
+            // checkOutTime is NOT set here — set only on confirm-exit
+          } as any,
+        });
+        // Slot update intentionally omitted — only confirm-exit releases slot
+      });
+
+      this.logger.log(
+        `VNPAY ${source} success | txnRef=${verified.txnRef} sessionId=${payment.sessionId} paidAt=${paidAt.toISOString()}`,
+      );
+
+      return { ok: true, paid: true, sessionId: payment.sessionId };
     }
 
-    const paidAt = this.parsePayosPaidAt(verified) ?? new Date();
-
-    await this.prisma.$transaction(async (tx) => {
-      await (tx as any).payment.update({
-        where: { id: payment.id },
-        data: {
-          status: PaymentStatus.paid,
-          method: PaymentMethod.bank_qr,
-          paidAt,
-          providerPayload: verified.rawData,
-        },
-      });
-
-      await tx.parkingSession.update({
-        where: { id: payment.sessionId },
-        data: {
-          status: SessionStatus.exit_authorized,
-          isPaid: true,
-        } as any,
-      });
+    // 5b. Failure/cancel path — update payment status, do NOT touch session
+    const failedStatus = this.mapFailedStatus(verified.responseCode);
+    await (this.prisma as any).payment.update({
+      where: { id: payment.id },
+      data: {
+        status: failedStatus,
+        providerPayload: verified.rawParams,
+      },
     });
 
-    return { ok: true, paid: true, sessionId: payment.sessionId };
+    this.logger.log(
+      `VNPAY ${source} not successful | txnRef=${verified.txnRef} responseCode=${verified.responseCode} paymentStatus=${failedStatus}`,
+    );
+
+    return {
+      ok: true,
+      paid: false,
+      sessionId: payment.sessionId,
+      reason: verified.responseCode,
+    };
   }
 
-  private isReusablePendingBankQr(payment: any) {
+  private mapFailedStatus(responseCode: string): PaymentStatus {
+    // VNPAY response code mapping
+    if (responseCode === '24') return PaymentStatus.cancelled; // Customer cancelled
+    if (responseCode === '11') return PaymentStatus.expired;   // Payment expired
+    return PaymentStatus.failed;
+  }
+
+  private parseVnpayPayDate(payDate: string | null): Date | null {
+    if (!payDate) return null;
+    // Format: yyyyMMddHHmmss (VNPAY, GMT+7)
+    if (payDate.length === 14) {
+      const year = payDate.slice(0, 4);
+      const month = payDate.slice(4, 6);
+      const day = payDate.slice(6, 8);
+      const hour = payDate.slice(8, 10);
+      const min = payDate.slice(10, 12);
+      const sec = payDate.slice(12, 14);
+      const iso = `${year}-${month}-${day}T${hour}:${min}:${sec}+07:00`;
+      const d = new Date(iso);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    return null;
+  }
+
+  private isReusablePendingBankQr(payment: any): boolean {
     if (!payment) return false;
     if (payment.method !== PaymentMethod.bank_qr) return false;
     if (payment.status !== PaymentStatus.pending) return false;
@@ -230,13 +387,5 @@ export class PaymentsService {
           : undefined,
       },
     };
-  }
-
-  private parsePayosPaidAt(verified: VerifiedPayosWebhook) {
-    if (!verified.transactionDateTime) return null;
-    const parsed = new Date(
-      verified.transactionDateTime.replace(' ', 'T') + '+07:00',
-    );
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 }
