@@ -463,3 +463,24 @@ export async function confirmExit(sessionId: string): Promise<ConfirmExitRespons
 export async function confirmVehicleExited(sessionId: string): Promise<ConfirmExitResponse> {
   return confirmExit(sessionId)
 }
+
+export interface RecentSession {
+  id: string
+  sessionCode: string
+  licensePlate: string
+  vehicleType: VehicleType
+  status: SessionStatus
+  checkInTime: string
+  checkOutTime: string | null
+  slot: { code: string; zone: Zone; floor: string; floorNumber: number }
+  payment: { method: PaymentMethod; status: PaymentStatus; amount: number } | null
+  feeAmount: number
+  penaltyAmount: number
+}
+
+export async function getRecentSessions(type: 'checkin' | 'checkout', limit = 20): Promise<RecentSession[]> {
+  const { data } = await api.get<RecentSession[]>('/sessions/recent', {
+    params: { type, limit },
+  })
+  return data
+}
