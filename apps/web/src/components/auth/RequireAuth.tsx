@@ -52,7 +52,7 @@ export default function RequireAuth({
 function defaultHomeForRole(role: AuthUser['role']): string {
   switch (role) {
     case 'admin':
-      return '/admin/users'
+      return '/admin/dashboard'
     case 'manager':
       return '/manager/dashboard'
     case 'staff':

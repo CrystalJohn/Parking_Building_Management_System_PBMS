@@ -1,5 +1,6 @@
-import { Routes, Route } from 'react-router-dom'
+import { Navigate, Routes, Route } from 'react-router-dom'
 import RequireAuth from '../components/auth/RequireAuth'
+import AdminLayout from '../layouts/AdminLayout'
 
 // Landing
 import Landing from '../pages/Landing'
@@ -19,6 +20,9 @@ import Config from '../pages/manager/Config'
 
 // Admin
 import Users from '../pages/admin/Users'
+import AdminDashboard from '../pages/admin/AdminDashboard'
+import AdminReservations from '../pages/admin/AdminReservations'
+import AdminReportsFlags from '../pages/admin/AdminReportsFlags'
 
 // Driver
 import DriverHome from '../pages/driver/Home'
@@ -92,11 +96,44 @@ export default function AppRoutes() {
       />
 
       {/* Admin routes */}
+      <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
+      <Route
+        path="/admin/dashboard"
+        element={
+          <RequireAuth allowedRoles={['admin']} hideAppHeader>
+            <AdminLayout>
+              <AdminDashboard />
+            </AdminLayout>
+          </RequireAuth>
+        }
+      />
       <Route
         path="/admin/users"
         element={
-          <RequireAuth allowedRoles={['admin']}>
-            <Users />
+          <RequireAuth allowedRoles={['admin']} hideAppHeader>
+            <AdminLayout>
+              <Users />
+            </AdminLayout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/admin/reservations"
+        element={
+          <RequireAuth allowedRoles={['admin']} hideAppHeader>
+            <AdminLayout>
+              <AdminReservations />
+            </AdminLayout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/admin/reports"
+        element={
+          <RequireAuth allowedRoles={['admin']} hideAppHeader>
+            <AdminLayout>
+              <AdminReportsFlags />
+            </AdminLayout>
           </RequireAuth>
         }
       />

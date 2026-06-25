@@ -1,10 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { isAxiosError } from 'axios'
+import { Plus, Search } from 'lucide-react'
 import api from '../../lib/api'
 import { ToastContainer } from '../../components/ui/Toast'
 import { useToasts } from '../../lib/use-toasts'
-
-// ─── Types ───────────────────────────────────────────────────────────────────
+import {
+  AdminPageHeader,
+  EmptyState,
+  LoadingRows,
+  ROLE_LABELS,
+  RoleBadge,
+  StatusBadge,
+} from './admin-ui'
 
 type Role = 'admin' | 'manager' | 'staff' | 'driver'
 
@@ -17,45 +24,30 @@ interface User {
   createdAt: string
 }
 
-const ROLE_LABELS: Record<Role, string> = {
-  admin: 'Admin',
-  manager: 'Manager',
-  staff: 'Staff',
-  driver: 'Driver',
-}
+const FILTERS: Array<Role | 'all'> = ['all', 'admin', 'manager', 'staff', 'driver']
 
-const ROLE_COLORS: Record<Role, string> = {
-  admin: 'bg-purple-100 text-purple-800',
-  manager: 'bg-blue-100 text-blue-800',
-  staff: 'bg-green-100 text-green-800',
-  driver: 'bg-gray-100 text-gray-700',
-}
-
-// ─── Component ───────────────────────────────────────────────────────────────
-
-/**
- * 30: Admin User Management page.
- * Table list + filter by role + create/edit modal + toggle activate/deactivate.
- * Req 12.2, 12.4
- */
 export default function Users() {
   const toasts = useToasts()
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [filterRole, setFilterRole] = useState<Role | 'all'>('all')
+  const [query, setQuery] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
 
   useEffect(() => {
-    loadUsers()
+    void loadUsers()
   }, [])
 
   const loadUsers = async () => {
     setLoading(true)
+    setError(null)
     try {
-      const { data } = await api.get('/users')
+      const { data } = await api.get<User[]>('/users')
       setUsers(data)
     } catch {
+      setError('Unable to load user list')
       toasts.showError('Unable to load user list')
     } finally {
       setLoading(false)
@@ -77,7 +69,7 @@ export default function Users() {
     } catch (err) {
       if (isAxiosError(err)) {
         const msg = err.response?.data?.message
-        toasts.showError(typeof msg === 'string' ? msg : `Error: ${action}`)
+        toasts.showError(typeof msg === 'string' ? msg : `Unable to ${action} account`)
       }
     }
   }
@@ -102,121 +94,170 @@ export default function Users() {
     handleModalClose()
   }
 
-  const filteredUsers =
-    filterRole === 'all'
-      ? users
-      : users.filter((u) => u.role === filterRole)
+  const filteredUsers = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase()
+    return users.filter((user) => {
+      const roleMatches = filterRole === 'all' || user.role === filterRole
+      const queryMatches =
+        !normalizedQuery ||
+        user.phone.toLowerCase().includes(normalizedQuery) ||
+        (user.fullName ?? '').toLowerCase().includes(normalizedQuery)
+      return roleMatches && queryMatches
+    })
+  }, [filterRole, query, users])
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-5xl mx-auto space-y-6">
-        <header className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">User management</h1>
-            <p className="text-sm text-gray-500">{users.length} accounts</p>
-          </div>
-          <button onClick={handleCreate} className="btn-primary">
-            + Create account
+    <div className="space-y-6">
+      <AdminPageHeader
+        title="Manage Users"
+        description="Create accounts, assign roles, and control access for administrators, managers, staff, and drivers."
+        action={
+          <button
+            type="button"
+            onClick={handleCreate}
+            className="inline-flex h-11 items-center gap-2 rounded-2xl bg-primary-600 px-4 text-sm font-black text-white shadow-sm shadow-primary-600/20 transition hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:focus:ring-offset-slate-950"
+          >
+            <Plus className="h-4 w-4" strokeWidth={1.8} />
+            Create account
           </button>
-        </header>
+        }
+      />
 
-        {/* Filter */}
-        <div className="flex gap-2">
-          {(['all', 'admin', 'manager', 'staff', 'driver'] as const).map((role) => (
-            <button
-              key={role}
-              onClick={() => setFilterRole(role)}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                filterRole === role
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-              }`}
-            >
-              {role === 'all' ? 'All' : ROLE_LABELS[role]}
-              {role !== 'all' && (
-                <span className="ml-1 text-xs opacity-70">
-                  ({users.filter((u) => u.role === role).length})
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-wrap gap-2">
+            {FILTERS.map((role) => (
+              <button
+                key={role}
+                type="button"
+                onClick={() => setFilterRole(role)}
+                className={`rounded-xl px-3 py-2 text-sm font-black transition ${
+                  filterRole === role
+                    ? 'bg-primary-600 text-white shadow-sm shadow-primary-600/20'
+                    : 'border border-slate-200 bg-white text-slate-600 hover:border-primary-200 hover:text-primary-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-300 dark:hover:text-white'
+                }`}
+              >
+                {role === 'all' ? 'All' : ROLE_LABELS[role]}
+                <span className="ml-1 text-xs opacity-75">
+                  {role === 'all'
+                    ? users.length
+                    : users.filter((user) => user.role === role).length}
                 </span>
-              )}
-            </button>
-          ))}
+              </button>
+            ))}
+          </div>
+
+          <label className="relative block w-full xl:w-80">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" strokeWidth={1.8} />
+            <input
+              className="h-11 w-full rounded-2xl border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100 dark:border-white/10 dark:bg-slate-950 dark:text-white dark:focus:ring-primary-500/20"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search name or phone"
+            />
+          </label>
         </div>
+      </section>
 
-        {loading && <p className="text-gray-500">Loading...</p>}
+      {error ? (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-100">
+          {error}
+        </div>
+      ) : null}
 
-        {!loading && (
-          <div className="card overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
+      {loading ? <LoadingRows rows={6} /> : null}
+
+      {!loading && !error ? (
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-sm">
+              <thead className="border-b border-slate-200 bg-slate-50 text-xs font-black uppercase text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-400">
                 <tr>
-                  <th className="px-4 py-2 text-left">Phone</th>
-                  <th className="px-4 py-2 text-left">Name</th>
-                  <th className="px-4 py-2 text-left">Role</th>
-                  <th className="px-4 py-2 text-center">Status</th>
-                  <th className="px-4 py-2 text-right">Actions</th>
+                  <th className="px-5 py-4 text-left">Account</th>
+                  <th className="px-5 py-4 text-left">Role</th>
+                  <th className="px-5 py-4 text-left">Status</th>
+                  <th className="px-5 py-4 text-left">Created</th>
+                  <th className="px-5 py-4 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-slate-100 dark:divide-white/10">
                 {filteredUsers.map((user) => (
-                  <tr key={user.id} className={!user.isActive ? 'opacity-50' : ''}>
-                    <td className="px-4 py-2 font-mono">{user.phone}</td>
-                    <td className="px-4 py-2">{user.fullName ?? '—'}</td>
-                    <td className="px-4 py-2">
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${ROLE_COLORS[user.role]}`}>
-                        {ROLE_LABELS[user.role]}
-                      </span>
+                  <tr
+                    key={user.id}
+                    className={!user.isActive ? 'bg-slate-50/70 opacity-75 dark:bg-white/[0.02]' : ''}
+                  >
+                    <td className="px-5 py-4">
+                      <p className="font-black text-slate-950 dark:text-white">
+                        {user.fullName || 'Unnamed account'}
+                      </p>
+                      <p className="mt-1 font-mono text-xs font-semibold text-slate-500 dark:text-slate-400">
+                        {user.phone}
+                      </p>
                     </td>
-                    <td className="px-4 py-2 text-center">
-                      {user.isActive ? (
-                        <span className="text-xs text-green-700">Active</span>
-                      ) : (
-                        <span className="text-xs text-red-600">Inactive</span>
-                      )}
+                    <td className="px-5 py-4">
+                      <RoleBadge role={user.role} />
                     </td>
-                    <td className="px-4 py-2 text-right space-x-2">
-                      <button
-                        onClick={() => handleEdit(user)}
-                        className="text-xs text-blue-600 hover:underline"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleToggleActive(user)}
-                        className={`text-xs ${user.isActive ? 'text-red-600' : 'text-green-600'} hover:underline`}
-                      >
-                        {user.isActive ? 'Deactivate' : 'Activate'}
-                      </button>
+                    <td className="px-5 py-4">
+                      <StatusBadge
+                        label={user.isActive ? 'Active' : 'Inactive'}
+                        tone={user.isActive ? 'green' : 'red'}
+                      />
+                    </td>
+                    <td className="px-5 py-4 font-semibold text-slate-500 dark:text-slate-400">
+                      {formatDate(user.createdAt)}
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleEdit(user)}
+                          className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-700 transition hover:border-primary-200 hover:text-primary-700 dark:border-white/10 dark:text-slate-200 dark:hover:text-white"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleActive(user)}
+                          className={`rounded-xl px-3 py-2 text-xs font-black transition ${
+                            user.isActive
+                              ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-100'
+                              : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-100'
+                          }`}
+                        >
+                          {user.isActive ? 'Deactivate' : 'Activate'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
-                {filteredUsers.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
-                      No users found.
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>
-        )}
 
-        {showModal && (
-          <UserModal
-            user={editingUser}
-            onClose={handleModalClose}
-            onSave={handleModalSave}
-            toasts={toasts}
-          />
-        )}
+          {filteredUsers.length === 0 ? (
+            <div className="p-5">
+              <EmptyState
+                title="No accounts match this view"
+                description="Adjust the role filter or search term to find the account you need."
+              />
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
-        <ToastContainer toasts={toasts.toasts} onDismiss={toasts.dismiss} />
-      </div>
+      {showModal ? (
+        <UserModal
+          user={editingUser}
+          onClose={handleModalClose}
+          onSave={handleModalSave}
+          toasts={toasts}
+        />
+      ) : null}
+
+      <ToastContainer toasts={toasts.toasts} onDismiss={toasts.dismiss} />
     </div>
   )
 }
-
-// ─── User Modal ──────────────────────────────────────────────────────────────
 
 function UserModal({
   user,
@@ -237,8 +278,8 @@ function UserModal({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
     setError(null)
     setSaving(true)
 
@@ -276,58 +317,64 @@ function UserModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 p-4"
       role="dialog"
       aria-modal="true"
     >
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-semibold">
-            {isEdit ? 'Edit account' : 'Create new account'}
-          </h3>
+      <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-slate-900">
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-white/10">
+          <div>
+            <h3 className="text-lg font-black text-slate-950 dark:text-white">
+              {isEdit ? 'Edit account' : 'Create account'}
+            </h3>
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              {isEdit ? 'Update role, name, or password.' : 'Add a new PBMS account.'}
+            </p>
+          </div>
           <button
+            type="button"
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+            className="flex h-9 w-9 items-center justify-center rounded-xl text-xl leading-none text-slate-400 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-white/10 dark:hover:text-white"
             aria-label="Close"
           >
             &times;
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 p-5">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="mb-1 block text-sm font-bold text-slate-700 dark:text-slate-200">
               Phone
             </label>
             <input
-              className="input"
+              className="input dark:border-white/10 dark:bg-slate-950 dark:text-white"
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(event) => setPhone(event.target.value)}
               disabled={isEdit}
               placeholder="0901234567"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="mb-1 block text-sm font-bold text-slate-700 dark:text-slate-200">
               Full name
             </label>
             <input
-              className="input"
+              className="input dark:border-white/10 dark:bg-slate-950 dark:text-white"
               value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              placeholder="John Doe"
+              onChange={(event) => setFullName(event.target.value)}
+              placeholder="Full name"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="mb-1 block text-sm font-bold text-slate-700 dark:text-slate-200">
               Role
             </label>
             <select
-              className="input"
+              className="input dark:border-white/10 dark:bg-slate-950 dark:text-white"
               value={role}
-              onChange={(e) => setRole(e.target.value as Role)}
+              onChange={(event) => setRole(event.target.value as Role)}
             >
               <option value="driver">Driver</option>
               <option value="staff">Staff</option>
@@ -337,34 +384,42 @@ function UserModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              {isEdit ? 'New password (leave blank to keep current)' : 'Password'}
+            <label className="mb-1 block text-sm font-bold text-slate-700 dark:text-slate-200">
+              {isEdit ? 'New password' : 'Password'}
             </label>
             <input
-              className="input"
+              className="input dark:border-white/10 dark:bg-slate-950 dark:text-white"
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={isEdit ? '••••••' : 'At least 6 characters'}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder={isEdit ? 'Leave blank to keep current' : 'At least 6 characters'}
             />
           </div>
 
-          {error && (
-            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md p-2">
+          {error ? (
+            <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-bold text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-100">
               {error}
             </p>
-          )}
+          ) : null}
 
-          <div className="flex gap-2 pt-2">
-            <button type="submit" className="btn-primary flex-1" disabled={saving}>
-              {saving ? 'Saving...' : isEdit ? 'Update' : 'Create'}
-            </button>
-            <button type="button" onClick={onClose} className="btn-secondary flex-1" disabled={saving}>
+          <div className="grid grid-cols-2 gap-2 pt-2">
+            <button type="button" onClick={onClose} className="btn-secondary rounded-xl" disabled={saving}>
               Cancel
+            </button>
+            <button type="submit" className="btn-primary rounded-xl" disabled={saving}>
+              {saving ? 'Saving...' : isEdit ? 'Update' : 'Create'}
             </button>
           </div>
         </form>
       </div>
     </div>
   )
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat('vi-VN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(value))
 }
