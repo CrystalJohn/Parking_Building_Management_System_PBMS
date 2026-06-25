@@ -845,13 +845,13 @@ describe('SessionsService', () => {
       durationMs: 9000000,
       durationHours: 2.5,
       roundedHours: 3,
-      hourlyRate: 8000,
-      baseFee: 24000,
+      hourlyRate: 20000,
+      baseFee: 60000,
       isOvertime: false,
       overtimePenalty: 0,
       isLostTicket: false,
       lostTicketPenalty: 0,
-      totalFee: 24000,
+      totalFee: 60000,
     };
 
     it('looks up an active session by Session Code without mutating checkout state', async () => {
@@ -876,7 +876,7 @@ describe('SessionsService', () => {
         sessionCode: 'PBMS-SESSION',
         status: 'active',
       });
-      expect(result.fee.total).toBe(24000);
+      expect(result.fee.total).toBe(60000);
       expect(result.payment).toBeNull();
     });
 
@@ -889,7 +889,7 @@ describe('SessionsService', () => {
         payment: {
           id: 'payment-uuid-1',
           sessionId: 'session-uuid-1',
-          amount: 24000,
+          amount: 60000,
           method: PaymentMethod.cash,
           status: 'paid',
           paidAt: new Date('2024-01-01T10:30:00Z'),
@@ -902,7 +902,7 @@ describe('SessionsService', () => {
 
       expect(result.session.status).toBe('completed');
       expect(result.payment).toMatchObject({ status: 'paid' });
-      expect(result.fee.total).toBe(24000);
+      expect(result.fee.total).toBe(60000);
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
@@ -931,13 +931,13 @@ describe('SessionsService', () => {
       durationMs: 9000000,
       durationHours: 2.5,
       roundedHours: 3,
-      hourlyRate: 8000,
-      baseFee: 24000,
+      hourlyRate: 20000,
+      baseFee: 60000,
       isOvertime: false,
       overtimePenalty: 0,
       isLostTicket: false,
       lostTicketPenalty: 0,
-      totalFee: 24000,
+      totalFee: 60000,
     };
 
     beforeEach(() => {
@@ -950,7 +950,7 @@ describe('SessionsService', () => {
             upsert: jest.fn().mockResolvedValue({
               id: 'payment-uuid-1',
               sessionId: 'session-uuid-1',
-              amount: 24000,
+              amount: 60000,
               method: PaymentMethod.cash,
               status: 'pending',
               paidAt: null,
@@ -1036,7 +1036,7 @@ describe('SessionsService', () => {
         false,
         expect.any(Date),
       );
-      expect(result.breakdown.totalFee).toBe(24000);
+      expect(result.breakdown.totalFee).toBe(60000);
     });
 
     it('logs warning when overtime detected (15.3)', async () => {
@@ -1046,7 +1046,7 @@ describe('SessionsService', () => {
         isOvertime: true,
         overtimePenalty: 50000,
         roundedHours: 25,
-        totalFee: 250000,
+        totalFee: 550000,
       });
 
       const loggerSpy = jest.spyOn((service as any).logger, 'warn');
@@ -1090,7 +1090,7 @@ describe('SessionsService', () => {
               return Promise.resolve({
                 id: 'payment-uuid-1',
                 sessionId: 'session-uuid-1',
-                amount: 24000,
+                amount: 60000,
                 method: PaymentMethod.cash,
                 status: 'pending',
                 paidAt: null,
@@ -1115,7 +1115,7 @@ describe('SessionsService', () => {
           where: { id: 'session-uuid-1' },
           data: expect.objectContaining({
             status: 'checkout_pending',
-            feeAmount: 24000,
+            feeAmount: 60000,
             penaltyAmount: 0,
           }),
         }),
@@ -1123,7 +1123,7 @@ describe('SessionsService', () => {
       expect(txCalls.paymentUpsert.create).toEqual(
         expect.objectContaining({
           sessionId: 'session-uuid-1',
-          amount: 24000,
+          amount: 60000,
           method: PaymentMethod.cash,
           status: 'pending',
           paidAt: null,
@@ -1156,13 +1156,13 @@ describe('SessionsService', () => {
       durationMs: 9000000,
       durationHours: 2.5,
       roundedHours: 3,
-      hourlyRate: 8000,
-      baseFee: 24000,
+      hourlyRate: 20000,
+      baseFee: 60000,
       isOvertime: false,
       overtimePenalty: 0,
       isLostTicket: false,
       lostTicketPenalty: 0,
-      totalFee: 24000,
+      totalFee: 60000,
     };
 
     beforeEach(() => {
@@ -1179,7 +1179,7 @@ describe('SessionsService', () => {
             findUnique: jest.fn().mockResolvedValue({
               id: 'payment-uuid-1',
               sessionId: 'session-uuid-1',
-              amount: 24000,
+              amount: 60000,
               method: PaymentMethod.cash,
               status: 'pending',
               paidAt: null,
@@ -1188,7 +1188,7 @@ describe('SessionsService', () => {
             update: jest.fn().mockResolvedValue({
               id: 'payment-uuid-1',
               sessionId: 'session-uuid-1',
-              amount: 24000,
+              amount: 60000,
               method: PaymentMethod.cash,
               status: 'paid',
               paidAt: new Date('2024-01-01T10:30:00Z'),
@@ -1225,7 +1225,7 @@ describe('SessionsService', () => {
         ...mockBreakdown,
         isLostTicket: true,
         lostTicketPenalty: 100000,
-        totalFee: 124000,
+        totalFee: 160000,
       };
       feesService.calculate.mockResolvedValue(lostBreakdown);
 
@@ -1259,7 +1259,7 @@ describe('SessionsService', () => {
             findUnique: jest.fn().mockResolvedValue({
               id: 'payment-uuid-1',
               sessionId: 'session-uuid-1',
-              amount: 24000,
+              amount: 60000,
               method: PaymentMethod.cash,
               status: 'pending',
               paidAt: null,
@@ -1270,7 +1270,7 @@ describe('SessionsService', () => {
               return Promise.resolve({
                 id: 'payment-uuid-1',
                 sessionId: 'session-uuid-1',
-                amount: 24000,
+                amount: 60000,
                 method: PaymentMethod.cash,
                 status: 'paid',
                 paidAt: new Date(),
@@ -1316,9 +1316,9 @@ describe('SessionsService', () => {
       expect(result.receipt).toHaveProperty('checkInTime');
       expect(result.receipt).toHaveProperty('checkOutTime');
       expect(result.receipt).toHaveProperty('durationHours', 3);
-      expect(result.receipt.breakdown).toHaveProperty('hourlyRate', 8000);
-      expect(result.receipt.breakdown).toHaveProperty('baseFee', 24000);
-      expect(result.receipt.breakdown).toHaveProperty('totalFee', 24000);
+      expect(result.receipt.breakdown).toHaveProperty('hourlyRate', 20000);
+      expect(result.receipt.breakdown).toHaveProperty('baseFee', 60000);
+      expect(result.receipt.breakdown).toHaveProperty('totalFee', 60000);
       expect(result.receipt.payment).toHaveProperty('id', 'payment-uuid-1');
       expect(result.receipt.payment).toHaveProperty('method', PaymentMethod.cash);
       expect(result.receipt.payment).toHaveProperty('status', 'paid');

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate, Link } from 'react-router-dom'
 import { isAxiosError } from 'axios'
+import { ArrowLeft } from 'lucide-react'
 import api from '../../lib/api'
 import { getToken, getUser, saveAuth, type AuthUser } from '../../lib/auth'
 import { ToastContainer } from '../../components/ui/Toast'
@@ -16,7 +17,7 @@ interface LoginResponse {
 function defaultHomeForRole(role: AuthUser['role']): string {
   switch (role) {
     case 'admin':
-      return '/admin/users'
+      return '/admin/dashboard'
     case 'manager':
       return '/manager/dashboard'
     case 'staff':
@@ -115,6 +116,13 @@ export default function Login() {
 
   return (
     <div className="min-h-[100svh] relative flex items-center justify-center p-3 sm:p-6">
+      <Link
+        to="/"
+        className="fixed left-4 top-4 z-20 inline-flex h-10 items-center gap-2 rounded-xl border border-white/20 bg-white/15 px-3 text-sm font-semibold text-white shadow-lg shadow-black/10 backdrop-blur-xl transition hover:bg-white/25 focus:outline-none focus:ring-2 focus:ring-white/50 sm:left-6 sm:top-6"
+      >
+        <ArrowLeft className="h-4 w-4" strokeWidth={1.8} />
+        Back to PBMS
+      </Link>
       {/* ── Background: parking hero image ── */}
       <div className="fixed inset-0 -z-10">
         <img

@@ -127,33 +127,45 @@ async function main() {
   console.log(`✅ Slots seeded: ${slotCount} total`);
 
   // ─── 4. PricingConfig ────────────────────────────────────────────────────
-  // Car: 8000 VND/h, overtime 50k, lost ticket 100k, threshold 24h
+  // Car: 20000 VND/h, overtime 50k, lost ticket 100k, threshold 24h
   await prisma.pricingConfig.upsert({
     where: { id: 1 },
-    update: {},
+    update: {
+      vehicleType: VehicleType.car,
+      hourlyRate: 20000,
+      overtimePenalty: 50000,
+      lostTicketPenalty: 100000,
+      overtimeThresholdHours: 24,
+    },
     create: {
       vehicleType: VehicleType.car,
-      hourlyRate: 8000,
+      hourlyRate: 20000,
       overtimePenalty: 50000,
       lostTicketPenalty: 100000,
       overtimeThresholdHours: 24,
     },
   });
 
-  // Motorbike: 5000 VND/h, overtime 50k, lost ticket 100k, threshold 24h
+  // Motorbike: 10000 VND/h, overtime 50k, lost ticket 100k, threshold 24h
   await prisma.pricingConfig.upsert({
     where: { id: 2 },
-    update: {},
+    update: {
+      vehicleType: VehicleType.motorbike,
+      hourlyRate: 10000,
+      overtimePenalty: 50000,
+      lostTicketPenalty: 100000,
+      overtimeThresholdHours: 24,
+    },
     create: {
       vehicleType: VehicleType.motorbike,
-      hourlyRate: 5000,
+      hourlyRate: 10000,
       overtimePenalty: 50000,
       lostTicketPenalty: 100000,
       overtimeThresholdHours: 24,
     },
   });
 
-  console.log('✅ PricingConfig seeded: car 8000 VND/h, motorbike 5000 VND/h');
+  console.log('✅ PricingConfig seeded: car 20000 VND/h, motorbike 10000 VND/h');
 
   // ─── 5. SystemConfig ────────────────────────────────────────────────────
   const systemConfigs = [

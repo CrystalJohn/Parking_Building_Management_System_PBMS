@@ -1,63 +1,45 @@
-import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, CheckCircle2, CircleDollarSign, ClipboardList } from 'lucide-react'
-import api from '../../lib/api'
-import { AdminPageHeader, EmptyState, LoadingRows, StatCard } from './admin-ui'
-
-interface RevenueRow {
-  vehicleType: string
-  totalSessions: number
-  totalRevenue: number
-  totalPenalty: number
-}
+import { useEffect, useState } from 'react'
+import { AlertTriangle, CheckCircle2, Info, ShieldAlert } from 'lucide-react'
+import {
+  getAdminOperationsFlags,
+  type AdminFlagSeverity,
+  type AdminOperationsFlags,
+} from '../../lib/admin-api'
+import { formatDateTimeVN } from '../../lib/date-time'
+import { AdminPageHeader, EmptyState, LoadingRows, StatCard, StatusBadge } from './admin-ui'
 
 export default function AdminReportsFlags() {
-  const [revenueRows, setRevenueRows] = useState<RevenueRow[]>([])
+  const [data, setData] = useState<AdminOperationsFlags | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
 
-    async function loadReports() {
+    async function loadFlags() {
       setLoading(true)
       setError(null)
       try {
-        const today = new Date().toISOString().split('T')[0]
-        const { data } = await api.get<RevenueRow[]>('/reports/revenue', {
-          params: { period: 'daily', date: today },
-        })
-        if (!cancelled) setRevenueRows(data)
+        const result = await getAdminOperationsFlags()
+        if (!cancelled) setData(result)
       } catch {
-        if (!cancelled) setError('Unable to load report data')
+        if (!cancelled) setError('Unable to load operational flags')
       } finally {
         if (!cancelled) setLoading(false)
       }
     }
 
-    void loadReports()
+    void loadFlags()
     return () => {
       cancelled = true
     }
   }, [])
 
-  const summary = useMemo(() => {
-    return revenueRows.reduce(
-      (total, row) => ({
-        sessions: total.sessions + Number(row.totalSessions || 0),
-        revenue:
-          total.revenue +
-          Number(row.totalRevenue || 0) +
-          Number(row.totalPenalty || 0),
-      }),
-      { sessions: 0, revenue: 0 },
-    )
-  }, [revenueRows])
-
   return (
     <div className="space-y-6">
       <AdminPageHeader
         title="Reports & Flags"
-        description="Monitoring workspace for revenue signals and operational exceptions. Incident flags remain empty until a backend flags API is available."
+        description="Derived operational flags from current PBMS database state. Phase 1 does not include audit/event-log incidents."
       />
 
       {error ? (
@@ -66,55 +48,105 @@ export default function AdminReportsFlags() {
         </div>
       ) : null}
 
-      {loading ? (
-        <LoadingRows rows={3} />
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-3">
-          <StatCard
-            label="Completed sessions today"
-            value={summary.sessions}
-            helper="From revenue report"
-            icon={<ClipboardList className="h-5 w-5" strokeWidth={1.8} />}
-          />
-          <StatCard
-            label="Revenue today"
-            value={formatVnd(summary.revenue)}
-            helper="Payment and penalty totals"
-            icon={<CircleDollarSign className="h-5 w-5" strokeWidth={1.8} />}
-          />
-          <StatCard
-            label="Operational flags"
-            value={0}
-            helper="No flags API connected"
-            icon={<CheckCircle2 className="h-5 w-5" strokeWidth={1.8} />}
-          />
-        </div>
-      )}
+      {loading ? <LoadingRows rows={3} /> : null}
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
-        <div className="mb-5 flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-700 dark:bg-primary-500/15 dark:text-primary-100">
-            <AlertCircle className="h-5 w-5" strokeWidth={1.8} />
+      {!loading && data ? (
+        <>
+          <div className="grid gap-4 sm:grid-cols-4">
+            <StatCard
+              label="Total flags"
+              value={data.summary.totalFlags}
+              helper="Latest 50 derived flags"
+              icon={<ShieldAlert className="h-5 w-5" strokeWidth={1.8} />}
+            />
+            <StatCard
+              label="Critical"
+              value={data.summary.critical}
+              helper="Needs immediate review"
+              icon={<AlertTriangle className="h-5 w-5" strokeWidth={1.8} />}
+            />
+            <StatCard
+              label="Warning"
+              value={data.summary.warning}
+              helper="Operational attention"
+              icon={<Info className="h-5 w-5" strokeWidth={1.8} />}
+            />
+            <StatCard
+              label="Info"
+              value={data.summary.info}
+              helper="Low-risk telemetry"
+              icon={<CheckCircle2 className="h-5 w-5" strokeWidth={1.8} />}
+            />
           </div>
-          <div>
-            <h2 className="text-base font-black text-slate-950 dark:text-white">
-              Exception monitoring
-            </h2>
-            <p className="mt-1 text-sm font-medium leading-6 text-slate-500 dark:text-slate-400">
-              Payment issues, invalid reservation attempts, OCR low confidence, duplicate active plate attempts, and cancelled or expired reservation scan attempts should appear here when backend flag events are exposed.
-            </p>
-          </div>
-        </div>
 
-        <EmptyState
-          title="No operational flags detected."
-          description="No production incidents are hardcoded on this page. Connect a flags/audit endpoint later to populate this table."
-        />
-      </section>
+          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
+            <div className="border-b border-slate-200 px-5 py-4 dark:border-white/10">
+              <h2 className="text-base font-black text-slate-950 dark:text-white">
+                Operational flags
+              </h2>
+              <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">
+                Thresholds: active session over {data.thresholds.longActiveSessionHours}h, checkout pending over {data.thresholds.checkoutPendingMinutes}m, exit authorized over {data.thresholds.exitAuthorizedMinutes}m, Bank QR pending over {data.thresholds.pendingBankQrMinutes}m.
+              </p>
+            </div>
+
+            {data.flags.length === 0 ? (
+              <div className="p-5">
+                <EmptyState
+                  title="No operational flags detected."
+                  description="No production incidents are hardcoded. This list only shows flags derived from current database state."
+                />
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100 dark:divide-white/10">
+                {data.flags.map((flag, index) => (
+                  <article key={`${flag.type}-${flag.sessionCode ?? flag.paymentId ?? index}`} className="p-5">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <SeverityBadge severity={flag.severity} />
+                          <span className="text-xs font-black uppercase text-slate-400">
+                            {formatFlagType(flag.type)}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-sm font-black text-slate-950 dark:text-white">
+                          {flag.message}
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                          {flag.sessionCode ? <span>Session {flag.sessionCode}</span> : null}
+                          {flag.reservationCode ? <span>Reservation {flag.reservationCode}</span> : null}
+                          {flag.plateNumber ? <span>Plate {flag.plateNumber}</span> : null}
+                          {flag.paymentId ? <span>Payment {shortCode(flag.paymentId)}</span> : null}
+                        </div>
+                      </div>
+                      <div className="text-left text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-right">
+                        <p>{flag.ageMinutes} minutes old</p>
+                        <p className="mt-1">{formatDateTimeVN(flag.createdAt)}</p>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        </>
+      ) : null}
     </div>
   )
 }
 
-function formatVnd(value: number) {
-  return `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(value)} VND`
+function SeverityBadge({ severity }: { severity: AdminFlagSeverity }) {
+  const tone = severity === 'critical' ? 'red' : severity === 'warning' ? 'amber' : 'blue'
+  return <StatusBadge label={severity.toUpperCase()} tone={tone} />
+}
+
+function formatFlagType(type: string) {
+  return type
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function shortCode(value: string) {
+  if (value.length <= 12) return value
+  return `${value.slice(0, 8)}...${value.slice(-4)}`
 }

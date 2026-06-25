@@ -58,13 +58,13 @@ export default function DriverHome() {
                 label="Car (Zone A)"
                 available={totalAvailable(carSlots)}
                 total={totalSlots(carSlots)}
-                rate="8.000 VND/h"
+                rate="20.000 VND/h"
               />
               <SummaryCard
                 label="Motorbike (Zone B)"
                 available={totalAvailable(motorbikeSlots)}
                 total={totalSlots(motorbikeSlots)}
-                rate="5.000 VND/h"
+                rate="10.000 VND/h"
               />
             </div>
 
@@ -119,13 +119,13 @@ export default function DriverHome() {
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="space-y-1">
                   <p className="font-medium">Car</p>
-                  <p className="text-gray-600">8.000 VND / hour</p>
+                  <p className="text-gray-600">20.000 VND / hour</p>
                   <p className="text-gray-600">Over 24h: +50.000 VND</p>
                   <p className="text-gray-600">Lost ticket: +100.000 VND</p>
                 </div>
                 <div className="space-y-1">
                   <p className="font-medium">Motorbike</p>
-                  <p className="text-gray-600">5.000 VND / hour</p>
+                  <p className="text-gray-600">10.000 VND / hour</p>
                   <p className="text-gray-600">Over 24h: +50.000 VND</p>
                   <p className="text-gray-600">Lost ticket: +100.000 VND</p>
                 </div>

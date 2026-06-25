@@ -15,6 +15,10 @@ describe('formatVietnamesePlate', () => {
     expect(formatVietnamesePlate('90-B2 452.30')).toBe('90B2-452.30');
   });
 
+  it('normalizes motorbike OCR results with an extra province digit', () => {
+    expect(formatVietnamesePlate('999E122268')).toBe('99E1-222.68');
+  });
+
   it('returns cleaned uppercase text when the plate does not match a supported format', () => {
     expect(formatVietnamesePlate('QD-123-AB')).toBe('QD123AB');
     expect(formatVietnamesePlate('')).toBe('');

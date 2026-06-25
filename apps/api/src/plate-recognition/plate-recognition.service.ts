@@ -37,6 +37,13 @@ export function formatVietnamesePlate(raw: string): string {
     return `${motorbike[1]}${motorbike[2]}-${motorbike[3]}.${motorbike[4]}`;
   }
 
+  const motorbikeWithExtraProvinceDigit = clean.match(
+    /^(\d{2})\d([A-Z]\d)(\d{3})(\d{2})$/,
+  );
+  if (motorbikeWithExtraProvinceDigit) {
+    return `${motorbikeWithExtraProvinceDigit[1]}${motorbikeWithExtraProvinceDigit[2]}-${motorbikeWithExtraProvinceDigit[3]}.${motorbikeWithExtraProvinceDigit[4]}`;
+  }
+
   const match = clean.match(/^(\d{2})([A-Z]{1,2}\d?)(\d{5})$/);
   if (match) return `${match[1]}${match[2]}-${match[3]}`;
 

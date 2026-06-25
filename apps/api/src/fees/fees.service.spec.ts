@@ -18,7 +18,7 @@ const makePricing = (
 ) => ({
   id: 1,
   vehicleType: VehicleType.car,
-  hourlyRate: 8000,
+  hourlyRate: 20000,
   overtimePenalty: 50000,
   lostTicketPenalty: 100000,
   overtimeThresholdHours: 24,
@@ -84,8 +84,8 @@ describe('FeesService', () => {
 
       expect(result.durationHours).toBeCloseTo(2.25, 2);
       expect(result.roundedHours).toBe(3);
-      expect(result.baseFee).toBe(3 * 8000); // 24000
-      expect(result.totalFee).toBe(24000);
+      expect(result.baseFee).toBe(3 * 20000); // 60000
+      expect(result.totalFee).toBe(60000);
     });
 
     it('should not round up exact hours', async () => {
@@ -99,8 +99,8 @@ describe('FeesService', () => {
       const result = await service.calculate(session, false);
 
       expect(result.roundedHours).toBe(2);
-      expect(result.baseFee).toBe(2 * 8000); // 16000
-      expect(result.totalFee).toBe(16000);
+      expect(result.baseFee).toBe(2 * 20000); // 40000
+      expect(result.totalFee).toBe(40000);
     });
 
     it('should charge minimum 1 hour for sub-hour parking', async () => {
@@ -114,8 +114,8 @@ describe('FeesService', () => {
       const result = await service.calculate(session, false);
 
       expect(result.roundedHours).toBe(1);
-      expect(result.baseFee).toBe(8000);
-      expect(result.totalFee).toBe(8000);
+      expect(result.baseFee).toBe(20000);
+      expect(result.totalFee).toBe(20000);
     });
 
     it('should add overtime penalty when > 24h (14.3)', async () => {
@@ -131,8 +131,8 @@ describe('FeesService', () => {
       expect(result.roundedHours).toBe(25);
       expect(result.isOvertime).toBe(true);
       expect(result.overtimePenalty).toBe(50000);
-      expect(result.baseFee).toBe(25 * 8000); // 200000
-      expect(result.totalFee).toBe(200000 + 50000); // 250000
+      expect(result.baseFee).toBe(25 * 20000); // 500000
+      expect(result.totalFee).toBe(500000 + 50000); // 550000
     });
 
     it('should NOT add overtime penalty at exactly 24h', async () => {
@@ -148,7 +148,7 @@ describe('FeesService', () => {
       expect(result.roundedHours).toBe(24);
       expect(result.isOvertime).toBe(false);
       expect(result.overtimePenalty).toBe(0);
-      expect(result.totalFee).toBe(24 * 8000); // 192000
+      expect(result.totalFee).toBe(24 * 20000); // 480000
     });
 
     it('should add lost ticket penalty when flagged (14.4)', async () => {
@@ -163,7 +163,7 @@ describe('FeesService', () => {
 
       expect(result.isLostTicket).toBe(true);
       expect(result.lostTicketPenalty).toBe(100000);
-      expect(result.totalFee).toBe(16000 + 100000); // 116000
+      expect(result.totalFee).toBe(40000 + 100000); // 140000
     });
 
     it('should combine overtime + lost ticket penalties', async () => {
@@ -178,14 +178,14 @@ describe('FeesService', () => {
 
       expect(result.isOvertime).toBe(true);
       expect(result.isLostTicket).toBe(true);
-      expect(result.totalFee).toBe(25 * 8000 + 50000 + 100000); // 350000
+      expect(result.totalFee).toBe(25 * 20000 + 50000 + 100000); // 650000
     });
 
     it('should use motorbike rate from PricingConfig (14.5)', async () => {
       prisma.pricingConfig.findFirst.mockResolvedValue(
         makePricing({
           vehicleType: VehicleType.motorbike,
-          hourlyRate: 5000,
+          hourlyRate: 10000,
         }),
       );
 
@@ -199,9 +199,9 @@ describe('FeesService', () => {
 
       const result = await service.calculate(session, false);
 
-      expect(result.hourlyRate).toBe(5000);
+      expect(result.hourlyRate).toBe(10000);
       expect(result.roundedHours).toBe(3);
-      expect(result.totalFee).toBe(15000);
+      expect(result.totalFee).toBe(30000);
     });
 
     it('should use provided checkOutTime override when session has no checkOutTime', async () => {
@@ -215,7 +215,7 @@ describe('FeesService', () => {
 
       expect(result.checkOutTime).toEqual(overrideCheckOut);
       expect(result.roundedHours).toBe(4);
-      expect(result.totalFee).toBe(32000);
+      expect(result.totalFee).toBe(80000);
     });
 
     it('should throw NotFoundException when PricingConfig missing', async () => {
@@ -255,7 +255,7 @@ describe('FeesService', () => {
         },
       });
       expect(result.roundedHours).toBe(3); // 2.5h → ceil → 3
-      expect(result.baseFee).toBe(24000);
+      expect(result.baseFee).toBe(60000);
 
       jest.useRealTimers();
     });

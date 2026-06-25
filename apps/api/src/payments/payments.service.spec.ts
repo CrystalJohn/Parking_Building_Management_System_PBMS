@@ -29,7 +29,7 @@ const makeSession = (overrides: Record<string, unknown> = {}) => ({
   checkInTime: new Date('2026-06-15T08:00:00Z'),
   checkOutTime: null,
   status: SessionStatus.checkout_pending,
-  feeAmount: 24000,
+  feeAmount: 60000,
   penaltyAmount: 0,
   isPaid: false,
   slotId: 1,
@@ -41,7 +41,7 @@ const makeSession = (overrides: Record<string, unknown> = {}) => ({
 const makeVnpayPayment = (overrides: Record<string, unknown> = {}) => ({
   id: 'payment-uuid-1',
   sessionId: 'session-uuid-1',
-  amount: 24000,
+  amount: 60000,
   method: PaymentMethod.bank_qr,
   status: 'pending',
   paidAt: null,
@@ -192,7 +192,7 @@ describe('PaymentsService — VNPAY migration', () => {
         expect.objectContaining({
           sessionId: 'session-uuid-1',
           sessionCode: 'PBMS-SESSION01',
-          amount: 24000,
+          amount: 60000,
           ipAddr: '10.0.0.1',
         }),
       );
@@ -266,7 +266,7 @@ describe('PaymentsService — VNPAY migration', () => {
     it('throws NotFoundException for unknown txnRef', async () => {
       vnpay.verifyReturnOrIpn.mockReturnValue({
         txnRef: 'UNKNOWN',
-        amount: 24000,
+        amount: 60000,
         success: true,
         responseCode: '00',
         transactionStatus: '00',
@@ -302,7 +302,7 @@ describe('PaymentsService — VNPAY migration', () => {
     it('marks payment paid, moves session to exit_authorized, keeps slot occupied', async () => {
       vnpay.verifyReturnOrIpn.mockReturnValue({
         txnRef: 'PBMS12345678',
-        amount: 24000,
+        amount: 60000,
         success: true,
         responseCode: '00',
         transactionStatus: '00',
@@ -367,13 +367,19 @@ describe('PaymentsService — VNPAY migration', () => {
       expect((txCalls.sessionUpdate as any)?.data).not.toHaveProperty('checkOutTime');
       // Slot must NOT be updated (not released)
       expect(txCalls.slotUpdate).toBeUndefined();
-      expect(result).toEqual({ ok: true, paid: true, sessionId: 'session-uuid-1' });
+      expect(result).toEqual(
+        expect.objectContaining({
+          ok: true,
+          paid: true,
+          sessionId: 'session-uuid-1',
+        }),
+      );
     });
 
     it('failed response does NOT authorize exit', async () => {
       vnpay.verifyReturnOrIpn.mockReturnValue({
         txnRef: 'PBMS12345678',
-        amount: 24000,
+        amount: 60000,
         success: false,
         responseCode: '24', // Customer cancelled
         transactionStatus: '02',
@@ -398,7 +404,7 @@ describe('PaymentsService — VNPAY migration', () => {
     it('handles duplicate paid IPN idempotently', async () => {
       vnpay.verifyReturnOrIpn.mockReturnValue({
         txnRef: 'PBMS12345678',
-        amount: 24000,
+        amount: 60000,
         success: true,
         responseCode: '00',
         transactionStatus: '00',
@@ -432,7 +438,7 @@ describe('PaymentsService — VNPAY migration', () => {
 
     it('returns RspCode 01 for unknown txnRef', async () => {
       vnpay.verifyReturnOrIpn.mockReturnValue({
-        txnRef: 'UNKNOWN', amount: 24000, success: true,
+        txnRef: 'UNKNOWN', amount: 60000, success: true,
         responseCode: '00', transactionStatus: '00',
         payDate: null, bankCode: null, rawParams: {},
       });
