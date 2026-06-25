@@ -66,7 +66,17 @@ export class AdminService {
       }),
     ]);
 
+    const reportDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(now);
+
     return {
+      meta: {
+        date: reportDate,
+        timezone: 'Asia/Ho_Chi_Minh',
+        range: {
+          start: today.start.toISOString(),
+          end: today.end.toISOString(),
+        },
+      },
       users: buildUserSummary(users),
       slots: buildSlotSummary(slots),
       sessions: {

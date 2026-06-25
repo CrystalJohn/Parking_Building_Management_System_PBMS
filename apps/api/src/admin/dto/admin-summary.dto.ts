@@ -1,4 +1,12 @@
 export interface AdminSummaryDto {
+  meta: {
+    date: string;
+    timezone: string;
+    range: {
+      start: string;
+      end: string;
+    };
+  };
   users: {
     total: number;
     active: number;

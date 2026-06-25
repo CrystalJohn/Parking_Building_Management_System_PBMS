@@ -370,34 +370,34 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
     <div className="space-y-4">
       <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between print:hidden">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Staff Check-in Service</h2>
-          <p className="text-sm text-gray-500">
+          <h2 className="text-lg font-bold text-gray-900">Staff Check-in Service</h2>
+          <p className="text-xs text-gray-500">
             Select the correct service mode before OCR. Space to capture, Enter to confirm, Esc to reset.
           </p>
         </div>
-        <div className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm">
+        <div className="rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-xs">
           <span className="font-semibold">{formatDateTimeVN(now)}</span>
         </div>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(380px,0.75fr)]">
-        <section className="self-start rounded-2xl border border-gray-200 bg-slate-950 p-4 text-white shadow-sm print:hidden">
+        <section className="self-start rounded-2xl border border-primary-100 bg-primary-50 p-4 text-slate-900 shadow-sm print:hidden">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
-              <h3 className="font-semibold">Real-time Camera + OCR Evidence</h3>
-              <p className="text-xs text-slate-300">{statusLabel}</p>
+              <h3 className="text-sm font-bold">Real-time Camera + OCR Evidence</h3>
+              <p className="text-[10px] font-semibold text-primary-700">{statusLabel}</p>
             </div>
             <button
               type="button"
               onClick={captureAndRecognize}
               disabled={status === 'OCR_PROCESSING' || status === 'CHECKING_IN'}
-              className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+              className="rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm shadow-primary-600/20 transition hover:bg-primary-700 disabled:opacity-50"
             >
               Capture OCR
             </button>
           </div>
 
-          <div className="relative aspect-video overflow-hidden rounded-xl border border-slate-700 bg-black">
+          <div className="relative aspect-video overflow-hidden rounded-xl border border-primary-100 bg-white">
             <video
               ref={videoRef}
               className="h-full w-full object-cover"
@@ -406,7 +406,7 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
               autoPlay
             />
             {cameraError && (
-              <div className="absolute inset-0 grid place-items-center bg-black/80 p-6 text-center text-sm text-red-200">
+              <div className="absolute inset-0 grid place-items-center bg-white/90 p-6 text-center text-sm font-semibold text-red-600">
                 {cameraError}
               </div>
             )}
@@ -417,30 +417,30 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
             {ticket ? (
               <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3 text-slate-900 print:mt-0 print:border-0 print:bg-white print:p-0">
                 <div className="flex items-center justify-between gap-2 mb-2 print:hidden">
-                  <span className="text-xs font-bold text-amber-950">
+                  <span className="text-[10px] font-bold text-amber-950">
                     {status === 'GENERATING_TICKET' ? 'Generating ticket...' : 'Session Ticket Preview'}
                   </span>
                 </div>
                 <SessionTicketPreview ticket={ticket} issuedAt={issuedAt} />
                 <div className="mt-3 flex flex-col gap-1.5 print:hidden">
-                  <button type="button" onClick={printTicket} className="btn-primary py-2 text-xs">
+                  <button type="button" onClick={printTicket} className="btn-primary py-1.5 px-3 text-xs">
                     Print Ticket
                   </button>
                   <div className="flex gap-2">
-                    <button type="button" onClick={markTicketIssued} className="btn-secondary flex-1 py-1.5 text-xs">
+                    <button type="button" onClick={markTicketIssued} className="btn-secondary flex-1 py-1 px-2.5 text-xs">
                       Mark Issued
                     </button>
-                    <button type="button" onClick={reset} className="btn-secondary flex-1 py-1.5 text-xs">
+                    <button type="button" onClick={reset} className="btn-secondary flex-1 py-1 px-2.5 text-xs">
                       Next Vehicle
                     </button>
                   </div>
                 </div>
               </div>
             ) : (
-              <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-4 flex flex-col items-center justify-center text-center text-slate-400 min-h-[160px]">
+              <div className="rounded-xl border border-dashed border-primary-200 bg-white/70 p-4 flex flex-col items-center justify-center text-center text-slate-500 min-h-[160px]">
                 <span className="text-xl mb-1.5">🎫</span>
-                <p className="text-xs font-semibold text-slate-300">Ticket Preview</p>
-                <p className="text-[10px] text-slate-500 mt-1 max-w-[160px]">
+                <p className="text-[10px] font-bold text-primary-700">Ticket Preview</p>
+                <p className="text-[9px] text-slate-500 mt-1 max-w-[160px]">
                   Awaiting check-in confirmation to generate ticket
                 </p>
               </div>
@@ -452,8 +452,8 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
           <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm print:border-0 print:p-0 print:shadow-none">
           <div className="flex items-start justify-between gap-3 print:hidden">
             <div>
-              <h3 className="font-semibold text-gray-900">Service Mode + Actions</h3>
-              <p className="text-sm text-gray-500">{checkInMode}</p>
+              <h3 className="text-sm font-bold text-gray-900">Service Mode + Actions</h3>
+              <p className="text-xs text-gray-500">{checkInMode}</p>
             </div>
             <span
               className={`rounded-full px-2.5 py-1 text-xs font-bold ${
@@ -474,7 +474,7 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
                     key={mode.id}
                     type="button"
                     onClick={() => chooseServiceMode(mode.id)}
-                    className={`flex-1 rounded-lg border px-4 py-2.5 text-sm font-bold transition-all ${
+                    className={`flex-1 rounded-lg border px-3 py-1.5 text-xs font-bold transition-all ${
                       serviceMode === mode.id
                         ? 'border-primary-600 bg-primary-50 text-primary-700'
                         : 'border-gray-200 bg-white text-gray-700 hover:bg-slate-50'
@@ -498,7 +498,7 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
                   <button
                     type="button"
                     onClick={() => setShowReservationScanner(true)}
-                    className="btn-primary shrink-0 text-xs py-2 px-3"
+                    className="btn-primary shrink-0 text-xs py-1.5 px-3"
                   >
                     Scan QR
                   </button>
@@ -508,18 +508,18 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
 
             <div>
               <div className="mb-1 flex items-center justify-between">
-                <span className="text-sm font-semibold text-gray-700">Confirmed license plate</span>
+                <span className="text-xs font-bold text-gray-700">Confirmed license plate</span>
                 {ocrResult ? (
-                  <span className="text-xs font-mono text-gray-500">
+                  <span className="text-[10px] font-mono text-gray-500">
                     OCR: <span className="font-bold text-gray-900">{ocrResult.detectedPlate || 'no plate detected'}</span>
                     {ocrResult.confidence != null && ` (${Math.round(ocrResult.confidence * 100)}%)`}
                   </span>
                 ) : (
-                  <span className="text-xs text-gray-400 font-medium">OCR: not run yet</span>
+                  <span className="text-[10px] text-gray-400 font-medium">OCR: not run yet</span>
                 )}
               </div>
               <input
-                className="input uppercase font-mono text-lg font-bold"
+                className="input uppercase font-mono text-sm font-bold"
                 value={licensePlate}
                 onChange={(event) => setLicensePlate(event.target.value)}
                 placeholder="VD: 59A-12345"
@@ -533,7 +533,7 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
                     key={type}
                     type="button"
                     onClick={() => setVehicleType(type)}
-                    className={`flex-1 rounded-lg border px-4 py-2.5 text-sm font-bold capitalize transition-all ${
+                    className={`flex-1 rounded-lg border px-3 py-1.5 text-xs font-bold capitalize transition-all ${
                       vehicleType === type
                         ? 'border-primary-600 bg-primary-50 text-primary-700'
                         : 'border-gray-200 bg-white text-gray-700 hover:bg-slate-50'
@@ -550,7 +550,7 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
                 type="button"
                 onClick={confirmCheckIn}
                 disabled={!canConfirm}
-                className="btn-primary flex-1 disabled:opacity-50"
+                className="btn-primary flex-1 py-1.5 text-xs disabled:opacity-50"
               >
                 {status === 'CHECKING_IN'
                   ? 'Checking in...'
@@ -558,7 +558,7 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
                     ? 'Confirm Reservation Check-in'
                     : 'Confirm Walk-in Check-in'}
               </button>
-              <button type="button" onClick={reset} className="btn-secondary">
+              <button type="button" onClick={reset} className="btn-secondary py-1.5 text-xs">
                 Reset
               </button>
             </div>
@@ -587,11 +587,11 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
 function EvidencePreview({ title, imageUrl }: { title: string; imageUrl: string | null }) {
   return (
     <div className="rounded-xl border border-slate-700 bg-slate-900 p-3">
-      <p className="mb-2 text-sm font-semibold text-slate-100">{title}</p>
+      <p className="mb-2 text-xs font-bold text-slate-100">{title}</p>
       {imageUrl ? (
         <img src={imageUrl} alt="Captured OCR evidence" className="aspect-video w-full rounded-lg object-cover" />
       ) : (
-        <div className="grid aspect-video place-items-center rounded-lg border border-dashed border-slate-600 text-sm text-slate-400">
+        <div className="grid aspect-video place-items-center rounded-lg border border-dashed border-primary-200 bg-white/70 text-xs text-slate-500">
           Press Space to capture plate
         </div>
       )}
@@ -602,13 +602,11 @@ function EvidencePreview({ title, imageUrl }: { title: string; imageUrl: string 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-sm font-semibold text-gray-700">{label}</span>
+      <span className="mb-1 block text-xs font-bold text-gray-700">{label}</span>
       {children}
     </label>
   )
 }
-
-
 
 function normalizeSessionTicket(ticket: SessionTicket, slot: AssignedSlot): SessionTicket {
   const derived = deriveLocationFromSlotCode(ticket.slotCode || slot.code)
@@ -647,14 +645,14 @@ function SessionTicketPreview({ ticket, issuedAt }: { ticket: SessionTicket; iss
   const zoneDisplay = ticket.zone || derivedLocation.zone || '-'
 
   return (
-    <div className="mt-3 rounded-xl border border-dashed border-gray-300 bg-white p-3 text-sm shadow-sm print:mx-auto print:mt-0 print:w-[80mm] print:rounded-none print:border-0 print:p-0 print:shadow-none">
+    <div className="mt-3 rounded-xl border border-dashed border-gray-300 bg-white p-3 text-xs shadow-sm print:mx-auto print:mt-0 print:w-[80mm] print:rounded-none print:border-0 print:p-0 print:shadow-none">
       <div className="text-center hidden print:block">
         <p className="text-lg font-black tracking-wider text-gray-950 print:text-base">PBMS PARKING TICKET</p>
         <p className="text-[10px] text-gray-400">Keep this ticket for checkout</p>
       </div>
 
       <div className="mt-1 flex flex-col items-center justify-center gap-1 print:mt-3">
-        <div className="rounded border-2 border-slate-800 bg-slate-50 px-4 py-1 text-center font-mono text-xl font-extrabold tracking-widest text-slate-900 shadow-sm">
+        <div className="rounded border border-slate-800 bg-slate-50 px-3 py-1 text-center font-mono text-base font-bold tracking-widest text-slate-900 shadow-sm">
           {ticket.licensePlate}
         </div>
         <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 hidden print:inline-block">
@@ -668,7 +666,7 @@ function SessionTicketPreview({ ticket, issuedAt }: { ticket: SessionTicket; iss
         <img
           src={ticket.qrCode}
           alt="Session QR"
-          className="mx-auto h-20 w-20 rounded-lg border border-gray-150 bg-white p-1.5 print:h-28 print:w-28"
+          className="mx-auto my-3 h-48 w-48 rounded-xl border border-gray-200 bg-white p-3 print:my-2 print:h-40 print:w-40 print:p-2"
         />
       )}
 
@@ -686,7 +684,7 @@ function SessionTicketPreview({ ticket, issuedAt }: { ticket: SessionTicket; iss
         <div className="mt-1.5 grid grid-cols-1 gap-1 text-center print:mt-2 print:grid-cols-3">
           <div>
             <p className="text-[9px] font-bold uppercase text-emerald-600">Slot</p>
-            <p className="font-mono text-base font-black text-emerald-950">{ticket.slotCode}</p>
+            <p className="font-mono text-xs font-bold text-emerald-950">{ticket.slotCode}</p>
           </div>
           <div className="hidden print:block">
             <p className="text-[9px] font-bold uppercase text-emerald-600">Floor</p>

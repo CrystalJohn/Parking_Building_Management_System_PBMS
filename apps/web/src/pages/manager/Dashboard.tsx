@@ -1,8 +1,33 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
+import {
+  Banknote,
+  CalendarClock,
+  Car,
+  CheckCircle2,
+  CircleDollarSign,
+  ClipboardList,
+  CreditCard,
+  Flag,
+  Gauge,
+  Layers3,
+  ParkingCircle,
+  ShieldCheck,
+  Timer,
+} from 'lucide-react'
 import api from '../../lib/api'
+import {
+  getAdminOperationsFlags,
+  getAdminPendingPayments,
+  getAdminSummary,
+  type AdminOperationFlag,
+  type AdminOperationsFlags,
+  type AdminPendingPaymentItem,
+  type AdminPendingPayments,
+  type AdminSummary,
+  type PaymentMonitoringRisk,
+} from '../../lib/admin-api'
 import { formatDateTimeVN } from '../../lib/date-time'
-
-// ─── Types ───────────────────────────────────────────────────────────────────
 
 type SlotStatus = 'available' | 'occupied' | 'reserved' | 'maintenance'
 type Zone = 'A' | 'B'
@@ -29,32 +54,17 @@ interface FloorGroup {
   zoneB: Slot[]
 }
 
-// ─── Constants ───────────────────────────────────────────────────────────────
-
-const POLL_INTERVAL_MS = 5000
-
-const STATUS_STYLES: Record<SlotStatus, { bg: string; border: string; text: string }> = {
-  available: {
-    bg: 'bg-emerald-500/[0.08] dark:bg-emerald-500/[0.12]',
-    border: 'border-emerald-500/25',
-    text: 'text-emerald-700 dark:text-emerald-400',
-  },
-  occupied: {
-    bg: 'bg-red-500/[0.08] dark:bg-red-500/[0.12]',
-    border: 'border-red-500/25',
-    text: 'text-red-600 dark:text-red-400',
-  },
-  reserved: {
-    bg: 'bg-amber-500/[0.08] dark:bg-amber-500/[0.12]',
-    border: 'border-amber-500/25',
-    text: 'text-amber-700 dark:text-amber-400',
-  },
-  maintenance: {
-    bg: 'bg-gray-500/[0.06] dark:bg-gray-500/[0.08]',
-    border: 'border-gray-400/20',
-    text: 'text-gray-500 dark:text-gray-400',
-  },
+interface TrafficRow {
+  entryCount: number
+  exitCount: number
 }
+
+interface TodayTraffic {
+  checkIns: number | null
+  checkOuts: number | null
+}
+
+const POLL_INTERVAL_MS = 10000
 
 const STATUS_LABELS: Record<SlotStatus, string> = {
   available: 'Available',
@@ -63,255 +73,744 @@ const STATUS_LABELS: Record<SlotStatus, string> = {
   maintenance: 'Maintenance',
 }
 
-const STATUS_DOT: Record<SlotStatus, string> = {
-  available: 'bg-emerald-500',
-  occupied: 'bg-red-500',
-  reserved: 'bg-amber-500',
-  maintenance: 'bg-gray-400',
+const STATUS_STYLES: Record<SlotStatus, string> = {
+  available:
+    'border-emerald-200 bg-emerald-50 text-emerald-800 ring-emerald-100 dark:border-emerald-400/30 dark:bg-emerald-500/10 dark:text-emerald-100 dark:ring-emerald-400/20',
+  occupied:
+    'border-rose-200 bg-rose-50 text-rose-800 ring-rose-100 dark:border-rose-400/30 dark:bg-rose-500/15 dark:text-rose-100 dark:ring-rose-400/20',
+  reserved:
+    'border-amber-200 bg-amber-50 text-amber-900 ring-amber-100 dark:border-amber-400/30 dark:bg-amber-500/15 dark:text-amber-100 dark:ring-amber-400/20',
+  maintenance:
+    'border-slate-300 bg-slate-100 text-slate-600 ring-slate-200 dark:border-slate-500/40 dark:bg-slate-800/80 dark:text-slate-300 dark:ring-slate-500/30',
 }
 
-// ─── Component ───────────────────────────────────────────────────────────────
+const STATUS_DOT: Record<SlotStatus, string> = {
+  available: 'bg-emerald-400',
+  occupied: 'bg-rose-400',
+  reserved: 'bg-amber-400',
+  maintenance: 'bg-slate-500',
+}
 
-/**
- * Manager Dashboard — Glassmorphism slot map with real-time polling.
- */
+export const todayIsoDate = () => new Date().toISOString().slice(0, 10)
+
 export default function Dashboard() {
   const [floors, setFloors] = useState<FloorGroup[]>([])
+  const [summary, setSummary] = useState<AdminSummary | null>(null)
+  const [pendingPayments, setPendingPayments] = useState<AdminPendingPayments | null>(null)
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [selectedFloorNumber, setSelectedFloorNumber] = useState<number | null>(null)
+  const [selectedZone, setSelectedZone] = useState<Zone>('A')
+  const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null)
 
-  const fetchSlots = useCallback(async () => {
+  const loadDashboard = useCallback(async () => {
     try {
-      const { data } = await api.get<Slot[]>('/slots')
-      const grouped = groupByFloor(data)
-      setFloors(grouped)
-      setLastUpdated(new Date())
+      const [slotData, summaryData, paymentData] = await Promise.all([
+        api.get<Slot[]>('/slots'),
+        getAdminSummary(),
+        getAdminPendingPayments(),
+      ])
+
+      setFloors(groupByFloor(slotData.data))
+      setSummary(summaryData)
+      setPendingPayments(paymentData)
+
       setError(null)
     } catch {
-      setError('Unable to load slot data')
+      setError('Unable to load manager operations telemetry')
     } finally {
       setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    fetchSlots()
-    const interval = setInterval(fetchSlots, POLL_INTERVAL_MS)
-    return () => clearInterval(interval)
-  }, [fetchSlots])
+    void loadDashboard()
+    const interval = window.setInterval(() => void loadDashboard(), POLL_INTERVAL_MS)
+    return () => window.clearInterval(interval)
+  }, [loadDashboard])
 
-  // Compute totals
-  const allSlots = floors.flatMap((f) => [...f.zoneA, ...f.zoneB])
-  const totalSlots = allSlots.length
-  const totalAvailable = allSlots.filter((s) => s.status === 'available').length
-  const totalOccupied = allSlots.filter((s) => s.status === 'occupied').length
-  const totalReserved = allSlots.filter((s) => s.status === 'reserved').length
-  const overallOccupancy = totalSlots > 0
-    ? Math.round(((totalOccupied + totalReserved) / totalSlots) * 100)
-    : 0
+  useEffect(() => {
+    if (floors.length === 0) {
+      setSelectedFloorNumber(null)
+      return
+    }
+
+    const hasSelectedFloor = floors.some((floor) => floor.floorNumber === selectedFloorNumber)
+    if (!hasSelectedFloor) setSelectedFloorNumber(floors[0].floorNumber)
+  }, [floors, selectedFloorNumber])
+
+  const slotTotals = useMemo(() => {
+    const slots = floors.flatMap((floor) => [...floor.zoneA, ...floor.zoneB])
+    const total = slots.length
+    const available = countByStatus(slots, 'available')
+    const occupied = countByStatus(slots, 'occupied')
+    const reserved = countByStatus(slots, 'reserved')
+    const maintenance = countByStatus(slots, 'maintenance')
+    const occupancyRate = total > 0 ? Math.round((occupied / total) * 100) : 0
+    return { total, available, occupied, reserved, maintenance, occupancyRate }
+  }, [floors])
+
+  const selectedFloor = useMemo(
+    () => floors.find((floor) => floor.floorNumber === selectedFloorNumber) ?? null,
+    [floors, selectedFloorNumber],
+  )
+
+  const currentSlots = useMemo(() => {
+    if (!selectedFloor) return []
+    return selectedZone === 'A' ? selectedFloor.zoneA : selectedFloor.zoneB
+  }, [selectedFloor, selectedZone])
+
+  useEffect(() => {
+    if (!selectedSlot) return
+    const updatedSlot = floors
+      .flatMap((floor) => [...floor.zoneA, ...floor.zoneB])
+      .find((slot) => slot.id === selectedSlot.id)
+    if (updatedSlot) setSelectedSlot(updatedSlot)
+  }, [floors, selectedSlot])
+
+
+
+  const kpis = buildKpis(summary, pendingPayments, slotTotals)
 
   return (
-    <div className="min-h-screen bg-white dark:bg-[#0a0a0a] transition-colors duration-300">
-      {/* Mesh gradient background */}
-      <div className="fixed inset-0 -z-10 opacity-30 dark:opacity-20 pointer-events-none"
-        style={{
-          background:
-            'radial-gradient(ellipse at 20% 20%, rgba(59,130,246,0.1) 0%, transparent 50%), ' +
-            'radial-gradient(ellipse at 80% 80%, rgba(168,85,247,0.08) 0%, transparent 50%)',
-          filter: 'blur(80px)',
-        }}
-      />
-
-      <div className="max-w-[1400px] mx-auto px-6 py-8 space-y-6">
-        {/* Header */}
-        <header className="flex items-center justify-between">
-          <div>
-            <h1 className="text-[28px] font-bold text-[#171717] dark:text-[#ededed] tracking-tight">
-              Dashboard
-            </h1>
-            <p className="text-[13px] text-[#888] mt-1">
-              Real-time slot map — auto-updates every 5 seconds
-            </p>
-          </div>
-          {lastUpdated && (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-white/50 dark:bg-white/[0.04] backdrop-blur-sm rounded-xl border border-white/30 dark:border-white/10">
-              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-              <span className="text-[11px] font-mono text-[#888]">
-                {formatDateTimeVN(lastUpdated)}
-              </span>
-            </div>
-          )}
-        </header>
-
-        {loading && (
-          <div className="flex items-center justify-center py-20">
-            <div className="w-8 h-8 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
-          </div>
-        )}
-        {error && (
-          <div className="p-4 rounded-2xl bg-red-50/80 dark:bg-red-500/10 border border-red-200/50 dark:border-red-500/20 text-[13px] text-red-600 dark:text-red-400">
+    <main className="min-h-screen bg-slate-100 px-4 py-5 text-slate-950 transition-colors duration-300 dark:bg-slate-950 dark:text-slate-100 lg:px-6">
+      <div className="mx-auto max-w-[1500px] space-y-5">
+        {error ? (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-700 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-100">
             {error}
           </div>
-        )}
+        ) : null}
 
-        {!loading && !error && (
+        {loading ? <DashboardSkeleton /> : null}
+
+        {!loading ? (
           <>
-            {/* Summary stats */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <StatCard label="Total slots" value={totalSlots} icon="📊" />
-              <StatCard label="Available" value={totalAvailable} color="text-emerald-600 dark:text-emerald-400" icon="🟢" />
-              <StatCard label="Occupied" value={totalOccupied} color="text-red-600 dark:text-red-400" icon="🔴" />
-              <StatCard
-                label="Occupancy rate"
-                value={`${overallOccupancy}%`}
-                color={overallOccupancy > 80 ? 'text-red-600 dark:text-red-400' : 'text-[#171717] dark:text-[#ededed]'}
-                icon="📈"
-              />
-            </div>
+            <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {kpis.map((kpi) => (
+                <KpiCard key={kpi.label} {...kpi} />
+              ))}
+            </section>
 
-            {/* Floor maps */}
-            {floors.map((floor) => (
-              <FloorMap key={floor.floorNumber} floor={floor} />
-            ))}
-
-            {/* Legend */}
-            <div className="flex flex-wrap gap-4 p-4 bg-white/50 dark:bg-white/[0.04] backdrop-blur-xl rounded-2xl border border-white/30 dark:border-white/[0.08]">
-              {(Object.keys(STATUS_STYLES) as SlotStatus[]).map(
-                (status) => (
-                  <div key={status} className="flex items-center gap-2">
-                    <span className={`w-2.5 h-2.5 rounded-full ${STATUS_DOT[status]}`} />
-                    <span className="text-[12px] text-[#666] dark:text-[#888]">{STATUS_LABELS[status]}</span>
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-200/60 transition-colors dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                  <div>
+                    <h2 className="text-lg font-black tracking-tight text-slate-950 dark:text-white">
+                      Slot occupancy map
+                    </h2>
+                    <p className="mt-1 text-sm font-medium text-slate-600 dark:text-slate-400">
+                      Floor and zone snapshot from the slot source of truth. Select a slot to inspect available session context.
+                    </p>
                   </div>
-                ),
-              )}
-            </div>
+                  <div className="flex flex-wrap gap-2">
+                    <SlotLegend status="available" count={slotTotals.available} />
+                    <SlotLegend status="occupied" count={slotTotals.occupied} />
+                    <SlotLegend status="reserved" count={slotTotals.reserved} />
+                    {slotTotals.maintenance > 0 ? <SlotLegend status="maintenance" count={slotTotals.maintenance} /> : null}
+                  </div>
+                </div>
+
+                {floors.length > 0 ? (
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    {floors.map((floor) => (
+                      <button
+                        key={floor.floorNumber}
+                        type="button"
+                        onClick={() => setSelectedFloorNumber(floor.floorNumber)}
+                        className={`min-h-11 rounded-xl px-4 text-sm font-black transition focus:outline-none focus:ring-2 focus:ring-cyan-300 ${floor.floorNumber === selectedFloorNumber
+                            ? 'bg-cyan-300 text-slate-950 dark:bg-cyan-400 dark:text-slate-950'
+                            : 'border border-slate-200 bg-slate-50 text-slate-700 hover:border-cyan-400 hover:text-slate-950 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-cyan-300/40 dark:hover:text-white'
+                          }`}
+                      >
+                        {floor.floorName}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {(['A', 'B'] as Zone[]).map((zone) => (
+                    <button
+                      key={zone}
+                      type="button"
+                      onClick={() => setSelectedZone(zone)}
+                      className={`min-h-11 rounded-xl px-4 text-sm font-black transition focus:outline-none focus:ring-2 focus:ring-cyan-300 ${selectedZone === zone
+                          ? 'bg-white text-slate-950'
+                          : 'border border-slate-200 bg-slate-50 text-slate-700 hover:text-slate-950 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300 dark:hover:text-white'
+                        }`}
+                    >
+                      Zone {zone}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 transition-colors dark:border-white/10 dark:bg-slate-950/70">
+                  {currentSlots.length === 0 ? (
+                    <EmptyPanel
+                      title="No slots configured for this zone."
+                      description="The backend did not return any slot records for the selected floor and zone."
+                    />
+                  ) : (
+                    <div className="grid grid-cols-3 gap-3 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-9 2xl:grid-cols-10">
+                      {currentSlots.map((slot) => (
+                        <SlotButton
+                          key={slot.id}
+                          slot={slot}
+                          selected={selectedSlot?.id === slot.id}
+                          onSelect={() => setSelectedSlot(slot)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </section>
+
+
           </>
-        )}
+        ) : null}
       </div>
-    </div>
+    </main>
   )
 }
 
-// ─── Sub-components ──────────────────────────────────────────────────────────
+function buildKpis(
+  summary: AdminSummary | null,
+  pendingPayments: AdminPendingPayments | null,
+  fallback: {
+    total: number
+    available: number
+    occupied: number
+    occupancyRate: number
+  },
+) {
+  return [
+    {
+      label: 'Total slots',
+      value: summary?.slots.total ?? fallback.total,
+      helper: `${summary?.slots.reserved ?? 0} reserved`,
+      icon: <ParkingCircle className="h-5 w-5" strokeWidth={1.8} />,
+    },
+    {
+      label: 'Available slots',
+      value: summary?.slots.available ?? fallback.available,
+      helper: 'Ready for allocation',
+      icon: <CheckCircle2 className="h-5 w-5" strokeWidth={1.8} />,
+    },
+    {
+      label: 'Occupied slots',
+      value: summary?.slots.occupied ?? fallback.occupied,
+      helper: 'Currently unavailable',
+      icon: <Car className="h-5 w-5" strokeWidth={1.8} />,
+    },
+    {
+      label: 'Occupancy rate',
+      value: `${summary?.slots.occupancyRate ?? fallback.occupancyRate}%`,
+      helper: 'Occupied over total',
+      icon: <Gauge className="h-5 w-5" strokeWidth={1.8} />,
+    },
+    {
+      label: 'Active sessions',
+      value: summary?.sessions.active ?? 'Unavailable',
+      helper: `${summary?.sessions.checkoutPending ?? 0} checkout pending`,
+      icon: <Timer className="h-5 w-5" strokeWidth={1.8} />,
+      unavailable: !summary,
+    },
+    {
+      label: 'Today revenue',
+      value: summary ? formatVnd(summary.payments.revenueToday) : 'Unavailable',
+      helper: `${formatVnd(summary?.payments.byMethod.bankQr ?? 0)} via Bank QR`,
+      icon: <CircleDollarSign className="h-5 w-5" strokeWidth={1.8} />,
+      unavailable: !summary,
+    },
+    {
+      label: 'Pending payments',
+      value: pendingPayments?.summary.total ?? summary?.payments.pending ?? 'Unavailable',
+      helper: `${pendingPayments?.summary.overdue ?? 0} overdue`,
+      icon: <CreditCard className="h-5 w-5" strokeWidth={1.8} />,
+      unavailable: !summary && !pendingPayments,
+    },
+    {
+      label: 'Active reservations',
+      value: summary?.reservations.active ?? 'Unavailable',
+      helper: `${summary?.reservations.expiredToday ?? 0} expired today`,
+      icon: <CalendarClock className="h-5 w-5" strokeWidth={1.8} />,
+      unavailable: !summary,
+    },
+  ]
+}
 
-function StatCard({
+function KpiCard({
   label,
   value,
-  color = 'text-[#171717] dark:text-[#ededed]',
+  helper,
   icon,
+  unavailable = false,
 }: {
   label: string
   value: number | string
-  color?: string
-  icon?: string
+  helper: string
+  icon: ReactNode
+  unavailable?: boolean
 }) {
   return (
-    <div className="bg-white/50 dark:bg-white/[0.04] backdrop-blur-2xl rounded-[1.5rem] p-5 border border-white/30 dark:border-white/[0.08] shadow-[0_4px_30px_rgba(0,0,0,0.04)] dark:shadow-[0_4px_30px_rgba(0,0,0,0.2)] ring-1 ring-black/[0.02] dark:ring-white/[0.02] hover:bg-white/70 dark:hover:bg-white/[0.08] transition-all">
-      <div className="flex items-center gap-2 mb-2">
-        {icon && <span className="text-[14px]">{icon}</span>}
-        <p className="text-[11px] font-mono text-[#888] uppercase tracking-wider">{label}</p>
+    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xl shadow-slate-200/60 dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-sm font-bold text-slate-600 dark:text-slate-400">{label}</p>
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200 dark:bg-cyan-300/10 dark:text-cyan-200 dark:ring-cyan-300/20">
+          {icon}
+        </div>
       </div>
-      <p className={`text-[32px] font-bold leading-none ${color}`}>{value}</p>
-    </div>
+      <p
+        className={`mt-4 text-2xl font-black tracking-tight ${unavailable ? 'text-slate-500' : 'text-slate-950 dark:text-white'
+          }`}
+      >
+        {value}
+      </p>
+      <p className="mt-2 text-xs font-semibold text-slate-500">{helper}</p>
+    </article>
   )
 }
 
-function FloorMap({ floor }: { floor: FloorGroup }) {
-  const allSlots = [...floor.zoneA, ...floor.zoneB]
-  const available = allSlots.filter((s) => s.status === 'available').length
-  const total = allSlots.length
-  const occupancy = total > 0 ? Math.round(((total - available) / total) * 100) : 0
+export function SlotButton({
+  slot,
+  selected,
+  onSelect,
+}: {
+  slot: Slot
+  selected: boolean
+  onSelect: () => void
+}) {
+  const isOccupied = slot.status === 'occupied';
 
-  // Progress bar color based on occupancy
-  const barColor = occupancy > 80
-    ? 'from-red-500 to-orange-500'
-    : occupancy > 50
-    ? 'from-amber-500 to-orange-500'
-    : 'from-blue-500 to-indigo-500'
+  if (selected) {
+    return (
+      <button
+        type="button"
+        onClick={onSelect}
+        className="flex aspect-[3/2] flex-col items-center justify-center rounded-xl bg-[#2563eb] text-white transition hover:-translate-y-0.5 shadow-lg shadow-blue-500/30 ring-2 ring-white/20"
+      >
+        <span className="text-[10px] md:text-xs font-medium">Selected</span>
+        <span className="font-bold text-sm">{slot.code}</span>
+      </button>
+    );
+  }
 
-  return (
-    <div className="bg-white/50 dark:bg-white/[0.04] backdrop-blur-2xl rounded-[1.5rem] p-6 border border-white/30 dark:border-white/[0.08] shadow-[0_4px_30px_rgba(0,0,0,0.04)] dark:shadow-[0_4px_30px_rgba(0,0,0,0.2)] ring-1 ring-black/[0.02] dark:ring-white/[0.02]">
-      {/* Floor header */}
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/20">
-            <span className="text-white text-sm font-bold">F{floor.floorNumber}</span>
-          </div>
-          <div>
-            <h2 className="text-[16px] font-semibold text-[#171717] dark:text-[#ededed]">
-              {floor.floorName}
-            </h2>
-            <p className="text-[11px] text-[#888]">Floor {floor.floorNumber}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="text-right">
-            <span className="text-emerald-600 dark:text-emerald-400 text-[14px] font-semibold">{available}</span>
-            <span className="text-[#888] text-[12px] ml-1">available</span>
-          </div>
-          <div className="w-24">
-            <div className="flex justify-between text-[10px] text-[#888] mb-1">
-              <span>{occupancy}%</span>
-            </div>
-            <div className="h-1.5 bg-black/5 dark:bg-white/10 rounded-full overflow-hidden">
-              <div className={`h-full rounded-full bg-gradient-to-r ${barColor}`} style={{ width: `${occupancy}%` }} />
-            </div>
-          </div>
-        </div>
-      </div>
+  if (isOccupied) {
+    const imgSrc = slot.vehicleType === 'motorbike' ? '/motor.jpg' : '/car.jpg';
+    return (
+      <button
+        type="button"
+        onClick={onSelect}
+        className="flex aspect-[3/2] items-center justify-center rounded-xl bg-[#262626] transition hover:-translate-y-0.5 overflow-hidden ring-1 ring-white/5"
+      >
+        <img src={imgSrc} alt="Occupied vehicle" className="w-full h-full object-cover" />
+      </button>
+    );
+  }
 
-      {/* Zone A — Cars */}
-      <div className="mb-5">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-[11px] font-mono text-[#888] uppercase tracking-wider">
-            Zone A — Car
-          </p>
-          <span className="text-[11px] font-mono text-blue-600 dark:text-blue-400">
-            {floor.zoneA.filter((s) => s.status === 'available').length}/{floor.zoneA.length} available
-          </span>
-        </div>
-        <div className="grid grid-cols-5 md:grid-cols-10 gap-2">
-          {floor.zoneA.map((slot) => (
-            <SlotCell key={slot.id} slot={slot} />
-          ))}
-        </div>
-      </div>
-
-      {/* Zone B — Motorbikes */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-[11px] font-mono text-[#888] uppercase tracking-wider">
-            Zone B — Motorbike
-          </p>
-          <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400">
-            {floor.zoneB.filter((s) => s.status === 'available').length}/{floor.zoneB.length} available
-          </span>
-        </div>
-        <div className="grid grid-cols-5 md:grid-cols-10 gap-2">
-          {floor.zoneB.map((slot) => (
-            <SlotCell key={slot.id} slot={slot} />
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function SlotCell({ slot }: { slot: Slot }) {
-  const style = STATUS_STYLES[slot.status]
+  // Available, Maintenance, Reserved
+  const styleClass = slot.status === 'available'
+    ? "bg-white text-slate-950 dark:bg-white dark:text-slate-950 ring-1 ring-black/5"
+    : STATUS_STYLES[slot.status];
 
   return (
-    <div
-      className={`h-10 flex items-center justify-center rounded-xl border backdrop-blur-sm text-[11px] font-mono font-medium transition-all hover:scale-105 cursor-default ${style.bg} ${style.border} ${style.text}`}
-      title={`${slot.code} — ${STATUS_LABELS[slot.status]}`}
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`flex aspect-[3/2] flex-col items-center justify-center rounded-xl transition hover:-translate-y-0.5 shadow-sm ${styleClass}`}
     >
-      {slot.slotNumber}
+      <span className="text-[10px] md:text-xs font-medium capitalize opacity-70">{STATUS_LABELS[slot.status]}</span>
+      <span className="font-bold text-sm">{slot.code}</span>
+    </button>
+  );
+}
+
+export function OperationalFlagsCard({
+  flags,
+  latestFlag,
+  recentFlags,
+}: {
+  flags: AdminOperationsFlags | null
+  latestFlag: AdminOperationFlag | null
+  recentFlags: AdminOperationFlag[]
+}) {
+  return (
+    <InfoCard
+      title="Operational Flags"
+      icon={<Flag className="h-4 w-4" strokeWidth={1.8} />}
+      action={<LinkButton to="/manager/reports" label="View Reports & Flags" />}
+    >
+      <div className="grid grid-cols-3 gap-2">
+        <MiniMetric label="Critical" value={flags?.summary.critical ?? 0} tone="critical" />
+        <MiniMetric label="Warning" value={flags?.summary.warning ?? 0} tone="warning" />
+        <MiniMetric label="Info" value={flags?.summary.info ?? 0} tone="normal" />
+      </div>
+
+      {latestFlag ? (
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-slate-950/70 p-3">
+          <div className="flex items-start justify-between gap-3">
+            <StatusBadge tone={flagTone(latestFlag.severity)} label={latestFlag.severity} />
+            <span className="text-xs font-semibold text-slate-500">
+              {formatAge(latestFlag.ageMinutes)}
+            </span>
+          </div>
+          <p className="mt-3 text-sm font-bold leading-5 text-slate-950 dark:text-white">{latestFlag.message}</p>
+          <p className="mt-2 text-xs font-semibold text-slate-500">
+            {latestFlag.sessionCode ?? latestFlag.plateNumber ?? 'No linked session'}
+          </p>
+        </div>
+      ) : (
+        <EmptyInline title="No operational flags detected." />
+      )}
+
+      {recentFlags.length > 1 ? (
+        <ul className="mt-3 space-y-2">
+          {recentFlags.slice(1).map((flag) => (
+            <li key={`${flag.type}-${flag.createdAt}-${flag.sessionCode ?? ''}`} className="flex items-start gap-2 text-xs">
+              <span className={`mt-1 h-2 w-2 rounded-full ${flagDot(flag.severity)}`} />
+              <span className="font-medium leading-5 text-slate-600 dark:text-slate-400">{flag.message}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </InfoCard>
+  )
+}
+
+export function PaymentMonitoringCard({
+  pendingPayments,
+  recentPaymentIssues,
+}: {
+  pendingPayments: AdminPendingPayments | null
+  recentPaymentIssues: AdminPendingPaymentItem[]
+}) {
+  return (
+    <InfoCard
+      title="Payment Monitoring"
+      icon={<CreditCard className="h-4 w-4" strokeWidth={1.8} />}
+      action={<LinkButton to="/manager/reports" label="View Payment Monitoring" />}
+    >
+      <div className="grid grid-cols-3 gap-2">
+        <MiniMetric label="Pending" value={pendingPayments?.summary.total ?? 0} tone="normal" />
+        <MiniMetric label="Overdue" value={pendingPayments?.summary.overdue ?? 0} tone="warning" />
+        <MiniMetric label="Critical" value={pendingPayments?.summary.critical ?? 0} tone="critical" />
+      </div>
+
+      {recentPaymentIssues.length === 0 ? (
+        <EmptyInline title="No pending payment issues detected." />
+      ) : (
+        <ul className="mt-4 space-y-3">
+          {recentPaymentIssues.map((item) => (
+            <li key={item.paymentId} className="rounded-xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-slate-950/70 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-mono text-xs font-black text-slate-950 dark:text-white">
+                    {item.sessionCode ?? 'Not linked'}
+                  </p>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                    {item.plateNumber ?? 'Unknown plate'} - {item.locationLabel}
+                  </p>
+                </div>
+                <StatusBadge tone={riskTone(item.risk)} label={item.risk} />
+              </div>
+              <div className="mt-3 flex items-center justify-between gap-3 text-xs">
+                <span className="font-black text-slate-800 dark:text-slate-200">{formatVnd(item.amount)}</span>
+                <span className="font-semibold text-slate-500">
+                  Staff: {item.responsibleStaff.name ?? 'Unassigned'}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </InfoCard>
+  )
+}
+
+export function ReservationOverviewCard({ summary }: { summary: AdminSummary | null }) {
+  return (
+    <InfoCard title="Reservation Overview" icon={<CalendarClock className="h-4 w-4" strokeWidth={1.8} />}>
+      <div className="grid grid-cols-2 gap-2">
+        <MiniMetric label="Active" value={summary?.reservations.active ?? 0} tone="normal" />
+        <MiniMetric label="Fulfilled" value={summary?.reservations.fulfilledToday ?? 0} tone="normal" />
+        <MiniMetric label="Cancelled" value={summary?.reservations.cancelledToday ?? 0} tone="muted" />
+        <MiniMetric label="Expired" value={summary?.reservations.expiredToday ?? 0} tone="warning" />
+      </div>
+      <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 dark:border-white/10 dark:bg-slate-950/50 p-3 text-xs font-semibold leading-5 text-slate-500">
+        Active reservation counts are available from backend summary. A reservation detail list is unavailable on this manager endpoint.
+      </div>
+    </InfoCard>
+  )
+}
+
+export function CurrentParkedCard({
+  slot,
+  paymentIssue,
+}: {
+  slot: Slot | null
+  paymentIssue: AdminPendingPaymentItem | null
+}) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-200/60 dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-black text-slate-950 dark:text-white">Current Parked</h2>
+          <p className="mt-1 text-sm font-medium text-slate-600 dark:text-slate-400">
+            Read-only slot inspection.
+          </p>
+        </div>
+        <Layers3 className="h-5 w-5 text-cyan-700 dark:text-cyan-200" strokeWidth={1.8} />
+      </div>
+
+      {!slot ? (
+        <EmptyPanel
+          title="Select a slot to inspect vehicle/session details."
+          description="No checkout, payment confirmation, or exit actions are available in the manager view."
+        />
+      ) : (
+        <div className="mt-5 space-y-3">
+          <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-slate-950/60 p-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Slot code</p>
+              <p className="mt-1 font-mono text-lg font-black text-slate-950 dark:text-white">{slot.code}</p>
+            </div>
+            <StatusBadge tone={slotTone(slot.status)} label={STATUS_LABELS[slot.status]} />
+          </div>
+
+          <DetailGrid
+            rows={[
+              ['Plate number', paymentIssue?.plateNumber ?? 'Unavailable'],
+              ['Vehicle type', titleCase(slot.vehicleType)],
+              ['Session code', paymentIssue?.sessionCode ?? 'Unavailable'],
+              ['Check-in time', paymentIssue ? formatDateTimeVN(paymentIssue.createdAt) : 'Unavailable'],
+              ['Billed duration', paymentIssue?.waitingLabel ?? 'Unavailable'],
+              ['Session status', paymentIssue?.sessionStatus ?? slot.status],
+              ['Staff check-in / owner', paymentIssue?.responsibleStaff.name ?? 'Unavailable'],
+            ]}
+          />
+
+          {!paymentIssue ? (
+            <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 dark:border-white/10 dark:bg-slate-950/50 p-3 text-xs font-semibold leading-5 text-slate-500">
+              Vehicle and session fields require an active session detail endpoint for managers. This view does not fabricate plate numbers or timers.
+            </p>
+          ) : null}
+        </div>
+      )}
+    </section>
+  )
+}
+
+export function DailyOperationsCard({
+  summary,
+  traffic,
+  selectedDate,
+}: {
+  summary: AdminSummary | null
+  traffic: TodayTraffic
+  selectedDate: string
+}) {
+  const isToday = selectedDate === todayIsoDate();
+  const cardTitle = isToday ? `Operations for Today · ${selectedDate}` : `Operations for ${selectedDate}`;
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-200/60 dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-black text-slate-950 dark:text-white">{cardTitle}</h2>
+          <p className="mt-1 text-sm font-medium text-slate-600 dark:text-slate-400">Movement and session status.</p>
+        </div>
+        <ClipboardList className="h-5 w-5 text-cyan-700 dark:text-cyan-200" strokeWidth={1.8} />
+      </div>
+      <div className="mt-5 grid grid-cols-2 gap-2">
+        <MiniMetric label="Daily Check-ins" value={traffic.checkIns ?? 'Unavailable'} tone="normal" />
+        <MiniMetric label="Daily Checkouts" value={traffic.checkOuts ?? 'Unavailable'} tone="normal" />
+        <MiniMetric label="Daily Completed" value={summary?.sessions.completedToday ?? 0} tone="normal" />
+        <MiniMetric label="Current Active" value={summary?.sessions.active ?? 0} tone="normal" />
+        <MiniMetric label="Current Pending" value={summary?.sessions.checkoutPending ?? 0} tone="warning" />
+        <MiniMetric label="Current Auth'd" value={summary?.sessions.exitAuthorized ?? 0} tone="normal" />
+      </div>
+    </section>
+  )
+}
+
+export function RevenueSummaryCard({ summary }: { summary: AdminSummary | null }) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-200/60 dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-black text-slate-950 dark:text-white">Revenue Summary</h2>
+          <p className="mt-1 text-sm font-medium text-slate-600 dark:text-slate-400">Payments collected today.</p>
+        </div>
+        <Banknote className="h-5 w-5 text-cyan-700 dark:text-cyan-200" strokeWidth={1.8} />
+      </div>
+      <div className="mt-5 space-y-3">
+        <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 p-4">
+          <p className="text-xs font-bold uppercase tracking-wider text-cyan-700 dark:text-cyan-200">Today revenue</p>
+          <p className="mt-2 text-2xl font-black text-slate-950 dark:text-white">
+            {summary ? formatVnd(summary.payments.revenueToday) : 'Unavailable'}
+          </p>
+        </div>
+        <DetailGrid
+          rows={[
+            ['Paid today', String(summary?.payments.paidToday ?? 0)],
+            ['Cash', formatVnd(summary?.payments.byMethod.cash ?? 0)],
+            ['Bank QR', formatVnd(summary?.payments.byMethod.bankQr ?? 0)],
+            ['Failed today', String(summary?.payments.failedToday ?? 0)],
+            ['Expired today', String(summary?.payments.expiredToday ?? 0)],
+          ]}
+        />
+      </div>
+    </section>
+  )
+}
+
+export function InfoCard({
+  title,
+  icon,
+  action,
+  children,
+}: {
+  title: string
+  icon: ReactNode
+  action?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-200/60 dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200 dark:bg-cyan-300/10 dark:text-cyan-200 dark:ring-cyan-300/20">
+            {icon}
+          </span>
+          <h2 className="text-base font-black text-slate-950 dark:text-white">{title}</h2>
+        </div>
+        {action}
+      </div>
+      <div className="mt-4">{children}</div>
+    </section>
+  )
+}
+
+export function DetailGrid({ rows }: { rows: Array<[string, string]> }) {
+  return (
+    <dl className="grid gap-2">
+      {rows.map(([label, value]) => (
+        <div
+          key={label}
+          className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-slate-950/50 px-3 py-2"
+        >
+          <dt className="text-xs font-semibold text-slate-500">{label}</dt>
+          <dd className="text-right text-xs font-black text-slate-800 dark:text-slate-200">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+export function MiniMetric({
+  label,
+  value,
+  tone,
+}: {
+  label: string
+  value: number | string
+  tone: 'normal' | 'warning' | 'critical' | 'muted'
+}) {
+  const toneClass = {
+    normal: 'text-cyan-700 dark:text-cyan-100',
+    warning: 'text-amber-700 dark:text-amber-100',
+    critical: 'text-rose-700 dark:text-rose-100',
+    muted: 'text-slate-700 dark:text-slate-300',
+  }[tone]
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-slate-950/60 p-3">
+      <p className="text-[11px] font-bold text-slate-500">{label}</p>
+      <p className={`mt-2 text-xl font-black ${toneClass}`}>{value}</p>
     </div>
   )
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+export function StatusBadge({
+  label,
+  tone,
+}: {
+  label: string
+  tone: 'normal' | 'warning' | 'critical' | 'muted'
+}) {
+  const toneClass = {
+    normal: 'bg-emerald-400/10 text-emerald-100 ring-emerald-400/20',
+    warning: 'bg-amber-400/10 text-amber-700 dark:text-amber-100 ring-amber-400/20',
+    critical: 'bg-rose-400/10 text-rose-700 dark:text-rose-100 ring-rose-400/20',
+    muted: 'bg-slate-100 text-slate-800 ring-slate-200 dark:bg-slate-700/60 dark:text-slate-200 dark:ring-white/10',
+  }[tone]
+
+  return (
+    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-black capitalize ring-1 ${toneClass}`}>
+      {label}
+    </span>
+  )
+}
+
+export function SlotLegend({ status, count }: { status: SlotStatus; count: number }) {
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:ring-white/10">
+      <span className={`h-2 w-2 rounded-full ${STATUS_DOT[status]}`} />
+      {count} {STATUS_LABELS[status].toLowerCase()}
+    </span>
+  )
+}
+
+export function LinkButton({ to, label }: { to: string; label: string }) {
+  return (
+    <Link
+      to={to}
+      className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-700 transition hover:border-cyan-400 hover:text-slate-950 focus:outline-none focus:ring-2 focus:ring-cyan-300 dark:border-white/10 dark:text-slate-300 dark:hover:border-cyan-300/40 dark:hover:text-white"
+    >
+      {label}
+    </Link>
+  )
+}
+
+export function EmptyPanel({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 dark:border-white/10 dark:bg-slate-950/50 p-6 text-center">
+      <ShieldCheck className="mx-auto h-6 w-6 text-slate-500" strokeWidth={1.8} />
+      <p className="mt-3 text-sm font-black text-slate-800 dark:text-slate-200">{title}</p>
+      <p className="mx-auto mt-2 max-w-lg text-xs font-medium leading-5 text-slate-500">
+        {description}
+      </p>
+    </div>
+  )
+}
+
+export function EmptyInline({ title }: { title: string }) {
+  return (
+    <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 dark:border-white/10 dark:bg-slate-950/50 p-3 text-sm font-bold text-slate-600 dark:text-slate-400">
+      {title}
+    </div>
+  )
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-5 animate-pulse">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 8 }).map((_, index) => (
+          <div key={index} className="h-32 rounded-2xl bg-white/[0.06]" />
+        ))}
+      </div>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_410px]">
+        <div className="h-[520px] rounded-2xl bg-white/[0.06]" />
+        <div className="h-[520px] rounded-2xl bg-white/[0.06]" />
+      </div>
+    </div>
+  )
+}
+
+function countByStatus(slots: Slot[], status: SlotStatus) {
+  return slots.filter((slot) => slot.status === status).length
+}
 
 function groupByFloor(slots: Slot[]): FloorGroup[] {
   const map = new Map<number, FloorGroup>()
@@ -320,17 +819,15 @@ function groupByFloor(slots: Slot[]): FloorGroup[] {
     if (!map.has(slot.floor.floorNumber)) {
       map.set(slot.floor.floorNumber, {
         floorNumber: slot.floor.floorNumber,
-        floorName: slot.floor.name,
+        floorName: slot.floor.name || `T${slot.floor.floorNumber}`,
         zoneA: [],
         zoneB: [],
       })
     }
+
     const group = map.get(slot.floor.floorNumber)!
-    if (slot.zone === 'A') {
-      group.zoneA.push(slot)
-    } else {
-      group.zoneB.push(slot)
-    }
+    if (slot.zone === 'A') group.zoneA.push(slot)
+    else group.zoneB.push(slot)
   }
 
   for (const group of map.values()) {
@@ -340,3 +837,59 @@ function groupByFloor(slots: Slot[]): FloorGroup[] {
 
   return Array.from(map.values()).sort((a, b) => a.floorNumber - b.floorNumber)
 }
+
+export async function getTodayTraffic(date?: string): Promise<TodayTraffic> {
+  try {
+    const targetDate = date || todayIsoDate();
+    const { data } = await api.get<TrafficRow[]>('/reports/traffic', {
+      params: { period: 'daily', date: targetDate },
+    })
+
+    return {
+      checkIns: data.reduce((total, row) => total + Number(row.entryCount || 0), 0),
+      checkOuts: data.reduce((total, row) => total + Number(row.exitCount || 0), 0),
+    }
+  } catch {
+    return { checkIns: null, checkOuts: null }
+  }
+}
+
+export function formatVnd(value: number) {
+  return `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(value)} VND`
+}
+
+export function formatAge(ageMinutes: number) {
+  if (ageMinutes >= 1440) return `${Math.floor(ageMinutes / 1440)}d`
+  if (ageMinutes >= 60) return `${Math.floor(ageMinutes / 60)}h ${ageMinutes % 60}m`
+  return `${ageMinutes}m`
+}
+
+export function titleCase(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+export function slotTone(status: SlotStatus): 'normal' | 'warning' | 'critical' | 'muted' {
+  if (status === 'available') return 'normal'
+  if (status === 'reserved') return 'warning'
+  if (status === 'occupied') return 'critical'
+  return 'muted'
+}
+
+export function riskTone(risk: PaymentMonitoringRisk): 'normal' | 'warning' | 'critical' {
+  if (risk === 'critical') return 'critical'
+  if (risk === 'warning') return 'warning'
+  return 'normal'
+}
+
+export function flagTone(severity: AdminOperationFlag['severity']): 'normal' | 'warning' | 'critical' {
+  if (severity === 'critical') return 'critical'
+  if (severity === 'warning') return 'warning'
+  return 'normal'
+}
+
+export function flagDot(severity: AdminOperationFlag['severity']) {
+  if (severity === 'critical') return 'bg-rose-400'
+  if (severity === 'warning') return 'bg-amber-400'
+  return 'bg-cyan-300'
+}
+

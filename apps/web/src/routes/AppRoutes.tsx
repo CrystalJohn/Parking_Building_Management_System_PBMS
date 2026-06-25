@@ -14,7 +14,11 @@ import Gate from '../pages/staff/Gate'
 import LostTicket from '../pages/staff/LostTicket'
 
 // Manager
+import ManagerLayout from '../layouts/ManagerLayout'
 import Dashboard from '../pages/manager/Dashboard'
+import Operations from '../pages/manager/Operations'
+import Payments from '../pages/manager/Payments'
+import ManagerReservations from '../pages/manager/Reservations'
 import Reports from '../pages/manager/Reports'
 import Config from '../pages/manager/Config'
 
@@ -73,24 +77,60 @@ export default function AppRoutes() {
       <Route
         path="/manager/dashboard"
         element={
-          <RequireAuth allowedRoles={['manager']}>
-            <Dashboard />
+          <RequireAuth allowedRoles={['manager']} hideAppHeader>
+            <ManagerLayout>
+              <Dashboard />
+            </ManagerLayout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/manager/operations"
+        element={
+          <RequireAuth allowedRoles={['manager']} hideAppHeader>
+            <ManagerLayout>
+              <Operations />
+            </ManagerLayout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/manager/payments"
+        element={
+          <RequireAuth allowedRoles={['manager']} hideAppHeader>
+            <ManagerLayout>
+              <Payments />
+            </ManagerLayout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/manager/reservations"
+        element={
+          <RequireAuth allowedRoles={['manager']} hideAppHeader>
+            <ManagerLayout>
+              <ManagerReservations />
+            </ManagerLayout>
           </RequireAuth>
         }
       />
       <Route
         path="/manager/reports"
         element={
-          <RequireAuth allowedRoles={['manager']}>
-            <Reports />
+          <RequireAuth allowedRoles={['manager']} hideAppHeader>
+            <ManagerLayout>
+              <Reports />
+            </ManagerLayout>
           </RequireAuth>
         }
       />
       <Route
         path="/manager/config"
         element={
-          <RequireAuth allowedRoles={['manager']}>
-            <Config />
+          <RequireAuth allowedRoles={['manager']} hideAppHeader>
+            <ManagerLayout>
+              <Config />
+            </ManagerLayout>
           </RequireAuth>
         }
       />

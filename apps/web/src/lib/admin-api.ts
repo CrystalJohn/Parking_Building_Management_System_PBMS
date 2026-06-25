@@ -1,6 +1,14 @@
 import api from './api'
 
 export interface AdminSummary {
+  meta: {
+    date: string
+    timezone: string
+    range: {
+      start: string
+      end: string
+    }
+  }
   users: {
     total: number
     active: number
@@ -134,8 +142,8 @@ export interface AdminPendingPayments {
   items: AdminPendingPaymentItem[]
 }
 
-export async function getAdminSummary() {
-  const { data } = await api.get<AdminSummary>('/admin/summary')
+export async function getAdminSummary(date?: string) {
+  const { data } = await api.get<AdminSummary>('/admin/summary', { params: { date } })
   return data
 }
 

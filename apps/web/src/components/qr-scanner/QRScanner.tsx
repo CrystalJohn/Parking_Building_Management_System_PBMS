@@ -52,7 +52,6 @@ export function QRScanner({
   const [error, setError] = useState<string | null>(null)
   const [starting, setStarting] = useState(true)
   const [manualInput, setManualInput] = useState('')
-  const [showManual, setShowManual] = useState(false)
 
   useEffect(() => {
     const readerId = 'qr-reader-container'
@@ -81,25 +80,21 @@ export function QRScanner({
         await scanner.start(
           { facingMode: 'environment' },
           {
-            // Increase decode attempts per second for faster recognition.
-            fps: 20,
-            // Smaller scan box = less noise = faster decode.
+            // Keep decode attempts steady without overloading low-end devices.
+            fps: 15,
+            // Use a generous scan box for ticket screens, glare, and angled scans.
             qrbox: (vw, vh) => {
               const min = Math.min(vw, vh)
-              const size = Math.floor(min * 0.6)
+              const size = Math.floor(Math.min(Math.max(min * 0.78, 240), 420))
               return { width: size, height: size }
             },
-            // Keep 1:1 so the container and video stream match — avoids the
-            // "double frame" artifact that appears when native ratio (16:9 or
-            // 9:16) doesn't match the square CSS container.
-            aspectRatio: 1,
-            // Rear camera doesn't need flip processing.
-            disableFlip: true,
-            // Request a square-ish HD stream so the browser picks a
-            // resolution close to 720×720 instead of falling back to VGA.
+            aspectRatio: 16 / 9,
+            // Allow mirrored decoding as a fallback if the browser picks a mirrored stream.
+            disableFlip: false,
+            // Prefer HD video so small QR codes remain readable.
             videoConstraints: {
               facingMode: 'environment',
-              width: { ideal: 720 },
+              width: { ideal: 1280 },
               height: { ideal: 720 },
             },
           },
@@ -156,17 +151,20 @@ export function QRScanner({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-indigo-950/35 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-label={title}
     >
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 overflow-hidden">
+      <div className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-          <h3 className="text-lg font-semibold">{title}</h3>
+          <div>
+            <h3 className="text-lg font-black text-slate-950">{title}</h3>
+            <p className="text-xs font-semibold text-slate-500">Keep the QR flat, bright, and inside the guide frame.</p>
+          </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+            className="grid h-10 w-10 place-items-center rounded-xl text-2xl leading-none text-gray-400 hover:bg-gray-100 hover:text-gray-700"
             aria-label="Close"
           >
             &times;
@@ -191,58 +189,39 @@ export function QRScanner({
               <div
                 id="qr-reader-container"
                 ref={containerRef}
-                className="w-full aspect-square rounded-md overflow-hidden bg-black"
+                className="relative aspect-video w-full overflow-hidden rounded-xl bg-primary-50 ring-1 ring-primary-100 [&_video]:!h-full [&_video]:!w-full [&_video]:!object-cover"
               />
-              <p className="text-xs text-gray-500 text-center mt-3">
+              <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-center text-xs font-semibold text-slate-500">
                 {instructions}
               </p>
               {onManualInput && (
-                <div className="mt-3 border-t border-gray-200 pt-3">
-                  {!showManual ? (
+                <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                      {manualInputLabel}
+                    </label>
+                    <span className="text-xs font-semibold text-primary-600">{manualToggleLabel}</span>
+                  </div>
+                  <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                    <input
+                      type="text"
+                      className="input h-11 font-mono text-sm font-black uppercase tracking-[0.08em]"
+                      placeholder={manualInputPlaceholder}
+                      value={manualInput}
+                      onChange={(e) => setManualInput(e.target.value)}
+                    />
                     <button
                       type="button"
-                      onClick={() => setShowManual(true)}
-                      className="text-sm text-primary-600 hover:underline w-full text-center"
+                      onClick={() => {
+                        const trimmed = manualInput.trim()
+                        if (trimmed) onManualInput(trimmed)
+                      }}
+                      className="btn-primary h-11 rounded-xl px-5 text-sm"
+                      disabled={!manualInput.trim()}
                     >
-                      {manualToggleLabel}
+                      Confirm
                     </button>
-                  ) : (
-                    <div className="space-y-2">
-                      <label className="block text-xs text-gray-600">
-                        {manualInputLabel}
-                      </label>
-                      <input
-                        type="text"
-                        className="input text-xs font-mono"
-                        placeholder={manualInputPlaceholder}
-                        value={manualInput}
-                        onChange={(e) => setManualInput(e.target.value)}
-                      />
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const trimmed = manualInput.trim()
-                            if (trimmed) onManualInput(trimmed)
-                          }}
-                          className="btn-primary text-sm flex-1"
-                          disabled={!manualInput.trim()}
-                        >
-                          Confirm
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowManual(false)
-                            setManualInput('')
-                          }}
-                          className="btn-secondary text-sm"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                  </div>
                 </div>
               )}
             </>

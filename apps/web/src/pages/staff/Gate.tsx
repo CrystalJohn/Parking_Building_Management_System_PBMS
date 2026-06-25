@@ -121,7 +121,7 @@ export default function Gate() {
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-2.5 sm:px-6 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-primary-600 to-slate-950 text-xs font-black text-white shadow-md">
+              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-primary-600 to-indigo-400 text-xs font-black text-white shadow-md shadow-primary-600/20">
                 {userInitial}
               </div>
               <div className="min-w-0">
@@ -170,8 +170,8 @@ export default function Gate() {
                     onClick={() => setTab(item.id)}
                     className={`group rounded-lg px-3 py-1.5 flex items-center justify-center gap-2 transition-all focus:outline-none ${
                       isActive
-                        ? 'bg-slate-950 text-white shadow-sm'
-                        : 'bg-white text-slate-700 hover:bg-slate-50'
+                        ? 'bg-primary-600 text-white shadow-sm shadow-primary-600/20'
+                        : 'bg-white text-slate-700 hover:bg-primary-50 hover:text-primary-700'
                     }`}
                   >
                     <span className="text-xs font-bold">{item.title}</span>
@@ -188,7 +188,7 @@ export default function Gate() {
             <button
               type="button"
               onClick={handleLogout}
-              className="rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-bold text-slate-600 shadow-sm transition-all hover:bg-slate-950 hover:text-white focus:outline-none"
+              className="rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-bold text-slate-600 shadow-sm transition-all hover:border-primary-200 hover:bg-primary-50 hover:text-primary-700 focus:outline-none"
             >
               Sign out
             </button>
@@ -817,7 +817,6 @@ export function LegacyCheckOutPanel({ toasts }: PanelProps) {
 
 function CheckOutPanel({ toasts }: PanelProps) {
   const [sessionCode, setSessionCode] = useState('')
-  const [licensePlate, setLicensePlate] = useState('')
   const [workflow, setWorkflow] = useState<CheckoutWorkflowResponse | null>(null)
   const [receipt, setReceipt] = useState<ConfirmPaymentResponse | null>(null)
   const [exitResult, setExitResult] = useState<ConfirmExitResponse | null>(null)
@@ -894,7 +893,6 @@ function CheckOutPanel({ toasts }: PanelProps) {
 
   const reset = () => {
     setSessionCode('')
-    setLicensePlate('')
     setWorkflow(null)
     setReceipt(null)
     setExitResult(null)
@@ -940,11 +938,6 @@ function CheckOutPanel({ toasts }: PanelProps) {
   const handleLookupBySession = (event: React.FormEvent) => {
     event.preventDefault()
     lookupSession({ sessionCode })
-  }
-
-  const handleLookupByPlate = (event: React.FormEvent) => {
-    event.preventDefault()
-    lookupSession({ licensePlate })
   }
 
   const handleQRScanned = useCallback((decodedText: string) => {
@@ -1127,141 +1120,144 @@ function CheckOutPanel({ toasts }: PanelProps) {
   }
 
   const handlePrint = () => window.print()
+  const guide = checkoutGuide(status)
+  const amountDue = workflow ? VND(workflow.payment?.amount ?? workflow.fee.total) : ''
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-col gap-2 border-b border-slate-200 pb-4 lg:flex-row lg:items-end lg:justify-between">
+      <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">
-            Cash Checkout Flow
+          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-500">
+            Exit gate workflow
           </p>
-          <h2 className="text-2xl font-black tracking-tight text-slate-950">
-            Staff Check-out
-          </h2>
-          <p className="mt-1 max-w-3xl text-sm text-slate-500">
-            Customer presents Session Ticket/QR at exit. Enter Session Code or scan QR to begin checkout.
+          <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-950">Staff Check-out</h2>
+          <p className="mt-1 max-w-2xl text-sm text-slate-500">
+            Load the session ticket, collect payment, then release the slot only after the vehicle exits.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={reset}
-          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-600 transition hover:bg-slate-950 hover:text-white"
-        >
-          Next Vehicle
-        </button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <span className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-600">
+            {workflow ? readableStatus(workflow.session.status) : 'Ready'}
+          </span>
+          <button
+            type="button"
+            onClick={reset}
+            className="rounded-2xl border border-primary-200 bg-white px-4 py-2 text-sm font-black text-primary-700 transition hover:bg-primary-50"
+          >
+            Next Vehicle
+          </button>
+        </div>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_420px]">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_400px]">
         <div className="space-y-5">
-          <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
-              <form onSubmit={handleLookupBySession} className="space-y-2">
-                <label className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
-                  Session Code / QR
-                </label>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <input
-                    className="input font-mono text-base font-black uppercase tracking-[0.08em]"
-                    placeholder="PBMS-D1878BC500"
-                    value={sessionCode}
-                    onChange={(event) => setSessionCode(event.target.value)}
-                    autoFocus
-                  />
-                  <button
-                    type="submit"
-                    className="btn-primary whitespace-nowrap"
-                    disabled={action === 'lookup'}
-                  >
-                    {action === 'lookup' ? 'Loading...' : 'Lookup Session'}
-                  </button>
+          <section>
+            <form onSubmit={handleLookupBySession} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">
+                    Session ticket
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-500">
+                    Scan QR or enter the printed session code.
+                  </p>
                 </div>
-              </form>
-
-              <button
-                type="button"
-                onClick={() => setShowScanner(true)}
-                className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:border-slate-950 hover:text-slate-950 disabled:opacity-60"
-                disabled={action === 'lookup'}
-              >
-                Scan QR
-              </button>
-            </div>
-
-            <form onSubmit={handleLookupByPlate} className="mt-4 border-t border-slate-200 pt-4">
-              <label className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
-                Search by plate if customer lost ticket
-              </label>
-              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={() => setShowScanner(true)}
+                  className="h-11 rounded-xl border border-primary-500 bg-primary-600 px-4 text-sm font-black text-white shadow-sm shadow-primary-600/20 transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                  disabled={action === 'lookup'}
+                >
+                  Scan QR
+                </button>
+              </div>
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
                 <input
-                  className="input uppercase"
-                  placeholder="VD: 59A-12345"
-                  value={licensePlate}
-                  onChange={(event) => setLicensePlate(event.target.value)}
+                  className="input h-12 font-mono text-base font-black uppercase tracking-[0.08em]"
+                  placeholder="PBMS-D1878BC500"
+                  value={sessionCode}
+                  onChange={(event) => setSessionCode(event.target.value)}
+                  autoFocus
                 />
                 <button
                   type="submit"
-                  className="btn-secondary whitespace-nowrap"
+                  className="btn-primary h-12 whitespace-nowrap rounded-xl"
                   disabled={action === 'lookup'}
                 >
-                  Search Plate
+                  {action === 'lookup' ? 'Loading...' : 'Lookup'}
                 </button>
               </div>
             </form>
           </section>
 
           {workflow ? (
-            <section className="grid gap-5 lg:grid-cols-2">
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
-                      Session Detail
+            <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">
+                    Loaded session
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    <p className="font-mono text-2xl font-black tracking-[0.08em] text-slate-950">
+                      {workflow.session.licensePlate}
                     </p>
-                    <p className="mt-1 font-mono text-2xl font-black tracking-[0.08em] text-slate-950">
-                      {workflow.session.sessionCode}
-                    </p>
+                    <StatusBadge status={workflow.session.status} />
                   </div>
-                  <StatusBadge status={workflow.session.status} />
+                  <p className="mt-1 font-mono text-sm font-bold text-slate-500">
+                    {workflow.session.sessionCode}
+                  </p>
                 </div>
-
-                <div className="mt-5 grid gap-3 text-sm">
-                  <DetailRow label="Plate" value={workflow.session.licensePlate} strong />
-                  <DetailRow label="Vehicle" value={formatVehicleType(workflow.session.vehicleType)} />
-                  <DetailRow label="Slot" value={workflow.slot.code} mono strong />
-                  <DetailRow label="Floor / Zone" value={`${workflow.slot.floor.name} / Zone ${workflow.slot.zone}`} />
-                  <DetailRow label="Check-in" value={formatDateTime(workflow.session.checkInTime)} />
-                  <DetailRow label="Duration" value={`${workflow.fee.durationHours} hour${workflow.fee.durationHours > 1 ? 's' : ''}`} />
+                <div className="rounded-2xl bg-gradient-to-br from-primary-600 to-indigo-400 px-5 py-4 text-white shadow-lg shadow-primary-600/20">
+                  <p className="text-[11px] font-black uppercase tracking-[0.16em] text-blue-100">Amount due</p>
+                  <p className="mt-1 text-3xl font-black">{VND(workflow.fee.total)}</p>
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
-                      Fee / Payment
-                    </p>
-                    <p className="mt-1 text-3xl font-black text-slate-950">
-                      {VND(workflow.fee.total)}
-                    </p>
+              <div className="mt-4 grid gap-3 md:grid-cols-4">
+                <CheckoutMetric label="Vehicle" value={formatVehicleType(workflow.session.vehicleType)} />
+                <CheckoutMetric label="Slot" value={workflow.slot.code} mono />
+                <CheckoutMetric label="Floor / Zone" value={`${workflow.slot.floor.name} / Zone ${workflow.slot.zone}`} />
+                <CheckoutMetric
+                  label="Duration"
+                  value={`${workflow.fee.durationHours} hour${workflow.fee.durationHours > 1 ? 's' : ''}`}
+                />
+              </div>
+
+              <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+                    Fee breakdown
+                  </p>
+                  <div className="mt-3 space-y-2 text-sm">
+                    <DetailRow label="Base fee" value={VND(workflow.fee.baseFee)} />
+                    <DetailRow label="Penalty" value={VND(workflow.fee.penalty)} />
+                    <DetailRow label="Check-in" value={formatDateTime(workflow.session.checkInTime)} />
                   </div>
-                  <PaymentBadge status={paymentStatus} />
                 </div>
 
-                <div className="mt-5 space-y-2 text-sm">
-                  <DetailRow label="Base fee" value={VND(workflow.fee.baseFee)} />
-                  <DetailRow label="Penalty" value={VND(workflow.fee.penalty)} />
-                  <DetailRow
-                    label="Method"
-                    value={workflow.payment ? readablePaymentMethod(workflow.payment.method) : 'Not selected'}
-                  />
-                  <DetailRow
-                    label="Payment"
-                    value={workflow.payment ? readablePaymentStatus(workflow.payment.status) : 'Not created'}
-                  />
-                  {workflow.payment?.paidAt ? (
-                    <DetailRow label="Paid at" value={formatDateTime(workflow.payment.paidAt)} />
-                  ) : null}
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+                        Payment
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-slate-500">
+                        {workflow.payment ? readablePaymentMethod(workflow.payment.method) : 'Method not selected'}
+                      </p>
+                    </div>
+                    <PaymentBadge status={paymentStatus} />
+                  </div>
+                  <div className="mt-4 space-y-2 text-sm">
+                    <DetailRow
+                      label="Status"
+                      value={workflow.payment ? readablePaymentStatus(workflow.payment.status) : 'Not created'}
+                    />
+                    {workflow.payment?.paidAt ? (
+                      <DetailRow label="Paid at" value={formatDateTime(workflow.payment.paidAt)} />
+                    ) : null}
+                  </div>
                 </div>
+              </div>
 
                 {workflow.payment?.method === 'bank_qr' ? (
                   <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -1286,7 +1282,7 @@ function CheckOutPanel({ toasts }: PanelProps) {
                         href={workflow.payment.checkoutUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="mt-3 inline-flex w-full justify-center rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-black text-slate-700 transition hover:border-slate-950 hover:text-slate-950"
+                        className="mt-3 inline-flex w-full justify-center rounded-xl border border-primary-200 bg-white px-3 py-2 text-sm font-black text-primary-700 transition hover:bg-primary-50"
                       >
                         Open VNPAY Payment Page
                       </a>
@@ -1304,7 +1300,6 @@ function CheckOutPanel({ toasts }: PanelProps) {
                     Fee includes penalty.
                   </p>
                 ) : null}
-              </div>
             </section>
           ) : (
             <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
@@ -1342,28 +1337,28 @@ function CheckOutPanel({ toasts }: PanelProps) {
           ) : null}
         </div>
 
-        <aside className="space-y-4 xl:sticky xl:top-28 xl:self-start">
-          <section className={`overflow-hidden rounded-3xl border p-5 shadow-sm ${checkoutGuideTone(status)}`}>
+        <aside className="space-y-4 xl:sticky xl:top-28 xl:self-start print:hidden">
+          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.2em] opacity-70">
-                  Gate Decision
+                <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">
+                  Next staff action
                 </p>
-                <h3 className="mt-2 text-2xl font-black tracking-tight">
-                  {checkoutGuide(status).title}
+                <h3 className="mt-2 text-lg font-black tracking-tight text-slate-950">
+                  {guide.title}
                 </h3>
               </div>
-              <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-slate-700 ring-1 ring-black/5">
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-slate-700 ring-1 ring-slate-200">
                 {workflow ? readableStatus(workflow.session.status) : 'Ready'}
               </span>
             </div>
 
-            <p className="mt-4 text-sm font-semibold leading-6 opacity-80">
-              {checkoutGuide(status).description}
+            <p className="mt-3 text-sm font-semibold leading-5 text-slate-500">
+              {guide.description}
             </p>
 
             {workflow ? (
-              <div className="mt-5 grid grid-cols-3 gap-2">
+              <div className="mt-4 grid grid-cols-3 gap-2">
                 <OperatorSignal
                   label="Payment"
                   value={workflow.payment ? readablePaymentStatus(workflow.payment.status) : 'Not started'}
@@ -1381,27 +1376,14 @@ function CheckOutPanel({ toasts }: PanelProps) {
                 />
               </div>
             ) : (
-              <div className="mt-5 rounded-2xl bg-white/70 p-4 text-sm font-semibold text-slate-600 ring-1 ring-black/5">
+              <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-xs font-semibold text-slate-600">
                 Scan Session QR or enter Session Code from the parking ticket.
               </div>
             )}
-          </section>
 
-          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
-                  Next Staff Action
-                </p>
-                <p className="mt-1 text-sm font-semibold text-slate-500">
-                  Only the valid next step is shown.
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-5">
+            <div className="mt-5 border-t border-slate-200 pt-4">
               {!workflow ? (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm font-bold text-slate-500">
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-xs font-bold text-slate-500">
                   Load a session first. Payment and exit actions stay hidden until then.
                 </div>
               ) : null}
@@ -1411,7 +1393,7 @@ function CheckOutPanel({ toasts }: PanelProps) {
                   type="button"
                   onClick={handleRequestCheckout}
                   disabled={Boolean(action)}
-                  className="w-full rounded-2xl bg-slate-950 px-4 py-4 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                  className="h-12 w-full rounded-2xl bg-primary-600 px-4 text-sm font-black text-white shadow-sm shadow-primary-600/20 transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
                 >
                   {action === 'checkout' ? 'Starting checkout...' : 'Calculate Fee & Start Checkout'}
                 </button>
@@ -1419,23 +1401,12 @@ function CheckOutPanel({ toasts }: PanelProps) {
 
               {canConfirmPayment ? (
                 <div className="space-y-3">
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                    <p className="text-xs font-black uppercase tracking-[0.16em] text-amber-700">
-                      Choose payment method
-                    </p>
-                    <p className="mt-1 text-2xl font-black text-amber-950">
-                      {workflow ? VND(workflow.fee.total) : ''}
-                    </p>
-                    <p className="mt-1 text-xs font-semibold text-amber-800">
-                      Confirm cash immediately after receiving money, or generate Bank QR for transfer payment.
-                    </p>
-                  </div>
                   <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
                     <button
                       type="button"
                       onClick={handleConfirmPayment}
                       disabled={Boolean(action)}
-                      className="w-full rounded-2xl bg-emerald-600 px-4 py-4 text-sm font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                      className="h-12 w-full rounded-2xl bg-emerald-600 px-4 text-sm font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
                     >
                       {action === 'payment' ? 'Confirming cash...' : 'Confirm Cash Payment'}
                     </button>
@@ -1444,7 +1415,7 @@ function CheckOutPanel({ toasts }: PanelProps) {
                         type="button"
                         onClick={handleGenerateBankQr}
                         disabled={Boolean(action)}
-                        className="w-full rounded-2xl bg-slate-950 px-4 py-4 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                        className="h-12 w-full rounded-2xl bg-indigo-500 px-4 text-sm font-black text-white shadow-sm shadow-indigo-500/20 transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
                       >
                         {action === 'bankQr' ? 'Generating VNPAY QR...' : 'Generate VNPAY Payment Link'}
                       </button>
@@ -1456,13 +1427,13 @@ function CheckOutPanel({ toasts }: PanelProps) {
               {isBankQrFailed ? (
                 <div className="space-y-3">
                   <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
-                    <p className="text-xs font-black uppercase tracking-[0.16em] text-rose-700">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-rose-800">
                       Payment failed / cancelled
                     </p>
-                    <p className="mt-1 text-2xl font-black text-rose-950">
-                      {workflow ? VND(workflow.payment?.amount ?? workflow.fee.total) : ''}
+                    <p className="mt-1 text-lg font-bold text-rose-950">
+                      {amountDue}
                     </p>
-                    <p className="mt-1 text-xs font-semibold text-rose-800">
+                    <p className="mt-1 text-[10px] font-semibold text-rose-700">
                       Customer cancelled or payment failed. Regenerate link or switch to cash.
                     </p>
                   </div>
@@ -1470,7 +1441,7 @@ function CheckOutPanel({ toasts }: PanelProps) {
                     type="button"
                     onClick={handleGenerateBankQr}
                     disabled={Boolean(action)}
-                    className="w-full rounded-2xl bg-slate-950 px-4 py-4 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                    className="h-12 w-full rounded-2xl bg-indigo-500 px-4 text-sm font-black text-white shadow-sm shadow-indigo-500/20 transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
                   >
                     {action === 'bankQr' ? 'Generating new link...' : 'Regenerate VNPAY Payment Link'}
                   </button>
@@ -1478,7 +1449,7 @@ function CheckOutPanel({ toasts }: PanelProps) {
                     type="button"
                     onClick={handleConfirmPayment}
                     disabled={Boolean(action)}
-                    className="w-full rounded-2xl bg-emerald-600 px-4 py-4 text-sm font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                    className="h-12 w-full rounded-2xl bg-emerald-600 px-4 text-sm font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
                   >
                     {action === 'payment' ? 'Confirming cash...' : 'Confirm Cash Payment Instead'}
                   </button>
@@ -1488,13 +1459,13 @@ function CheckOutPanel({ toasts }: PanelProps) {
               {isBankQrExpired ? (
                 <div className="space-y-3">
                   <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4">
-                    <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-700">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-orange-800">
                       VNPAY link expired
                     </p>
-                    <p className="mt-1 text-2xl font-black text-orange-950">
-                      {workflow ? VND(workflow.payment?.amount ?? workflow.fee.total) : ''}
+                    <p className="mt-1 text-lg font-bold text-orange-950">
+                      {amountDue}
                     </p>
-                    <p className="mt-1 text-xs font-semibold text-orange-800">
+                    <p className="mt-1 text-[10px] font-semibold text-orange-700">
                       Payment link has expired. Generate a new link to continue.
                     </p>
                   </div>
@@ -1502,7 +1473,7 @@ function CheckOutPanel({ toasts }: PanelProps) {
                     type="button"
                     onClick={handleGenerateBankQr}
                     disabled={Boolean(action)}
-                    className="w-full rounded-2xl bg-slate-950 px-4 py-4 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                    className="h-12 w-full rounded-2xl bg-indigo-500 px-4 text-sm font-black text-white shadow-sm shadow-indigo-500/20 transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
                   >
                     {action === 'bankQr' ? 'Generating new link...' : 'Regenerate VNPAY Payment Link'}
                   </button>
@@ -1512,13 +1483,13 @@ function CheckOutPanel({ toasts }: PanelProps) {
               {isBankQrPending ? (
                 <div className="space-y-3">
                   <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
-                    <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-700">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-blue-800">
                       Waiting for VNPAY Bank QR payment
                     </p>
-                    <p className="mt-1 text-2xl font-black text-blue-950">
-                      {workflow ? VND(workflow.payment?.amount ?? workflow.fee.total) : ''}
+                    <p className="mt-1 text-lg font-bold text-blue-950">
+                      {amountDue}
                     </p>
-                    <p className="mt-1 text-xs font-semibold text-blue-800">
+                    <p className="mt-1 text-[10px] font-semibold text-blue-700">
                       Slot remains occupied. Refresh or wait for VNPAY confirmation.
                     </p>
                   </div>
@@ -1526,7 +1497,7 @@ function CheckOutPanel({ toasts }: PanelProps) {
                     type="button"
                     onClick={() => void refreshPaymentStatus(true)}
                     disabled={Boolean(action)}
-                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-4 text-sm font-black text-slate-700 transition hover:border-slate-950 hover:text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                    className="h-11 w-full rounded-2xl border border-slate-300 bg-white px-4 text-sm font-black text-slate-700 transition hover:border-slate-950 hover:text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                   >
                     {action === 'refresh' ? 'Refreshing...' : 'Refresh Payment Status'}
                   </button>
@@ -1535,7 +1506,7 @@ function CheckOutPanel({ toasts }: PanelProps) {
                       href={workflow.payment.checkoutUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex w-full justify-center rounded-2xl bg-slate-950 px-4 py-4 text-sm font-black text-white transition hover:bg-primary-700"
+                      className="inline-flex h-11 w-full items-center justify-center rounded-2xl bg-primary-600 px-4 text-sm font-black text-white shadow-sm shadow-primary-600/20 transition hover:bg-primary-700"
                     >
                       Open VNPAY Payment Page
                     </a>
@@ -1545,14 +1516,14 @@ function CheckOutPanel({ toasts }: PanelProps) {
 
               {canConfirmExit ? (
                 <div className="space-y-3">
-                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-800">
-                    Payment confirmed. Vehicle is authorized to exit. Slot is still occupied until this button is pressed.
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-xs font-semibold text-emerald-950">
+                    Payment confirmed. Vehicle is authorized to exit. Slot is still occupied until exit is confirmed.
                   </div>
                   <button
                     type="button"
                     onClick={handleConfirmExit}
                     disabled={Boolean(action)}
-                    className="w-full rounded-2xl bg-primary-600 px-4 py-4 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                    className="h-12 w-full rounded-2xl bg-primary-600 px-4 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
                   >
                     {action === 'exit' ? 'Releasing slot...' : 'Confirm Vehicle Exited'}
                   </button>
@@ -1561,16 +1532,16 @@ function CheckOutPanel({ toasts }: PanelProps) {
 
               {isCompleted ? (
                 <div className="space-y-3">
-                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-800">
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-xs font-semibold text-emerald-950">
                     Checkout completed. Vehicle exited and slot released.
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     {receipt ? (
-                      <button type="button" onClick={handlePrint} className="btn-secondary print:hidden">
+                      <button type="button" onClick={handlePrint} className="btn-secondary print:hidden shadow-sm">
                         Print Receipt
                       </button>
                     ) : null}
-                    <button type="button" onClick={reset} className="btn-primary print:hidden">
+                    <button type="button" onClick={reset} className="btn-primary print:hidden shadow-sm">
                       Next Vehicle
                     </button>
                   </div>
@@ -1578,32 +1549,40 @@ function CheckOutPanel({ toasts }: PanelProps) {
               ) : null}
 
               {workflow && !canRequestCheckout && !canConfirmPayment && !canConfirmExit && !isCompleted ? (
-                <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-700">
+                <div className="rounded-2xl border border-rose-200/60 bg-white/80 p-4 text-xs font-bold text-rose-800 shadow-sm">
                   This session cannot continue checkout from the current status.
                 </div>
               ) : null}
             </div>
-          </section>
 
-          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
-              Gate Summary
-            </p>
-            <div className="mt-4 space-y-3 text-sm">
-              <DetailRow label="Slot status" value={workflow?.slot.status ?? 'Not loaded'} />
-              <DetailRow label="Exit status" value={readableExitStatus(status)} />
-              <DetailRow
-                label="Exit time"
-                value={
-                  workflow?.session.checkOutTime
-                    ? formatDateTime(workflow.session.checkOutTime)
-                    : exitResult?.session.checkOutTime
-                      ? formatDateTime(exitResult.session.checkOutTime)
-                      : 'Pending'
-                }
-              />
+            <div className={`mt-5 border-t pt-4 ${status === 'completed' ? 'border-white/10' : 'border-slate-200/50'}`}>
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] opacity-70">
+                Gate Summary
+              </p>
+              <div className="mt-3 space-y-2 text-xs">
+                <div className={`flex items-center justify-between border-b pb-1.5 last:border-0 last:pb-0 ${status === 'completed' ? 'border-white/5' : 'border-black/5'}`}>
+                  <span className="opacity-70">Slot status</span>
+                  <span className="font-bold">{workflow?.slot.status ?? 'Not loaded'}</span>
+                </div>
+                <div className={`flex items-center justify-between border-b pb-1.5 last:border-0 last:pb-0 ${status === 'completed' ? 'border-white/5' : 'border-black/5'}`}>
+                  <span className="opacity-70">Exit status</span>
+                  <span className="font-bold">{readableExitStatus(status)}</span>
+                </div>
+                <div className="flex items-center justify-between last:border-0 last:pb-0">
+                  <span className="opacity-70">Exit time</span>
+                  <span className="font-bold">
+                    {workflow?.session.checkOutTime
+                      ? formatDateTime(workflow.session.checkOutTime)
+                      : exitResult?.session.checkOutTime
+                        ? formatDateTime(exitResult.session.checkOutTime)
+                        : 'Pending'}
+                  </span>
+                </div>
+              </div>
             </div>
           </section>
+
+          <RecentSessionsCard type="checkout" refreshTrigger={checkOutCount} />
         </aside>
       </div>
 
@@ -1619,8 +1598,6 @@ function CheckOutPanel({ toasts }: PanelProps) {
           onManualInput={handleQRScanned}
         />
       ) : null}
-
-      <RecentSessionsCard type="checkout" refreshTrigger={checkOutCount} />
     </div>
   )
 }
@@ -1714,15 +1691,6 @@ function checkoutGuide(status?: SessionStatus) {
   }
 }
 
-function checkoutGuideTone(status?: SessionStatus) {
-  if (status === 'checkout_pending') return 'border-amber-200 bg-amber-50 text-amber-950'
-  if (status === 'exit_authorized') return 'border-emerald-200 bg-emerald-50 text-emerald-950'
-  if (status === 'completed') return 'border-slate-200 bg-slate-950 text-white'
-  if (status === 'cancelled') return 'border-rose-200 bg-rose-50 text-rose-950'
-  if (status === 'active') return 'border-blue-200 bg-blue-50 text-blue-950'
-  return 'border-slate-200 bg-slate-50 text-slate-950'
-}
-
 function DetailRow({
   label,
   value,
@@ -1744,6 +1712,23 @@ function DetailRow({
       >
         {value}
       </span>
+    </div>
+  )
+}
+
+function CheckoutMetric({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string
+  value: string
+  mono?: boolean
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
+      <p className={`mt-1 text-sm font-black text-slate-950 ${mono ? 'font-mono' : ''}`}>{value}</p>
     </div>
   )
 }
