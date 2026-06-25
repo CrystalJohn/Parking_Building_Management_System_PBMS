@@ -22,10 +22,6 @@ function statusLabel(status: SessionStatus): { text: string; cls: string } {
   return map[status] ?? { text: status, cls: 'bg-slate-100 text-slate-600 ring-slate-200' }
 }
 
-function vehicleIcon(type: 'car' | 'motorbike') {
-  return type === 'car' ? '🚗' : '🏍️'
-}
-
 export function RecentSessionsCard({ type, refreshTrigger = 0 }: Props) {
   const [sessions, setSessions] = useState<RecentSession[]>([])
   const [loading, setLoading] = useState(true)
@@ -74,31 +70,30 @@ export function RecentSessionsCard({ type, refreshTrigger = 0 }: Props) {
           {emptyText}
         </div>
       ) : (
-        <ul className="divide-y divide-slate-100 max-h-[420px] overflow-y-auto">
+        <ul className="divide-y divide-slate-100 max-h-[180px] overflow-y-auto">
           {sessions.map((s) => {
             const { text, cls } = statusLabel(s.status)
             const time = type === 'checkin' ? s.checkInTime : (s.checkOutTime ?? s.checkInTime)
             const fee = s.feeAmount + s.penaltyAmount
 
             return (
-              <li key={s.id} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
-                {/* Vehicle icon */}
-                <span className="text-xl shrink-0">{vehicleIcon(s.vehicleType)}</span>
-
+              <li key={s.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 transition-colors">
                 {/* Main info */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono font-black text-sm text-slate-950">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-mono font-black text-xs text-slate-950">
                       {s.licensePlate}
                     </span>
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ring-1 ${cls}`}>
+                    <span className={`rounded-full px-1.5 py-0.25 text-[9px] font-black uppercase tracking-wide ring-1 ${cls}`}>
                       {text}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500 font-medium flex-wrap">
+                  <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-slate-500 font-medium flex-wrap">
                     <span className="font-mono">{s.slot.code}</span>
                     <span>·</span>
-                    <span>{s.slot.floor} / Zone {s.slot.zone}</span>
+                    <span className="capitalize">{s.vehicleType}</span>
+                    <span>·</span>
+                    <span>{s.slot.floor} / Z{s.slot.zone}</span>
                     {fee > 0 && (
                       <>
                         <span>·</span>
@@ -110,8 +105,8 @@ export function RecentSessionsCard({ type, refreshTrigger = 0 }: Props) {
 
                 {/* Time */}
                 <div className="text-right shrink-0">
-                  <p className="text-[10px] text-slate-400 font-medium">{timeLabel}</p>
-                  <p className="text-[11px] font-bold text-slate-600 mt-0.5">
+                  <p className="text-[9px] text-slate-400 font-medium">{timeLabel}</p>
+                  <p className="text-[10px] font-bold text-slate-600 mt-0.5">
                     {formatDateTimeVN(time)}
                   </p>
                 </div>

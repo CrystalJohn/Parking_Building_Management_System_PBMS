@@ -63,7 +63,7 @@ export default function AppRoutes() {
       <Route
         path="/staff/lost-ticket"
         element={
-          <RequireAuth allowedRoles={['staff']}>
+          <RequireAuth allowedRoles={['staff']} hideAppHeader>
             <LostTicket />
           </RequireAuth>
         }

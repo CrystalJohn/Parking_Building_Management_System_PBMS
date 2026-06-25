@@ -108,7 +108,6 @@ export default function Gate() {
   const toasts = useToasts()
   const navigate = useNavigate()
   const user = getUser()
-  const activeTab = GATE_TABS.find((item) => item.id === tab) ?? GATE_TABS[0]
   const userInitial = (user?.fullName || user?.phone || 'S')[0].toUpperCase()
 
   const handleLogout = () => {
@@ -119,18 +118,18 @@ export default function Gate() {
   return (
     <div className="min-h-screen bg-slate-100">
       <div className="sticky top-0 z-50 border-b border-slate-200/80 bg-slate-100/95 shadow-sm backdrop-blur-xl print:hidden">
-        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:px-6 xl:flex-row xl:items-center xl:justify-between">
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-2.5 sm:px-6 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-primary-600 to-slate-950 text-sm font-black text-white shadow-lg shadow-primary-600/20">
+              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-primary-600 to-slate-950 text-xs font-black text-white shadow-md">
                 {userInitial}
               </div>
               <div className="min-w-0">
                 <p className="truncate text-sm font-black text-slate-950">
                   {user?.fullName || user?.phone || 'Gate Staff'}
                 </p>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Gate Staff
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  Gate Operator
                 </p>
               </div>
             </div>
@@ -141,7 +140,7 @@ export default function Gate() {
                   key={item.to}
                   to={item.to}
                   className={({ isActive }) =>
-                    `rounded-xl px-3 py-2 text-sm font-bold transition-all ${
+                    `rounded-lg px-2.5 py-1.5 text-xs font-bold transition-all ${
                       isActive
                         ? 'bg-white text-slate-950 shadow-sm ring-1 ring-slate-200'
                         : 'text-slate-500 hover:bg-white/70 hover:text-slate-900'
@@ -152,25 +151,11 @@ export default function Gate() {
                 </NavLink>
               ))}
             </nav>
-
-            <header className="min-w-0 lg:border-l lg:border-slate-300 lg:pl-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Gate Workspace
-              </p>
-              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <h1 className="text-xl font-black tracking-tight text-slate-950">
-                  Gate
-                </h1>
-                <span className="text-sm font-medium text-slate-500">
-                  Active: {activeTab.title}
-                </span>
-              </div>
-            </header>
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <nav
-              className="grid grid-cols-2 gap-1 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm sm:min-w-[360px]"
+              className="grid grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm sm:min-w-[240px]"
               role="tablist"
               aria-label="Gate actions"
             >
@@ -183,27 +168,18 @@ export default function Gate() {
                     aria-selected={isActive}
                     aria-controls={`gate-panel-${item.id}`}
                     onClick={() => setTab(item.id)}
-                    className={`group rounded-xl px-3 py-2 text-left transition-all focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
+                    className={`group rounded-lg px-3 py-1.5 flex items-center justify-center gap-2 transition-all focus:outline-none ${
                       isActive
-                        ? 'bg-slate-950 text-white shadow-md'
+                        ? 'bg-slate-950 text-white shadow-sm'
                         : 'bg-white text-slate-700 hover:bg-slate-50'
                     }`}
                   >
-                    <span className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-black">{item.title}</span>
-                      <span
-                        className={`h-2 w-2 rounded-full ${
-                          isActive ? 'bg-emerald-400' : 'bg-slate-300 group-hover:bg-slate-400'
-                        }`}
-                      />
-                    </span>
+                    <span className="text-xs font-bold">{item.title}</span>
                     <span
-                      className={`mt-0.5 block text-[11px] font-medium ${
-                        isActive ? 'text-slate-300' : 'text-slate-500'
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        isActive ? 'bg-emerald-400' : 'bg-slate-300 group-hover:bg-slate-400'
                       }`}
-                    >
-                      {item.subtitle} · {item.activeHint}
-                    </span>
+                    />
                   </button>
                 )
               })}
@@ -212,7 +188,7 @@ export default function Gate() {
             <button
               type="button"
               onClick={handleLogout}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-600 shadow-sm transition-all hover:bg-slate-950 hover:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+              className="rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-bold text-slate-600 shadow-sm transition-all hover:bg-slate-950 hover:text-white focus:outline-none"
             >
               Sign out
             </button>

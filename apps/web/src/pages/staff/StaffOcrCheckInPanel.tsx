@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { isAxiosError } from 'axios'
 import { QRScanner } from '../../components/qr-scanner/QRScanner'
-import { getUser } from '../../lib/auth'
+
 import { formatDateTimeVN } from '../../lib/date-time'
 import { useToasts } from '../../lib/use-toasts'
 import { RecentSessionsCard } from '../../components/ui/RecentSessionsCard'
@@ -77,7 +77,7 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
   const [now, setNow] = useState(new Date())
   const [checkInCount, setCheckInCount] = useState(0)
 
-  const user = getUser()
+
   const activeMode = CHECK_IN_MODES.find((mode) => mode.id === serviceMode) ?? CHECK_IN_MODES[0]
   const reservationCode = reservationId.trim()
   const checkInMode =
@@ -381,7 +381,7 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(380px,0.75fr)]">
-        <section className="rounded-2xl border border-gray-200 bg-slate-950 p-4 text-white shadow-sm print:hidden">
+        <section className="self-start rounded-2xl border border-gray-200 bg-slate-950 p-4 text-white shadow-sm print:hidden">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
               <h3 className="font-semibold">Real-time Camera + OCR Evidence</h3>
@@ -414,28 +414,42 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
 
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
             <EvidencePreview title="Captured OCR evidence" imageUrl={capturedImageUrl} />
-            <div className="rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm">
-              <p className="font-semibold text-slate-100">OCR result</p>
-              <dl className="mt-3 grid grid-cols-2 gap-y-2">
-                <dt className="text-slate-400">Plate</dt>
-                <dd className="font-mono">{ocrResult?.detectedPlate ?? 'N/A'}</dd>
-                <dt className="text-slate-400">Confidence</dt>
-                <dd>{ocrResult?.confidence != null ? `${Math.round(ocrResult.confidence * 100)}%` : 'N/A'}</dd>
-                <dt className="text-slate-400">Duration</dt>
-                <dd>{ocrResult ? `${(ocrResult.durationMs / 1000).toFixed(1)}s` : 'N/A'}</dd>
-                <dt className="text-slate-400">Evidence ID</dt>
-                <dd className="break-all font-mono text-xs">{ocrResult?.ocrEvidenceId ?? 'N/A'}</dd>
-              </dl>
-              {ocrResult?.error && (
-                <p className="mt-3 rounded-lg border border-red-500/40 bg-red-500/10 p-2 text-red-200">
-                  {ocrResult.error}
+            {ticket ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3 text-slate-900 print:mt-0 print:border-0 print:bg-white print:p-0">
+                <div className="flex items-center justify-between gap-2 mb-2 print:hidden">
+                  <span className="text-xs font-bold text-amber-950">
+                    {status === 'GENERATING_TICKET' ? 'Generating ticket...' : 'Session Ticket Preview'}
+                  </span>
+                </div>
+                <SessionTicketPreview ticket={ticket} issuedAt={issuedAt} />
+                <div className="mt-3 flex flex-col gap-1.5 print:hidden">
+                  <button type="button" onClick={printTicket} className="btn-primary py-2 text-xs">
+                    Print Ticket
+                  </button>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={markTicketIssued} className="btn-secondary flex-1 py-1.5 text-xs">
+                      Mark Issued
+                    </button>
+                    <button type="button" onClick={reset} className="btn-secondary flex-1 py-1.5 text-xs">
+                      Next Vehicle
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-4 flex flex-col items-center justify-center text-center text-slate-400 min-h-[160px]">
+                <span className="text-xl mb-1.5">🎫</span>
+                <p className="text-xs font-semibold text-slate-300">Ticket Preview</p>
+                <p className="text-[10px] text-slate-500 mt-1 max-w-[160px]">
+                  Awaiting check-in confirmation to generate ticket
                 </p>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </section>
 
-        <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm print:border-0 print:p-0 print:shadow-none">
+        <div className="space-y-4 print:hidden">
+          <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm print:border-0 print:p-0 print:shadow-none">
           <div className="flex items-start justify-between gap-3 print:hidden">
             <div>
               <h3 className="font-semibold text-gray-900">Service Mode + Actions</h3>
@@ -453,72 +467,63 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
           </div>
 
           <div className="mt-4 space-y-4 print:hidden">
-            <div className="grid gap-2">
-              {CHECK_IN_MODES.map((mode) => {
-                const selected = serviceMode === mode.id
-                return (
+            <Field label="Service mode">
+              <div className="flex gap-3">
+                {CHECK_IN_MODES.map((mode) => (
                   <button
                     key={mode.id}
                     type="button"
                     onClick={() => chooseServiceMode(mode.id)}
-                    className={`rounded-2xl border p-3 text-left transition-all ${
-                      selected
-                        ? 'border-slate-950 bg-slate-950 text-white shadow-sm'
-                        : 'border-gray-200 bg-white text-gray-700 hover:border-slate-300 hover:bg-slate-50'
+                    className={`flex-1 rounded-lg border px-4 py-2.5 text-sm font-bold transition-all ${
+                      serviceMode === mode.id
+                        ? 'border-primary-600 bg-primary-50 text-primary-700'
+                        : 'border-gray-200 bg-white text-gray-700 hover:bg-slate-50'
                     }`}
                   >
-                    <span className="flex items-center justify-between gap-3">
-                      <span className="font-black">{mode.title}</span>
-                      <span
-                        className={`h-2.5 w-2.5 rounded-full ${
-                          selected ? 'bg-emerald-400' : 'bg-gray-300'
-                        }`}
-                      />
-                    </span>
-                    <span className={`mt-1 block text-sm ${selected ? 'text-slate-200' : 'text-gray-500'}`}>
-                      {mode.subtitle}
-                    </span>
+                    {mode.title}
                   </button>
-                )
-              })}
-            </div>
-
-            {serviceMode === 'reservation' ? (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
-                <Field label="Reservation ID / Reservation QR input">
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <input
-                      className="input font-mono text-xs"
-                      value={reservationId}
-                      onChange={(event) => setReservationId(event.target.value)}
-                      placeholder="Scan or paste reservation UUID/code"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowReservationScanner(true)}
-                      className="btn-primary shrink-0"
-                    >
-                      Scan QR
-                    </button>
-                  </div>
-                </Field>
+                ))}
               </div>
-            ) : (
-              null
+            </Field>
+
+            {serviceMode === 'reservation' && (
+              <Field label="Reservation ID / QR">
+                <div className="flex gap-2">
+                  <input
+                    className="input font-mono text-xs"
+                    value={reservationId}
+                    onChange={(event) => setReservationId(event.target.value)}
+                    placeholder="Scan/paste UUID/code"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowReservationScanner(true)}
+                    className="btn-primary shrink-0 text-xs py-2 px-3"
+                  >
+                    Scan QR
+                  </button>
+                </div>
+              </Field>
             )}
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="OCR detected plate">
-                <input className="input bg-gray-50" value={ocrResult?.detectedPlate ?? ''} readOnly />
-              </Field>
-              <Field label="Confirmed license plate">
-                <input
-                  className="input uppercase"
-                  value={licensePlate}
-                  onChange={(event) => setLicensePlate(event.target.value)}
-                  placeholder="VD: 59A-12345"
-                />
-              </Field>
+            <div>
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-sm font-semibold text-gray-700">Confirmed license plate</span>
+                {ocrResult ? (
+                  <span className="text-xs font-mono text-gray-500">
+                    OCR: <span className="font-bold text-gray-900">{ocrResult.detectedPlate || 'no plate detected'}</span>
+                    {ocrResult.confidence != null && ` (${Math.round(ocrResult.confidence * 100)}%)`}
+                  </span>
+                ) : (
+                  <span className="text-xs text-gray-400 font-medium">OCR: not run yet</span>
+                )}
+              </div>
+              <input
+                className="input uppercase font-mono text-lg font-bold"
+                value={licensePlate}
+                onChange={(event) => setLicensePlate(event.target.value)}
+                placeholder="VD: 59A-12345"
+              />
             </div>
 
             <Field label="Vehicle type">
@@ -528,10 +533,10 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
                     key={type}
                     type="button"
                     onClick={() => setVehicleType(type)}
-                    className={`flex-1 rounded-lg border px-4 py-3 text-sm font-bold capitalize ${
+                    className={`flex-1 rounded-lg border px-4 py-2.5 text-sm font-bold capitalize transition-all ${
                       vehicleType === type
                         ? 'border-primary-600 bg-primary-50 text-primary-700'
-                        : 'border-gray-200 bg-white text-gray-700'
+                        : 'border-gray-200 bg-white text-gray-700 hover:bg-slate-50'
                     }`}
                   >
                     {type}
@@ -539,18 +544,6 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
                 ))}
               </div>
             </Field>
-
-            <div className="grid gap-2 rounded-xl bg-gray-50 p-3 text-sm">
-              <InfoLine label="Building" value={ocrResult?.buildingName ?? BUILDING_NAME} />
-              <InfoLine label="Gate" value={ocrResult?.gateName ?? GATE_NAME} />
-              <InfoLine label="Staff" value={user?.fullName || user?.phone || user?.id || 'N/A'} />
-              <InfoLine label="Check-in time" value={formatDateTimeVN(now)} />
-              <InfoLine
-                label="Service mode"
-                value={serviceMode === 'reservation' ? 'Reservation check-in' : 'Walk-in / no reservation'}
-              />
-              <InfoLine label="Reservation info" value={reservationCode || 'Not used'} />
-            </div>
 
             <div className="flex flex-col gap-2 sm:flex-row">
               <button
@@ -570,28 +563,10 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
               </button>
             </div>
           </div>
-
-          {ticket && (
-            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 print:mt-0 print:border-0 print:bg-white print:p-0">
-              <p className="text-sm font-bold text-amber-900 print:hidden">
-                {status === 'GENERATING_TICKET' ? 'Generating session ticket...' : 'Session Ticket Preview'}
-              </p>
-              <SessionTicketPreview ticket={ticket} issuedAt={issuedAt} />
-              <div className="mt-3 flex flex-col gap-2 print:hidden sm:flex-row">
-                <button type="button" onClick={printTicket} className="btn-primary">
-                  Print Ticket
-                </button>
-                <button type="button" onClick={markTicketIssued} className="btn-secondary">
-                  Mark as Issued
-                </button>
-                <button type="button" onClick={reset} className="btn-secondary">
-                  Next Vehicle
-                </button>
-              </div>
-            </div>
-          )}
         </section>
+        <RecentSessionsCard type="checkin" refreshTrigger={checkInCount} />
       </div>
+    </div>
 
       {showReservationScanner && (
         <QRScanner
@@ -605,7 +580,6 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
           onManualInput={handleReservationQrScanned}
         />
       )}
-      <RecentSessionsCard type="checkin" refreshTrigger={checkInCount} />
     </div>
   )
 }
@@ -634,14 +608,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-function InfoLine({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-start justify-between gap-3">
-      <span className="text-gray-500">{label}</span>
-      <span className="text-right font-semibold text-gray-900">{value}</span>
-    </div>
-  )
-}
+
 
 function normalizeSessionTicket(ticket: SessionTicket, slot: AssignedSlot): SessionTicket {
   const derived = deriveLocationFromSlotCode(ticket.slotCode || slot.code)
@@ -680,64 +647,72 @@ function SessionTicketPreview({ ticket, issuedAt }: { ticket: SessionTicket; iss
   const zoneDisplay = ticket.zone || derivedLocation.zone || '-'
 
   return (
-    <div className="mt-3 rounded-2xl border border-gray-200 bg-white p-5 text-sm shadow-sm print:mx-auto print:mt-0 print:w-[80mm] print:rounded-none print:border-0 print:p-0 print:shadow-none">
-      <div className="text-center">
-        <p className="text-xl font-black tracking-wide text-gray-950 print:text-lg">PBMS SESSION TICKET</p>
-        <p className="text-xs text-gray-500">Use this Session QR/code for checkout later.</p>
+    <div className="mt-3 rounded-xl border border-dashed border-gray-300 bg-white p-3 text-sm shadow-sm print:mx-auto print:mt-0 print:w-[80mm] print:rounded-none print:border-0 print:p-0 print:shadow-none">
+      <div className="text-center hidden print:block">
+        <p className="text-lg font-black tracking-wider text-gray-950 print:text-base">PBMS PARKING TICKET</p>
+        <p className="text-[10px] text-gray-400">Keep this ticket for checkout</p>
       </div>
+
+      <div className="mt-1 flex flex-col items-center justify-center gap-1 print:mt-3">
+        <div className="rounded border-2 border-slate-800 bg-slate-50 px-4 py-1 text-center font-mono text-xl font-extrabold tracking-widest text-slate-900 shadow-sm">
+          {ticket.licensePlate}
+        </div>
+        <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 hidden print:inline-block">
+          {ticket.vehicleType}
+        </span>
+      </div>
+
+      <div className="my-2 border-t border-dashed border-gray-200 hidden print:block print:my-3" />
+
       {ticket.qrCode && (
         <img
           src={ticket.qrCode}
           alt="Session QR"
-          className="mx-auto my-4 h-40 w-40 rounded-xl border border-gray-200 bg-white p-2 print:h-36 print:w-36"
+          className="mx-auto h-20 w-20 rounded-lg border border-gray-150 bg-white p-1.5 print:h-28 print:w-28"
         />
       )}
 
-      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-center">
-        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Session Code</p>
-        <p className="mt-1 font-mono text-lg font-black tracking-wide text-slate-950">
-          {ticket.sessionCode}
-        </p>
+      <div className="mt-2 rounded-lg border border-slate-100 bg-slate-50/50 p-2 text-center hidden print:block print:mt-3">
+        <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-slate-400">Session Code</p>
+        <p className="font-mono text-sm font-bold text-slate-800">{ticket.sessionCode}</p>
       </div>
 
-      <dl className="mt-4 grid grid-cols-2 gap-y-2">
-        <dt className="text-gray-500">Plate</dt>
-        <dd className="text-right font-mono font-bold">{ticket.licensePlate}</dd>
-        <dt className="text-gray-500">Vehicle</dt>
-        <dd className="text-right capitalize">{ticket.vehicleType}</dd>
-      </dl>
+      <div className="my-2 border-t border-dashed border-gray-200 hidden print:block print:my-3" />
 
-      <section className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-        <p className="text-center text-[11px] font-black uppercase tracking-[0.2em] text-emerald-800">
-          Parking Location
+      <section className="rounded-xl border border-emerald-100 bg-emerald-50/30 p-2.5 print:p-3 mt-2">
+        <p className="text-center text-[9px] font-extrabold uppercase tracking-[0.15em] text-emerald-800">
+          Assigned space
         </p>
-        <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+        <div className="mt-1.5 grid grid-cols-1 gap-1 text-center print:mt-2 print:grid-cols-3">
           <div>
-            <p className="text-[10px] font-bold uppercase text-emerald-700">Slot</p>
-            <p className="mt-1 font-mono text-lg font-black text-emerald-950">{ticket.slotCode}</p>
+            <p className="text-[9px] font-bold uppercase text-emerald-600">Slot</p>
+            <p className="font-mono text-base font-black text-emerald-950">{ticket.slotCode}</p>
           </div>
-          <div>
-            <p className="text-[10px] font-bold uppercase text-emerald-700">Floor</p>
-            <p className="mt-1 font-black text-emerald-950">{floorDisplay}</p>
+          <div className="hidden print:block">
+            <p className="text-[9px] font-bold uppercase text-emerald-600">Floor</p>
+            <p className="text-sm font-black text-emerald-950">{floorDisplay}</p>
           </div>
-          <div>
-            <p className="text-[10px] font-bold uppercase text-emerald-700">Zone</p>
-            <p className="mt-1 font-black text-emerald-950">{zoneDisplay}</p>
+          <div className="hidden print:block">
+            <p className="text-[9px] font-bold uppercase text-emerald-600">Zone</p>
+            <p className="text-sm font-black text-emerald-950">{zoneDisplay}</p>
           </div>
         </div>
       </section>
 
-      <dl className="mt-4 grid grid-cols-2 gap-y-2 border-t border-gray-200 pt-3">
-        <dt className="text-gray-500">Check-in</dt>
-        <dd className="text-right">{formatDateTimeVN(ticket.checkInTime)}</dd>
-        <dt className="text-gray-500">Building</dt>
-        <dd className="text-right">{ticket.buildingName}</dd>
-        <dt className="text-gray-500">Gate</dt>
-        <dd className="text-right">{ticket.gateName}</dd>
-      </dl>
+      <div className="mt-3 space-y-1 text-xs border-t border-dashed border-gray-200 pt-2 hidden print:block print:mt-4 print:pt-3">
+        <div className="flex justify-between">
+          <span className="text-gray-400">Check-in:</span>
+          <span className="font-medium text-gray-800">{formatDateTimeVN(ticket.checkInTime)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-gray-400">Location:</span>
+          <span className="font-medium text-gray-800">{ticket.gateName} ({ticket.buildingName})</span>
+        </div>
+      </div>
+
       {issuedAt && (
-        <p className="mt-3 rounded bg-emerald-50 p-2 text-center text-xs font-bold text-emerald-700">
-          Ticket issued to driver at {formatDateTimeVN(issuedAt)}
+        <p className="mt-2.5 rounded bg-emerald-50/50 p-2 text-center text-[11px] font-bold text-emerald-700 print:mt-3">
+          Issued at {formatDateTimeVN(issuedAt)}
         </p>
       )}
     </div>
