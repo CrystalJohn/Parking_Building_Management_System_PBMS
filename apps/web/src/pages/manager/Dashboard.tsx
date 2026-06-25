@@ -17,7 +17,6 @@ import {
 } from 'lucide-react'
 import api from '../../lib/api'
 import {
-  getAdminOperationsFlags,
   getAdminPendingPayments,
   getAdminSummary,
   type AdminOperationFlag,

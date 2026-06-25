@@ -147,6 +147,7 @@ Hệ thống quản lý tòa nhà đỗ xe đa tầng, xử lý:
 | `/login` | All | Đăng nhập |
 | `/staff/gate` | Staff | Check-in / Check-out / Thanh toán |
 | `/staff/lost-ticket` | Staff | Xử lý mất vé |
+| `/staff/gate?tab=check-out&sessionCode=<code>` | Staff | Mở trực tiếp tab Check-out và tự load phiên theo session code |
 | `/manager/dashboard` | Manager | Bản đồ slot real-time |
 | `/manager/reports` | Manager | Báo cáo doanh thu/lưu lượng |
 | `/manager/config` | Manager | Cấu hình giá & chiến lược phân bổ |
@@ -163,10 +164,13 @@ Hệ thống quản lý tòa nhà đỗ xe đa tầng, xử lý:
 | POST | `/auth/register` | Driver tự đăng ký | Public |
 | POST | `/sessions/check-in` | Check-in xe | Staff |
 | POST | `/sessions/check-out` | Check-out, tính phí | Staff |
+| GET | `/sessions/checkout-lookup?sessionCode=...` | Tra cứu phiên để Check-out theo session code/id | Staff |
+| GET | `/sessions/checkout-lookup?licensePlate=...` | Tra cứu phiên để Check-out theo biển số | Staff |
 | POST | `/sessions/:id/confirm-payment` | Xác nhận tiền mặt | Staff |
 | POST | `/sessions/:id/confirm-exit` | Xác nhận xe ra, release slot | Staff |
 | POST | `/sessions/:id/payments/bank-qr` | Tạo VNPAY payment URL | Staff |
 | GET | `/sessions/:id/payment-status` | Trạng thái thanh toán | Staff |
+| POST | `/tickets/lost` | Ghi nhận mất vé, lưu thông tin xác minh và áp phí mất vé | Staff |
 | GET | `/payments/vnpay/return` | VNPAY return callback | Public |
 | GET | `/payments/vnpay/ipn` | VNPAY IPN server-to-server | Public |
 | GET | `/users` | Quản lý user | Admin |
@@ -225,6 +229,19 @@ Slot: occupied → occupied → occupied → available
                                            ↑
                                     (confirm-exit only)
 ```
+
+### Lost Ticket handoff
+
+Khi Staff xử lý mất vé tại `/staff/lost-ticket`, hệ thống:
+
+1. Tra cứu đúng active session theo biển số.
+2. Ghi nhận `isLostTicket`, số CCCD/ID card và số GPLX đã xác minh.
+3. Tính lại phí với phụ thu mất vé.
+4. Giữ nguyên session ở trạng thái `active`; xe vẫn đang chiếm slot.
+5. Nút **Open Gate checkout** chuyển sang `/staff/gate?tab=check-out&sessionCode=<code>`.
+6. Gate tự điền session code và tự load phiên checkout để Staff tiếp tục tính phí, thu tiền và xác nhận xe ra.
+
+Lost Ticket không tự hoàn tất checkout, không tự release slot, và không thay thế các bước `check-out → confirm-payment → confirm-exit`.
 
 ---
 

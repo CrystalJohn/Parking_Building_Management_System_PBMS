@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { isAxiosError } from 'axios'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { ToastContainer } from '../../components/ui/Toast'
@@ -823,6 +823,7 @@ function CheckOutPanel({ toasts }: PanelProps) {
   const [action, setAction] = useState<'lookup' | 'checkout' | 'payment' | 'bankQr' | 'refresh' | 'exit' | null>(null)
   const [showScanner, setShowScanner] = useState(false)
   const [checkOutCount, setCheckOutCount] = useState(0)
+  const hydratedFromQuery = useRef(false)
 
   const status = workflow?.session.status
   const paymentStatus = workflow?.payment?.status ?? null
@@ -934,6 +935,28 @@ function CheckOutPanel({ toasts }: PanelProps) {
       setAction(null)
     }
   }
+
+  useEffect(() => {
+    if (hydratedFromQuery.current) return
+    hydratedFromQuery.current = true
+
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('sessionCode') || params.get('session')
+    const plate = params.get('licensePlate')
+
+    if (code) {
+      setSessionCode(code)
+      void lookupSession({ sessionCode: code })
+      return
+    }
+
+    if (plate) {
+      const normalizedPlate = plate.trim().toUpperCase()
+      setSessionCode(normalizedPlate)
+      void lookupSession({ licensePlate: normalizedPlate })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleLookupBySession = (event: React.FormEvent) => {
     event.preventDefault()
