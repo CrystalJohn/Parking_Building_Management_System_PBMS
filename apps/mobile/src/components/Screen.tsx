@@ -31,6 +31,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 20,
+    paddingBottom: 116,
   },
   inner: {
     gap: 16,

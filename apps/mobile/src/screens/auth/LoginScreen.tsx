@@ -34,7 +34,7 @@ export function LoginScreen({ navigation }: Props) {
       <View style={styles.header}>
         <Text style={styles.kicker}>PBMS Driver</Text>
         <Text style={styles.title}>Login</Text>
-        <Text style={styles.subtitle}>Access reservations, active sessions, QR code, and parking history.</Text>
+        <Text style={styles.subtitle}>Access reservations, active sessions, and parking history.</Text>
       </View>
 
       <TextField

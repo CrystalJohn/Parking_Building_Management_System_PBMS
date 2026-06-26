@@ -3,6 +3,11 @@ import { Platform } from 'react-native';
 
 import { tokenStorage } from '../utils/tokenStorage';
 
+type UnauthorizedHandler = () => Promise<void> | void;
+
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+let isHandlingUnauthorized = false;
+
 const defaultBaseURL = Platform.select({
   android: 'http://10.0.2.2:3001',
   ios: 'http://localhost:3001',
@@ -28,6 +33,27 @@ apiClient.interceptors.request.use(async (config) => {
   return config;
 });
 
+apiClient.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      await handleUnauthorized();
+    }
+
+    return Promise.reject(error);
+  },
+);
+
+export function registerUnauthorizedHandler(handler: UnauthorizedHandler) {
+  unauthorizedHandler = handler;
+
+  return () => {
+    if (unauthorizedHandler === handler) {
+      unauthorizedHandler = null;
+    }
+  };
+}
+
 export function getErrorMessage(error: unknown) {
   if (axios.isAxiosError(error)) {
     const message = error.response?.data?.message;
@@ -40,5 +66,22 @@ export function getErrorMessage(error: unknown) {
     return error.message;
   }
 
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
   return 'Unexpected error';
+}
+
+async function handleUnauthorized() {
+  if (!unauthorizedHandler || isHandlingUnauthorized) {
+    return;
+  }
+
+  isHandlingUnauthorized = true;
+  try {
+    await unauthorizedHandler();
+  } finally {
+    isHandlingUnauthorized = false;
+  }
 }

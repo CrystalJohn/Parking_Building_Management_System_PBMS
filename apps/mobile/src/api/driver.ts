@@ -2,7 +2,6 @@ import { apiClient } from './client';
 import type {
   CreateReservationResponse,
   ParkingSession,
-  QrCodeResponse,
   Reservation,
   SlotAvailability,
   VehicleType,
@@ -44,10 +43,6 @@ export const driverApi = {
     return data;
   },
 
-  async getSessionQrCode(sessionId: string) {
-    const { data } = await apiClient.get<QrCodeResponse>(`/sessions/${sessionId}/qr`);
-    return data;
-  },
 };
 
 function normalizeReservationResponse(data: CreateReservationResponse): Reservation {

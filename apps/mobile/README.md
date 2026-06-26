@@ -7,13 +7,12 @@ React Native/Expo mobile app for the PBMS Driver role.
 - Driver authentication
 - Reservation management
 - Active parking session tracking
-- QR code display for checkout
-- Payment/checkout status placeholder
+- Reservation QR display for staff check-in
 - Parking history
 - Driver profile
 - Notification center placeholder
 
-The mobile app calls PBMS backend APIs only. It does not integrate Plate Recognizer or PayOS SDKs directly.
+The mobile app calls PBMS backend APIs only. It does not integrate Plate Recognizer or payment SDKs directly. Checkout and payment are handled by the staff web gate flow, not by the driver mobile app.
 
 ## Tech Stack
 
@@ -88,8 +87,6 @@ EXPO_PUBLIC_API_URL=http://<your-lan-ip>:3001
   - Profile
 - Stack screens
   - Reservation Detail
-  - QR Code
-  - Payment Status
   - Notification Center placeholder
 
 ## Current Backend Dependencies
@@ -103,12 +100,10 @@ EXPO_PUBLIC_API_URL=http://<your-lan-ip>:3001
 - `DELETE /reservations/:id`
 - `GET /sessions/my-active`
 - `GET /sessions/my-history`
-- `GET /sessions/:id/qr`
 
 ## Known Gaps
 
 - Forgot password is a UI placeholder until backend reset-password APIs exist.
 - Reservation detail uses list data from `GET /reservations/my` because no reservation detail endpoint is currently used.
-- Payment status is a placeholder backed by active session state.
-- Bank/QR payment must be implemented through backend APIs first. The mobile app should not call PayOS directly.
+- Reservation QR currently uses the backend reservation ID because the reservation model does not yet expose a separate friendly reservation code.
 - Plate recognition remains backend/staff-side only. The mobile app should not call Plate Recognizer directly.

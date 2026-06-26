@@ -12,7 +12,6 @@ export const driverQueryKeys = {
   },
   activeSessions: ['driver', 'active-sessions'] as const,
   history: ['driver', 'history'] as const,
-  qrCode: (sessionId: string) => ['driver', 'qr-code', sessionId] as const,
 };
 
 export function useSlotAvailabilityQuery() {
@@ -89,10 +88,3 @@ export function useParkingHistoryQuery() {
   });
 }
 
-export function useQrCodeQuery(sessionId: string) {
-  return useQuery({
-    queryKey: driverQueryKeys.qrCode(sessionId),
-    queryFn: () => driverApi.getSessionQrCode(sessionId),
-    enabled: Boolean(sessionId),
-  });
-}

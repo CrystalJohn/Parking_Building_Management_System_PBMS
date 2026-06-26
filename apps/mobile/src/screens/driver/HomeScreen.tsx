@@ -1,13 +1,11 @@
+import { Ionicons } from '@expo/vector-icons';
 import type { CompositeScreenProps } from '@react-navigation/native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Button } from '../../components/Button';
-import { AvailabilityCard } from '../../components/dashboard/AvailabilityCard';
-import { QuickActionCard } from '../../components/dashboard/QuickActionCard';
-import { SummaryCard } from '../../components/dashboard/SummaryCard';
 import { InfoCard } from '../../components/InfoCard';
 import { QueryState } from '../../components/QueryState';
 import { Screen } from '../../components/Screen';
@@ -19,7 +17,7 @@ import {
 import type { DriverTabParamList, RootStackParamList } from '../../navigation/types';
 import { useAuthStore } from '../../store/authStore';
 import { colors } from '../../theme/colors';
-import type { SlotAvailabilityItem } from '../../types/api';
+import type { SlotAvailabilityItem, VehicleType } from '../../types/api';
 import {
   formatDateTime,
   formatSlotLabel,
@@ -34,6 +32,45 @@ type Props = CompositeScreenProps<
   NativeStackScreenProps<RootStackParamList>
 >;
 
+type QuickActionTarget = keyof Pick<
+  DriverTabParamList,
+  'Reservations' | 'ActiveSessionTab' | 'History' | 'Profile'
+>;
+
+type QuickAction = {
+  title: string;
+  description: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  route: QuickActionTarget;
+};
+
+const quickActions: QuickAction[] = [
+  {
+    title: 'My Reservations',
+    description: 'View QR and reservation status.',
+    icon: 'calendar-outline',
+    route: 'Reservations',
+  },
+  {
+    title: 'Active Session',
+    description: 'Check your current parking session.',
+    icon: 'car-sport-outline',
+    route: 'ActiveSessionTab',
+  },
+  {
+    title: 'Parking History',
+    description: 'Review completed parking visits.',
+    icon: 'time-outline',
+    route: 'History',
+  },
+  {
+    title: 'Profile',
+    description: 'Manage your driver account.',
+    icon: 'person-circle-outline',
+    route: 'Profile',
+  },
+];
+
 export function HomeScreen({ navigation }: Props) {
   const user = useAuthStore((state) => state.user);
   const availabilityQuery = useSlotAvailabilityQuery();
@@ -41,11 +78,14 @@ export function HomeScreen({ navigation }: Props) {
   const activeSessionsQuery = useActiveSessionsQuery();
   const activeSession = activeSessionsQuery.data?.[0];
   const activeReservation = reservationsQuery.data?.find((reservation) =>
-    canCancelReservation(reservation.status)
+    canCancelReservation(reservation.status),
   );
-  const availability = availabilityQuery.data ?? [];
-  const availabilityGroups = groupAvailabilityByVehicleType(availability);
   const [durationMs, setDurationMs] = useState(0);
+
+  const availabilitySummary = useMemo(
+    () => summarizeAvailability(availabilityQuery.data ?? []),
+    [availabilityQuery.data],
+  );
 
   useEffect(() => {
     if (!activeSession) {
@@ -64,129 +104,131 @@ export function HomeScreen({ navigation }: Props) {
   return (
     <Screen>
       <View style={styles.hero}>
-        <Text style={styles.greeting}>Hi, {user?.fullName ?? user?.phone ?? 'Driver'}</Text>
-        <Text style={styles.title}>Driver Dashboard</Text>
-        <Text style={styles.subtitle}>Here is your parking status today.</Text>
+        <View style={styles.heroTop}>
+          <View>
+            <Text style={styles.greeting}>Hi, {user?.fullName ?? user?.phone ?? 'Driver'}</Text>
+            <Text style={styles.title}>What do you need today?</Text>
+          </View>
+          <View style={styles.avatar} accessibilityLabel="Driver dashboard">
+            <Ionicons name="car-outline" size={24} color="#ffffff" />
+          </View>
+        </View>
+        <Text style={styles.subtitle}>Reserve, check in with staff, and track your parking visit.</Text>
       </View>
 
-      <InfoCard title="Slot Availability" subtitle="Live availability from PBMS backend">
+      <View style={styles.primaryCard}>
+        <View style={styles.primaryIcon}>
+          <Ionicons name="location-outline" size={26} color="#0b5ed7" />
+        </View>
+        <View style={styles.primaryText}>
+          <Text style={styles.primaryTitle}>Reserve a Parking Slot</Text>
+          <Text style={styles.primaryDescription}>
+            Book your space before arriving. PBMS will assign the best available slot.
+          </Text>
+        </View>
+        <Button onPress={() => navigation.navigate('Reservations')}>
+          Reserve Now
+        </Button>
+      </View>
+
+      {activeReservation ? (
+        <InfoCard title="Active Reservation" subtitle="Show this QR to staff at check-in.">
+          <View style={styles.compactDetails}>
+            <Detail label="Vehicle" value={formatVehicleType(activeReservation.vehicleType)} />
+            <Detail label="Status" value={getReservationStatusLabel(activeReservation.status)} />
+            <Detail label="Expires" value={formatDateTime(activeReservation.expiresAt)} />
+          </View>
+          <Button
+            variant="secondary"
+            onPress={() => navigation.navigate('ReservationDetail', { reservationId: activeReservation.id })}
+          >
+            View Reservation
+          </Button>
+        </InfoCard>
+      ) : null}
+
+      {activeSession ? (
+        <InfoCard title="Active Session" subtitle="Your current parking session after staff check-in.">
+          <View style={styles.compactDetails}>
+            <Detail label="Plate" value={activeSession.licensePlate} />
+            <Detail label="Slot" value={formatSlotLabel(activeSession.slot)} />
+            <Detail label="Check-in" value={formatDateTime(activeSession.checkInTime)} />
+            <Detail label="Duration" value={formatDuration(durationMs)} />
+          </View>
+          <Button onPress={() => navigation.navigate('ActiveSessionTab')}>
+            View Session
+          </Button>
+        </InfoCard>
+      ) : null}
+
+      <InfoCard title="Quick Actions" subtitle="Choose a task to continue.">
+        <View style={styles.actionGrid}>
+          {quickActions.map((action) => (
+            <ActionTile
+              key={action.route}
+              action={action}
+              onPress={() => navigation.navigate(action.route)}
+            />
+          ))}
+        </View>
+      </InfoCard>
+
+      <InfoCard title="Parking Availability" subtitle="Summary only. Slot assignment is automatic.">
         <QueryState
           loading={availabilityQuery.isLoading}
           error={availabilityQuery.error}
-          empty={!availability.length}
+          empty={!availabilityQuery.data?.length}
           emptyMessage="No availability data available."
-          loadingMessage="Loading slot availability..."
+          loadingMessage="Loading availability..."
           onRetry={() => availabilityQuery.refetch()}
         />
-        {availability.length ? (
-          <View style={styles.availabilityGroups}>
-            <AvailabilityGroup title="Car slots" items={availabilityGroups.car} />
-            <AvailabilityGroup title="Motorbike slots" items={availabilityGroups.motorbike} />
+        {availabilityQuery.data?.length ? (
+          <View style={styles.availabilitySummary}>
+            <AvailabilityPill vehicleType="car" available={availabilitySummary.car.available} />
+            <AvailabilityPill vehicleType="motorbike" available={availabilitySummary.motorbike.available} />
           </View>
         ) : null}
-      </InfoCard>
-
-      <InfoCard title="Current Reservation" subtitle="Your active booking before arrival">
-        <QueryState
-          loading={reservationsQuery.isLoading}
-          error={reservationsQuery.error}
-          onRetry={() => reservationsQuery.refetch()}
-        />
-        {activeReservation ? (
-          <SummaryCard
-            title="Active reservation"
-            subtitle={`Status: ${getReservationStatusLabel(activeReservation.status)}`}
-            tone="success"
-          >
-            <Detail label="Vehicle type" value={formatVehicleType(activeReservation.vehicleType)} />
-            <Detail label="Assigned slot" value={formatSlotLabel(activeReservation.slot)} />
-            <Detail label="Expires at" value={formatDateTime(activeReservation.expiresAt)} />
-            <Button
-              variant="secondary"
-              onPress={() => navigation.navigate('ReservationDetail', { reservationId: activeReservation.id })}
-            >
-              Show Reservation QR
-            </Button>
-          </SummaryCard>
-        ) : !reservationsQuery.isLoading && !reservationsQuery.error ? (
-          <SummaryCard
-            title="No active reservation"
-            subtitle="Reserve a slot before arriving at the parking building."
-            tone="empty"
-          />
-        ) : null}
-      </InfoCard>
-
-      <InfoCard title="Active Session" subtitle="Current parking session after staff check-in">
-        <QueryState
-          loading={activeSessionsQuery.isLoading}
-          error={activeSessionsQuery.error}
-          onRetry={() => activeSessionsQuery.refetch()}
-        />
-        {activeSession ? (
-          <SummaryCard title={activeSession.licensePlate} subtitle={`Status: ${activeSession.status}`} tone="warning">
-            <Detail label="Assigned slot" value={formatSlotLabel(activeSession.slot)} />
-            <Detail label="Check-in time" value={formatDateTime(activeSession.checkInTime)} />
-            <Detail label="Duration" value={formatDuration(durationMs)} />
-            <View style={styles.buttonGroup}>
-              <Button onPress={() => navigation.navigate('ActiveSessionTab')}>
-                View session
-              </Button>
-              <Button
-                variant="secondary"
-                onPress={() => navigation.navigate('QRCode', { sessionId: activeSession.id })}
-              >
-                Show checkout QR
-              </Button>
-            </View>
-          </SummaryCard>
-        ) : !activeSessionsQuery.isLoading && !activeSessionsQuery.error ? (
-          <SummaryCard title="No active parking session" tone="empty" />
-        ) : null}
-      </InfoCard>
-
-      <InfoCard title="Quick Actions" subtitle="Common driver tasks">
-        <View style={styles.quickActions}>
-          <QuickActionCard
-            label="Reserve a slot"
-            description="Create a reservation for car or motorbike."
-            onPress={() => navigation.navigate('Reservations')}
-          />
-          <QuickActionCard
-            label="View active session"
-            description="Check current slot, duration, QR, and checkout status."
-            onPress={() => navigation.navigate('ActiveSessionTab')}
-          />
-          <QuickActionCard
-            label="Parking history"
-            description="Review completed parking sessions."
-            onPress={() => navigation.navigate('History')}
-          />
-          <QuickActionCard
-            label="Notifications"
-            description="Open local demo notification center."
-            onPress={() => navigation.navigate('NotificationCenter')}
-          />
-        </View>
       </InfoCard>
     </Screen>
   );
 }
 
-function AvailabilityGroup({ title, items }: { title: string; items: SlotAvailabilityItem[] }) {
-  if (!items.length) {
-    return null;
-  }
-
+function ActionTile({ action, onPress }: { action: QuickAction; onPress: () => void }) {
   return (
-    <View style={styles.availabilityGroup}>
-      <Text style={styles.sectionLabel}>{title}</Text>
-      {items.map((item) => (
-        <AvailabilityCard
-          key={`${item.floorId}-${item.zone}-${item.vehicleType}`}
-          item={item}
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.actionTile, pressed && styles.pressed]}
+    >
+      <View style={styles.actionIcon}>
+        <Ionicons name={action.icon} size={22} color={colors.primary} />
+      </View>
+      <Text style={styles.actionTitle}>{action.title}</Text>
+      <Text style={styles.actionDescription}>{action.description}</Text>
+    </Pressable>
+  );
+}
+
+function AvailabilityPill({
+  vehicleType,
+  available,
+}: {
+  vehicleType: VehicleType;
+  available: number;
+}) {
+  return (
+    <View style={styles.availabilityPill}>
+      <View style={styles.availabilityIcon}>
+        <Ionicons
+          name={vehicleType === 'car' ? 'car-outline' : 'bicycle-outline'}
+          size={22}
+          color={colors.primary}
         />
-      ))}
+      </View>
+      <View>
+        <Text style={styles.availabilityLabel}>{formatVehicleType(vehicleType)}</Text>
+        <Text style={styles.availabilityValue}>{available} available</Text>
+      </View>
     </View>
   );
 }
@@ -200,39 +242,167 @@ function Detail({ label, value }: { label: string; value: string }) {
   );
 }
 
+function summarizeAvailability(items: SlotAvailabilityItem[]) {
+  const groups = groupAvailabilityByVehicleType(items);
+
+  return {
+    car: {
+      available: groups.car.reduce((sum, item) => sum + item.available, 0),
+    },
+    motorbike: {
+      available: groups.motorbike.reduce((sum, item) => sum + item.available, 0),
+    },
+  };
+}
+
 const styles = StyleSheet.create({
   hero: {
-    backgroundColor: colors.primaryDark,
-    borderRadius: 18,
-    gap: 8,
-    padding: 20,
+    backgroundColor: '#0b5ed7',
+    borderRadius: 26,
+    gap: 16,
+    padding: 22,
+    shadowColor: '#0b5ed7',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 10,
+  },
+  heroTop: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 16,
   },
   greeting: {
-    color: '#ccfbf1',
+    color: '#dbeafe',
     fontSize: 14,
     fontWeight: '800',
   },
   title: {
     color: '#ffffff',
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: '900',
+    lineHeight: 34,
+    marginTop: 6,
   },
   subtitle: {
-    color: '#d1fae5',
+    color: '#e0f2fe',
     fontSize: 15,
     lineHeight: 22,
   },
-  availabilityGroups: {
-    gap: 16,
+  avatar: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderColor: 'rgba(255,255,255,0.24)',
+    borderRadius: 18,
+    borderWidth: 1,
+    height: 48,
+    justifyContent: 'center',
+    width: 48,
   },
-  availabilityGroup: {
+  primaryCard: {
+    backgroundColor: colors.surface,
+    borderColor: '#dbeafe',
+    borderRadius: 24,
+    borderWidth: 1,
+    gap: 14,
+    padding: 18,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.06,
+    shadowRadius: 18,
+    elevation: 4,
+  },
+  primaryIcon: {
+    alignItems: 'center',
+    backgroundColor: '#eff6ff',
+    borderRadius: 18,
+    height: 52,
+    justifyContent: 'center',
+    width: 52,
+  },
+  primaryText: {
+    gap: 6,
+  },
+  primaryTitle: {
+    color: colors.text,
+    fontSize: 21,
+    fontWeight: '900',
+  },
+  primaryDescription: {
+    color: colors.muted,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  compactDetails: {
     gap: 10,
   },
-  sectionLabel: {
+  actionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  actionTile: {
+    backgroundColor: '#f8fafc',
+    borderColor: colors.border,
+    borderRadius: 18,
+    borderWidth: 1,
+    gap: 7,
+    minHeight: 142,
+    padding: 14,
+    width: '48%',
+  },
+  pressed: {
+    opacity: 0.72,
+  },
+  actionIcon: {
+    alignItems: 'center',
+    backgroundColor: '#ecfdf5',
+    borderRadius: 14,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
+  actionTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  actionDescription: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  availabilitySummary: {
+    gap: 10,
+  },
+  availabilityPill: {
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderColor: colors.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    padding: 14,
+  },
+  availabilityIcon: {
+    alignItems: 'center',
+    backgroundColor: '#ecfdf5',
+    borderRadius: 14,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  availabilityLabel: {
     color: colors.text,
     fontSize: 14,
     fontWeight: '900',
-    textTransform: 'uppercase',
+  },
+  availabilityValue: {
+    color: colors.muted,
+    fontSize: 13,
+    marginTop: 2,
   },
   detailRow: {
     gap: 2,
@@ -247,11 +417,5 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 15,
     fontWeight: '800',
-  },
-  buttonGroup: {
-    gap: 10,
-  },
-  quickActions: {
-    gap: 10,
   },
 });

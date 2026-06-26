@@ -1,9 +1,9 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { ActivityIndicator, View } from 'react-native';
 
 import { NotificationCenterScreen } from '../screens/driver/NotificationCenterScreen';
-import { PaymentStatusScreen } from '../screens/driver/PaymentStatusScreen';
-import { QRCodeScreen } from '../screens/driver/QRCodeScreen';
 import { ReservationDetailScreen } from '../screens/driver/ReservationDetailScreen';
+import { WelcomeScreen } from '../screens/driver/WelcomeScreen';
 import { useAuthStore } from '../store/authStore';
 import { colors } from '../theme/colors';
 import { AuthNavigator } from './AuthNavigator';
@@ -12,52 +12,58 @@ import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-/**
- * Always declare all root screens and select the initial route declaratively.
- * This avoids imperative auth redirects during navigator initialization.
- */
 export function RootNavigator() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const hasSeenWelcome = useAuthStore((state) => state.hasSeenWelcome);
+  const isWelcomeReady = useAuthStore((state) => state.isWelcomeReady);
+
+  if (isAuthenticated && !isWelcomeReady) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <Stack.Navigator
-      initialRouteName={isAuthenticated ? 'DriverTabs' : 'Auth'}
       screenOptions={{
         headerStyle: { backgroundColor: colors.surface },
         headerTitleStyle: { color: colors.text },
         contentStyle: { backgroundColor: colors.background },
       }}
     >
-      <Stack.Screen
-        name="Auth"
-        component={AuthNavigator}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="DriverTabs"
-        component={DriverTabs}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="ReservationDetail"
-        component={ReservationDetailScreen}
-        options={{ title: 'Reservation Detail' }}
-      />
-      <Stack.Screen
-        name="QRCode"
-        component={QRCodeScreen}
-        options={{ title: 'QR Code' }}
-      />
-      <Stack.Screen
-        name="PaymentStatus"
-        component={PaymentStatusScreen}
-        options={{ title: 'Payment Status' }}
-      />
-      <Stack.Screen
-        name="NotificationCenter"
-        component={NotificationCenterScreen}
-        options={{ title: 'Notifications' }}
-      />
+      {isAuthenticated && !hasSeenWelcome ? (
+        <Stack.Screen
+          name="Welcome"
+          component={WelcomeScreen}
+          options={{ headerShown: false }}
+        />
+      ) : isAuthenticated ? (
+        <>
+          <Stack.Screen
+            name="DriverTabs"
+            component={DriverTabs}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="ReservationDetail"
+            component={ReservationDetailScreen}
+            options={{ title: 'Reservation Detail' }}
+          />
+          <Stack.Screen
+            name="NotificationCenter"
+            component={NotificationCenterScreen}
+            options={{ title: 'Notifications' }}
+          />
+        </>
+      ) : (
+        <Stack.Screen
+          name="Auth"
+          component={AuthNavigator}
+          options={{ headerShown: false }}
+        />
+      )}
     </Stack.Navigator>
   );
 }

@@ -14,9 +14,8 @@ export type DriverTabParamList = {
 
 export type RootStackParamList = {
   Auth: undefined;
+  Welcome: undefined;
   DriverTabs: undefined;
   ReservationDetail: { reservationId: string };
-  QRCode: { sessionId: string };
-  PaymentStatus: { sessionId?: string };
   NotificationCenter: undefined;
 };

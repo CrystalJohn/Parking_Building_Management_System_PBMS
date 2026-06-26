@@ -38,7 +38,7 @@ export function ReservationDetailScreen({ navigation, route }: Props) {
 
   return (
     <Screen>
-      <InfoCard title="Reservation Detail" subtitle="Loaded from the reservations list until a detail endpoint exists">
+      <InfoCard title="Chi tiết đặt chỗ" subtitle="Thông tin đặt chỗ dùng cho check-in tại cổng">
         <QueryState
           loading={reservationQuery.isLoading}
           error={reservationQuery.error}
@@ -49,6 +49,9 @@ export function ReservationDetailScreen({ navigation, route }: Props) {
 
         {reservation ? (
           <View style={styles.details}>
+            {reservation.reservationCode ? (
+              <Detail label="Mã đặt chỗ" value={reservation.reservationCode} />
+            ) : null}
             <Detail label="Status" value={getReservationStatusLabel(reservation.status)} />
             <Detail label="Vehicle type" value={reservation.vehicleType} />
             <Detail label="License plate" value={reservation.licensePlate ?? 'Not assigned'} />
@@ -61,19 +64,15 @@ export function ReservationDetailScreen({ navigation, route }: Props) {
             {canCancelReservation(reservation.status) ? (
               <>
                 <View style={styles.reservationCodeCard}>
-                  <Text style={styles.codeTitle}>Reservation QR</Text>
+                  <Text style={styles.codeTitle}>Mã QR đặt chỗ</Text>
                   <Text style={styles.codeHelp}>
-                    Show this Reservation QR to staff at the check-in gate.
+                    Vui lòng đưa mã này cho nhân viên bãi xe để check-in.
                   </Text>
                   <View style={styles.qrWrap}>
                     <QRCode value={reservation.id} size={210} />
                   </View>
-                  <Text style={styles.codeLabel}>Text fallback: reservation ID</Text>
-                  <Text selectable style={styles.codeValue}>
-                    {reservation.id}
-                  </Text>
                   <Text style={styles.codeNote}>
-                    QR payload: reservation ID. This is separate from the Session QR used for checkout.
+                    Mã QR này chỉ dùng cho bước check-in trước khi phiên gửi xe bắt đầu.
                   </Text>
                 </View>
 
@@ -119,7 +118,7 @@ function formatFloor(slot?: SlotLike) {
     return `${slot.floor.name} (${slot.floor.floorNumber})`;
   }
 
-  return `Floor ID ${slot.floorId ?? 'N/A'}`;
+  return slot.floorId ? `Floor ${slot.floorId}` : 'N/A';
 }
 
 const formatDate = formatDateTimeVN;
@@ -178,22 +177,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     padding: 16,
-  },
-  codeLabel: {
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-  },
-  codeValue: {
-    backgroundColor: '#ffffff',
-    borderColor: colors.border,
-    borderRadius: 12,
-    borderWidth: 1,
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: '900',
-    padding: 12,
   },
   codeNote: {
     color: colors.muted,

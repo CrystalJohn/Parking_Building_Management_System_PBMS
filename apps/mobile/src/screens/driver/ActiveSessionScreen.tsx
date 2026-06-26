@@ -1,26 +1,20 @@
-import type { CompositeScreenProps } from '@react-navigation/native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { Button } from '../../components/Button';
 import { InfoCard } from '../../components/InfoCard';
 import { QueryState } from '../../components/QueryState';
 import { Screen } from '../../components/Screen';
 import { driverQueryKeys, useActiveSessionsQuery } from '../../hooks/useDriverQueries';
 import { colors } from '../../theme/colors';
 import { formatDateTimeVN } from '../../utils/dateTime';
-import { formatDuration, getEstimatedFee, getSessionDurationMs } from '../../utils/session';
-import type { DriverTabParamList, RootStackParamList } from '../../navigation/types';
+import { formatDuration, getSessionDurationMs } from '../../utils/session';
+import type { DriverTabParamList } from '../../navigation/types';
 
-type Props = CompositeScreenProps<
-  BottomTabScreenProps<DriverTabParamList, 'ActiveSessionTab'>,
-  NativeStackScreenProps<RootStackParamList>
->;
+type Props = BottomTabScreenProps<DriverTabParamList, 'ActiveSessionTab'>;
 
-export function ActiveSessionScreen({ navigation }: Props) {
+export function ActiveSessionScreen(_props: Props) {
   const queryClient = useQueryClient();
   const activeSessionsQuery = useActiveSessionsQuery();
   const activeSession = activeSessionsQuery.data?.[0];
@@ -62,33 +56,18 @@ export function ActiveSessionScreen({ navigation }: Props) {
     );
   }
 
-  const estimatedFee = getEstimatedFee(activeSession);
-
   return (
     <Screen>
       <InfoCard title={activeSession.licensePlate} subtitle={`Status: ${activeSession.status}`}>
         <View style={styles.details}>
+          <Detail label="Mã phiên gửi xe" value={activeSession.sessionCode ?? 'Chưa có mã phiên'} />
           <Detail label="Assigned slot" value={activeSession.slot?.code ?? 'Assigned'} />
           <Detail label="Floor" value={formatFloor(activeSession.slot)} />
           <Detail label="Zone" value={activeSession.slot?.zone ?? 'N/A'} />
           <Detail label="Check-in time" value={formatDate(activeSession.checkInTime)} />
           <Detail label="Duration" value={formatDuration(durationMs)} />
-          <Detail
-            label="Estimated fee"
-            value={`${estimatedFee.amount.toLocaleString()} VND (${estimatedFee.source})`}
-          />
-          <Detail label="Payment" value={activeSession.isPaid ? 'Paid' : 'Pending'} />
+          <Detail label="Vehicle type" value={activeSession.vehicleType} />
         </View>
-
-        <Button onPress={() => navigation.navigate('QRCode', { sessionId: activeSession.id })}>
-          Display QR code
-        </Button>
-        <Button
-          variant="secondary"
-          onPress={() => navigation.navigate('PaymentStatus', { sessionId: activeSession.id })}
-        >
-          Payment / checkout status
-        </Button>
       </InfoCard>
     </Screen>
   );
@@ -111,7 +90,7 @@ function formatFloor(slot?: SlotLike) {
     return `${slot.floor.name} (${slot.floor.floorNumber})`;
   }
 
-  return `Floor ID ${slot.floorId ?? 'N/A'}`;
+  return slot.floorId ? `Floor ${slot.floorId}` : 'N/A';
 }
 
 const formatDate = formatDateTimeVN;

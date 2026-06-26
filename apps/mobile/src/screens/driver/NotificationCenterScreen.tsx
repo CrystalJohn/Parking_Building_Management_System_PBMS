@@ -14,12 +14,8 @@ const placeholderNotifications = [
     body: 'A reservation can expire when the vehicle is not checked in on time.',
   },
   {
-    title: 'Payment confirmed',
-    body: 'Payment confirmation will come from the PBMS backend.',
-  },
-  {
-    title: 'Exit authorized',
-    body: 'Staff can authorize exit after checkout validation.',
+    title: 'Vehicle checked in',
+    body: 'Your active parking session appears after staff confirms check-in.',
   },
   {
     title: 'Session completed',

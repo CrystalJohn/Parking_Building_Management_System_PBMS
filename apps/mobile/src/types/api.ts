@@ -2,9 +2,6 @@ export type Role = 'admin' | 'manager' | 'staff' | 'driver';
 export type VehicleType = 'car' | 'motorbike';
 export type ReservationStatus = 'active' | 'fulfilled' | 'expired' | 'cancelled';
 export type SessionStatus = 'active' | 'checkout_pending' | 'exit_authorized' | 'completed' | 'cancelled';
-export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'cancelled' | 'expired';
-export type PaymentMethod = 'cash' | 'bank_qr';
-export type ExitAuthorizationStatus = 'NOT_READY' | 'AUTHORIZED' | 'EXIT_CONFIRMED';
 
 export type User = {
   id: string;
@@ -29,6 +26,7 @@ export type RegisterPayload = LoginPayload & {
 
 export type Reservation = {
   id: string;
+  reservationCode?: string;
   vehicleType: VehicleType;
   status: ReservationStatus;
   createdAt: string;
@@ -66,6 +64,7 @@ export type CreateReservationResponse =
 
 export type ParkingSession = {
   id: string;
+  sessionCode?: string;
   licensePlate: string;
   vehicleType: VehicleType;
   status: SessionStatus;
@@ -87,14 +86,6 @@ export type ParkingSession = {
   };
 };
 
-export type Payment = {
-  id: string;
-  sessionId: string;
-  amount: number;
-  method: PaymentMethod;
-  status: PaymentStatus;
-  paidAt?: string | null;
-};
 
 export type SlotAvailabilityItem = {
   floorId: number;
@@ -108,11 +99,3 @@ export type SlotAvailabilityItem = {
 
 export type SlotAvailability = SlotAvailabilityItem[];
 
-export type QrCodeResponse = {
-  qrCode?: string;
-  dataUrl?: string;
-  qrDataUrl?: string;
-  qrCodeDataUrl?: string;
-  image?: string;
-  value?: string;
-};
