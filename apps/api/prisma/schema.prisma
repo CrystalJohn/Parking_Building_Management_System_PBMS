@@ -173,6 +173,7 @@ model Reservation {
   driverId    String            @map("driver_id")
   slotId      Int               @map("slot_id")
   vehicleType VehicleType       @map("vehicle_type")
+  plannedArrivalAt DateTime?    @map("planned_arrival_at") @db.Timestamptz(3)
   createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
   expiresAt   DateTime          @map("expires_at") @db.Timestamptz(3)
   status      ReservationStatus @default(active)

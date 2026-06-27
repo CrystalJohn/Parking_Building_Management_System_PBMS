@@ -1,10 +1,11 @@
 import { apiClient } from './client';
 import type {
+  CreateReservationRequest,
   CreateReservationResponse,
   ParkingSession,
   Reservation,
+  ReservationAvailability,
   SlotAvailability,
-  VehicleType,
 } from '../types/api';
 
 export const driverApi = {
@@ -13,13 +14,20 @@ export const driverApi = {
     return data;
   },
 
+  async getReservationAvailability(payload: CreateReservationRequest) {
+    const { data } = await apiClient.get<ReservationAvailability>('/slots/availability', {
+      params: payload,
+    });
+    return data;
+  },
+
   async getMyReservations() {
     const { data } = await apiClient.get<Reservation[]>('/reservations/my');
     return data;
   },
 
-  async createReservation(vehicleType: VehicleType) {
-    const { data } = await apiClient.post<CreateReservationResponse>('/reservations', { vehicleType });
+  async createReservation(payload: CreateReservationRequest) {
+    const { data } = await apiClient.post<CreateReservationResponse>('/reservations', payload);
     return normalizeReservationResponse(data);
   },
 

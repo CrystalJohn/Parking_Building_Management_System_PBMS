@@ -54,6 +54,10 @@ export function ReservationDetailScreen({ navigation, route }: Props) {
             ) : null}
             <Detail label="Status" value={getReservationStatusLabel(reservation.status)} />
             <Detail label="Vehicle type" value={reservation.vehicleType} />
+            <Detail
+              label="Planned arrival"
+              value={formatDate(reservation.plannedArrivalAt)}
+            />
             <Detail label="License plate" value={reservation.licensePlate ?? 'Not assigned'} />
             <Detail label="Assigned slot" value={reservation.slot?.code ?? 'Not assigned'} />
             <Detail label="Floor" value={formatFloor(reservation.slot)} />

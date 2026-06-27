@@ -4,14 +4,16 @@ import {
   Patch,
   Body,
   Param,
+  Query,
   ParseIntPipe,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
 import { Roles } from '../auth/decorators';
 import { SlotsService } from './slots.service';
-import { UpdateSlotStatusDto } from './dto';
+import { SlotAvailabilityQueryDto, UpdateSlotStatusDto } from './dto';
 
 @Controller('slots')
 export class SlotsController {
@@ -44,7 +46,20 @@ export class SlotsController {
    */
   @Get('availability')
   @UseGuards(JwtAuthGuard)
-  getAvailability() {
+  getAvailability(@Query() query: SlotAvailabilityQueryDto) {
+    if (query.vehicleType || query.plannedArrivalAt) {
+      if (!query.vehicleType || !query.plannedArrivalAt) {
+        throw new BadRequestException(
+          'vehicleType and plannedArrivalAt are required together',
+        );
+      }
+
+      return this.slotsService.getPlannedAvailability(
+        query.vehicleType,
+        query.plannedArrivalAt,
+      );
+    }
+
     return this.slotsService.getAvailability();
   }
 

@@ -1,13 +1,18 @@
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
   ConflictException,
 } from '@nestjs/common';
+import { ReservationStatus, SlotStatus, VehicleType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateSlotStatusDto } from './dto';
 
 @Injectable()
 export class SlotsService {
+  private static readonly DEFAULT_RESERVATION_WINDOW_MINUTES = 30;
+  private static readonly MAX_PLANNED_ARRIVAL_DAYS = 7;
+
   constructor(private readonly prisma: PrismaService) {}
 
   /**
@@ -68,6 +73,95 @@ export class SlotsService {
   }
 
   /**
+   * Phase 3 availability for a planned reservation.
+   *
+   * Current PBMS still locks a slot immediately when a reservation is created,
+   * so reserved slots are conservatively unavailable for every selected time.
+   * The planned-arrival overlap check protects the time-window model and old
+   * data where slot status may not fully reflect an active reservation.
+   */
+  async getPlannedAvailability(
+    vehicleType: VehicleType,
+    plannedArrivalAtIso: string,
+  ) {
+    const plannedArrivalAt = this.parsePlannedArrival(plannedArrivalAtIso);
+    const timeoutMinutes = await this.getReservationWindowMinutes();
+    const requestedEnd = addMinutes(plannedArrivalAt, timeoutMinutes);
+
+    const [slots, activeReservations] = await Promise.all([
+      this.prisma.slot.findMany({
+        where: {
+          vehicleType,
+          status: { not: SlotStatus.maintenance },
+        },
+        select: {
+          id: true,
+          status: true,
+        },
+      }),
+      this.prisma.reservation.findMany({
+        where: {
+          vehicleType,
+          status: ReservationStatus.active,
+          slot: {
+            status: { not: SlotStatus.maintenance },
+          },
+        },
+        select: {
+          slotId: true,
+          plannedArrivalAt: true,
+          createdAt: true,
+          expiresAt: true,
+        },
+      }),
+    ]);
+
+    const conflictingSlotIds = new Set<number>();
+    for (const reservation of activeReservations) {
+      const windowStart = reservation.plannedArrivalAt ?? reservation.createdAt;
+      const windowEnd = reservation.plannedArrivalAt
+        ? addMinutes(reservation.plannedArrivalAt, timeoutMinutes)
+        : reservation.expiresAt;
+
+      if (windowsOverlap(plannedArrivalAt, requestedEnd, windowStart, windowEnd)) {
+        conflictingSlotIds.add(reservation.slotId);
+      }
+    }
+
+    let availableCount = 0;
+    let reservedCount = 0;
+    let occupiedCount = 0;
+
+    for (const slot of slots) {
+      if (slot.status === SlotStatus.occupied) {
+        occupiedCount++;
+        continue;
+      }
+
+      if (
+        slot.status === SlotStatus.reserved ||
+        conflictingSlotIds.has(slot.id)
+      ) {
+        reservedCount++;
+        continue;
+      }
+
+      if (slot.status === SlotStatus.available) {
+        availableCount++;
+      }
+    }
+
+    return {
+      vehicleType,
+      plannedArrivalAt: plannedArrivalAt.toISOString(),
+      availableCount,
+      reservedCount,
+      occupiedCount,
+      isAvailable: availableCount > 0,
+    };
+  }
+
+  /**
    * Public summary — total vs occupied/reserved for the entire building.
    * No auth required. Used by landing page.
    */
@@ -124,4 +218,56 @@ export class SlotsService {
       include: { floor: true },
     });
   }
+
+  private async getReservationWindowMinutes(): Promise<number> {
+    const config = await this.prisma.systemConfig.findUnique({
+      where: { configKey: 'reservation_timeout_minutes' },
+    });
+
+    if (config?.configValue) {
+      const parsed = parseInt(config.configValue, 10);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+
+    return SlotsService.DEFAULT_RESERVATION_WINDOW_MINUTES;
+  }
+
+  private parsePlannedArrival(value: string): Date {
+    const plannedArrivalAt = new Date(value);
+
+    if (Number.isNaN(plannedArrivalAt.getTime())) {
+      throw new BadRequestException('plannedArrivalAt must be a valid ISO date string');
+    }
+
+    const now = new Date();
+    if (plannedArrivalAt.getTime() <= now.getTime()) {
+      throw new BadRequestException('plannedArrivalAt must not be in the past');
+    }
+
+    const maxArrival = addDays(now, SlotsService.MAX_PLANNED_ARRIVAL_DAYS);
+    if (plannedArrivalAt.getTime() > maxArrival.getTime()) {
+      throw new BadRequestException(
+        `plannedArrivalAt must be within ${SlotsService.MAX_PLANNED_ARRIVAL_DAYS} days`,
+      );
+    }
+
+    return plannedArrivalAt;
+  }
+}
+
+function addMinutes(date: Date, minutes: number): Date {
+  return new Date(date.getTime() + minutes * 60 * 1000);
+}
+
+function addDays(date: Date, days: number): Date {
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+function windowsOverlap(
+  aStart: Date,
+  aEnd: Date,
+  bStart: Date,
+  bEnd: Date,
+): boolean {
+  return aStart.getTime() < bEnd.getTime() && bStart.getTime() < aEnd.getTime();
 }

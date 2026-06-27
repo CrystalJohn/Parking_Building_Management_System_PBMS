@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ConflictException } from '@nestjs/common';
-import { SlotStatus, Zone, VehicleType } from '@prisma/client';
+import { BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
+import { ReservationStatus, SlotStatus, Zone, VehicleType } from '@prisma/client';
 import { SlotsService } from './slots.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -46,6 +46,12 @@ describe('SlotsService', () => {
       findUnique: jest.Mock;
       update: jest.Mock;
     };
+    reservation: {
+      findMany: jest.Mock;
+    };
+    systemConfig: {
+      findUnique: jest.Mock;
+    };
   };
 
   beforeEach(async () => {
@@ -54,6 +60,12 @@ describe('SlotsService', () => {
         findMany: jest.fn(),
         findUnique: jest.fn(),
         update: jest.fn(),
+      },
+      reservation: {
+        findMany: jest.fn(),
+      },
+      systemConfig: {
+        findUnique: jest.fn(),
       },
     };
 
@@ -65,6 +77,7 @@ describe('SlotsService', () => {
     }).compile();
 
     service = module.get<SlotsService>(SlotsService);
+    prisma.systemConfig.findUnique.mockResolvedValue(null);
   });
 
   // ── findAll ────────────────────────────────────────────────────────────────
@@ -159,6 +172,96 @@ describe('SlotsService', () => {
   });
 
   // ── updateStatus ───────────────────────────────────────────────────────────
+
+  describe('getPlannedAvailability', () => {
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-06-26T01:00:00.000Z'));
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('returns mobile-friendly availability counts for a selected vehicle type and time', async () => {
+      prisma.slot.findMany.mockResolvedValue([
+        makeSlot({ id: 1, vehicleType: VehicleType.car, status: SlotStatus.available }),
+        makeSlot({ id: 2, vehicleType: VehicleType.car, status: SlotStatus.reserved }),
+        makeSlot({ id: 3, vehicleType: VehicleType.car, status: SlotStatus.occupied }),
+      ]);
+      prisma.reservation.findMany.mockResolvedValue([]);
+
+      const result = await service.getPlannedAvailability(
+        VehicleType.car,
+        '2026-06-26T02:00:00.000Z',
+      );
+
+      expect(result).toEqual({
+        vehicleType: VehicleType.car,
+        plannedArrivalAt: '2026-06-26T02:00:00.000Z',
+        availableCount: 1,
+        reservedCount: 1,
+        occupiedCount: 1,
+        isAvailable: true,
+      });
+      expect(prisma.slot.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            vehicleType: VehicleType.car,
+            status: { not: SlotStatus.maintenance },
+          },
+        }),
+      );
+    });
+
+    it('does not count occupied or maintenance slots as available', async () => {
+      prisma.slot.findMany.mockResolvedValue([
+        makeSlot({ id: 1, status: SlotStatus.occupied }),
+      ]);
+      prisma.reservation.findMany.mockResolvedValue([]);
+
+      const result = await service.getPlannedAvailability(
+        VehicleType.car,
+        '2026-06-26T02:00:00.000Z',
+      );
+
+      expect(result.availableCount).toBe(0);
+      expect(result.occupiedCount).toBe(1);
+      expect(result.isAvailable).toBe(false);
+    });
+
+    it('active conflicting reservation reduces planned availability', async () => {
+      prisma.slot.findMany.mockResolvedValue([
+        makeSlot({ id: 1, status: SlotStatus.available }),
+        makeSlot({ id: 2, status: SlotStatus.available }),
+      ]);
+      prisma.reservation.findMany.mockResolvedValue([
+        {
+          slotId: 2,
+          status: ReservationStatus.active,
+          plannedArrivalAt: new Date('2026-06-26T02:15:00.000Z'),
+          createdAt: new Date('2026-06-26T01:30:00.000Z'),
+          expiresAt: new Date('2026-06-26T02:00:00.000Z'),
+        },
+      ]);
+
+      const result = await service.getPlannedAvailability(
+        VehicleType.car,
+        '2026-06-26T02:00:00.000Z',
+      );
+
+      expect(result.availableCount).toBe(1);
+      expect(result.reservedCount).toBe(1);
+      expect(result.isAvailable).toBe(true);
+    });
+
+    it('rejects invalid plannedArrivalAt', async () => {
+      await expect(
+        service.getPlannedAvailability(VehicleType.car, 'not-a-date'),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prisma.slot.findMany).not.toHaveBeenCalled();
+    });
+  });
 
   describe('updateStatus', () => {
     it('sets slot to maintenance successfully', async () => {

@@ -1,5 +1,6 @@
 import {
   Injectable,
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   NotFoundException,
@@ -9,6 +10,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { VehicleType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AllocationService } from '../slots/allocation.service';
+import { SlotsService } from '../slots/slots.service';
 import { CreateReservationDto } from './dto';
 
 @Injectable()
@@ -17,10 +19,12 @@ export class ReservationsService {
 
   /** Default reservation timeout in minutes (read from SystemConfig at runtime). */
   private static readonly DEFAULT_TIMEOUT_MINUTES = 30;
+  private static readonly MAX_PLANNED_ARRIVAL_DAYS = 7;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly allocationService: AllocationService,
+    private readonly slotsService: SlotsService,
   ) {}
 
   /**
@@ -35,6 +39,8 @@ export class ReservationsService {
    * Req 8.1, 8.2, 8.3
    */
   async create(dto: CreateReservationDto, driverId: string) {
+    const plannedArrivalAt = this.parsePlannedArrival(dto.plannedArrivalAt);
+
     // 18.5: Validate driver exists and is active
     const driver = await this.prisma.user.findUnique({
       where: { id: driverId },
@@ -61,6 +67,15 @@ export class ReservationsService {
       throw new ConflictException(
         `You already have an active ${dto.vehicleType} reservation. Cancel it before creating a new one.`,
       );
+    }
+
+    const availability = await this.slotsService.getPlannedAvailability(
+      dto.vehicleType,
+      plannedArrivalAt.toISOString(),
+    );
+
+    if (!availability.isAvailable) {
+      throw new ConflictException('No available slots for the selected time.');
     }
 
     // Read timeout from SystemConfig
@@ -90,14 +105,15 @@ export class ReservationsService {
         data: { status: 'reserved' },
       });
 
-      // 18.2: Create reservation with expires_at = now + timeout
-      const expiresAt = new Date(Date.now() + timeoutMinutes * 60 * 1000);
+      // 18.2: Create reservation with expires_at = planned arrival + timeout.
+      const expiresAt = new Date(plannedArrivalAt.getTime() + timeoutMinutes * 60_000);
 
       const newReservation = await tx.reservation.create({
         data: {
           driverId,
           slotId: slot.id,
           vehicleType: dto.vehicleType,
+          plannedArrivalAt,
           expiresAt,
         },
         include: {
@@ -116,6 +132,7 @@ export class ReservationsService {
       reservation: {
         id: reservation.id,
         vehicleType: reservation.vehicleType,
+        plannedArrivalAt: reservation.plannedArrivalAt,
         status: reservation.status,
         createdAt: reservation.createdAt,
         expiresAt: reservation.expiresAt,
@@ -278,5 +295,29 @@ export class ReservationsService {
     }
 
     return ReservationsService.DEFAULT_TIMEOUT_MINUTES;
+  }
+
+  private parsePlannedArrival(value: string): Date {
+    const plannedArrivalAt = new Date(value);
+
+    if (Number.isNaN(plannedArrivalAt.getTime())) {
+      throw new BadRequestException('plannedArrivalAt must be a valid ISO date string');
+    }
+
+    const now = new Date();
+    if (plannedArrivalAt.getTime() <= now.getTime()) {
+      throw new BadRequestException('plannedArrivalAt must not be in the past');
+    }
+
+    const maxArrival = new Date(
+      now.getTime() + ReservationsService.MAX_PLANNED_ARRIVAL_DAYS * 24 * 60 * 60 * 1000,
+    );
+    if (plannedArrivalAt.getTime() > maxArrival.getTime()) {
+      throw new BadRequestException(
+        `plannedArrivalAt must be within ${ReservationsService.MAX_PLANNED_ARRIVAL_DAYS} days`,
+      );
+    }
+
+    return plannedArrivalAt;
   }
 }

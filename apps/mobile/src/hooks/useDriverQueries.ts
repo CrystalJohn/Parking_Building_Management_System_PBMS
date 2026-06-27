@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { driverApi } from '../api/driver';
-import type { Reservation, VehicleType } from '../types/api';
+import type { CreateReservationRequest, Reservation } from '../types/api';
 
 export const driverQueryKeys = {
   availability: ['driver', 'availability'] as const,
+  reservationAvailability: (vehicleType: string, plannedArrivalAt: string) =>
+    ['driver', 'reservation-availability', vehicleType, plannedArrivalAt] as const,
   reservations: {
     all: ['driver', 'reservations'] as const,
     list: ['driver', 'reservations', 'list'] as const,
@@ -18,6 +20,17 @@ export function useSlotAvailabilityQuery() {
   return useQuery({
     queryKey: driverQueryKeys.availability,
     queryFn: driverApi.getSlotAvailability,
+  });
+}
+
+export function useReservationAvailabilityQuery(
+  vehicleType: CreateReservationRequest['vehicleType'],
+  plannedArrivalAt: string,
+) {
+  return useQuery({
+    queryKey: driverQueryKeys.reservationAvailability(vehicleType, plannedArrivalAt),
+    queryFn: () => driverApi.getReservationAvailability({ vehicleType, plannedArrivalAt }),
+    enabled: Boolean(vehicleType && plannedArrivalAt),
   });
 }
 
@@ -39,7 +52,7 @@ export function useCreateReservationMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (vehicleType: VehicleType) => driverApi.createReservation(vehicleType),
+    mutationFn: (payload: CreateReservationRequest) => driverApi.createReservation(payload),
     onSuccess: (reservation: Reservation) => {
       queryClient.setQueryData(
         driverQueryKeys.reservations.detail(reservation.id),

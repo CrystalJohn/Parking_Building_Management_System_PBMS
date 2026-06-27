@@ -28,6 +28,7 @@ export type Reservation = {
   id: string;
   reservationCode?: string;
   vehicleType: VehicleType;
+  plannedArrivalAt?: string | null;
   status: ReservationStatus;
   createdAt: string;
   expiresAt: string;
@@ -43,6 +44,20 @@ export type Reservation = {
       name: string;
     };
   };
+};
+
+export type CreateReservationRequest = {
+  vehicleType: VehicleType;
+  plannedArrivalAt: string;
+};
+
+export type ReservationAvailability = {
+  vehicleType: VehicleType;
+  plannedArrivalAt: string;
+  availableCount: number;
+  reservedCount: number;
+  occupiedCount: number;
+  isAvailable: boolean;
 };
 
 export type CreateReservationResponse =

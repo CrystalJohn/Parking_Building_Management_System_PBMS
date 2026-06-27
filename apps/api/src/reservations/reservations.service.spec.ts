@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Logger,
@@ -13,6 +14,7 @@ import {
 } from '@prisma/client';
 import { ReservationsService } from './reservations.service';
 import { AllocationService } from '../slots/allocation.service';
+import { SlotsService } from '../slots/slots.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -47,6 +49,7 @@ const makeReservation = (overrides: Partial<{
   driverId: string;
   slotId: number;
   vehicleType: VehicleType;
+  plannedArrivalAt: Date | null;
   status: ReservationStatus;
   createdAt: Date;
   expiresAt: Date;
@@ -56,10 +59,22 @@ const makeReservation = (overrides: Partial<{
   driverId: 'driver-uuid',
   slotId: 1,
   vehicleType: VehicleType.motorbike,
+  plannedArrivalAt: new Date('2024-01-01T09:00:00Z'),
   status: ReservationStatus.active,
   createdAt: new Date('2024-01-01T08:00:00Z'),
   expiresAt: new Date('2024-01-01T08:30:00Z'),
   slot: makeSlot(),
+  ...overrides,
+});
+
+const makeCreateDto = (
+  overrides: Partial<{
+    vehicleType: VehicleType;
+    plannedArrivalAt: string;
+  }> = {},
+) => ({
+  vehicleType: VehicleType.motorbike,
+  plannedArrivalAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
   ...overrides,
 });
 
@@ -75,6 +90,7 @@ describe('ReservationsService', () => {
     $transaction: jest.Mock;
   };
   let allocationService: { allocate: jest.Mock };
+  let slotsService: { getPlannedAvailability: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
@@ -92,12 +108,14 @@ describe('ReservationsService', () => {
     };
 
     allocationService = { allocate: jest.fn() };
+    slotsService = { getPlannedAvailability: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ReservationsService,
         { provide: PrismaService, useValue: prisma },
         { provide: AllocationService, useValue: allocationService },
+        { provide: SlotsService, useValue: slotsService },
       ],
     }).compile();
 
@@ -138,6 +156,15 @@ describe('ReservationsService', () => {
         allocationTimeMs: 3,
       });
 
+      slotsService.getPlannedAvailability.mockResolvedValue({
+        vehicleType: VehicleType.motorbike,
+        plannedArrivalAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        availableCount: 1,
+        reservedCount: 0,
+        occupiedCount: 0,
+        isAvailable: true,
+      });
+
       // Transaction executes callback
       prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
         const tx = {
@@ -155,16 +182,21 @@ describe('ReservationsService', () => {
       const logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation();
 
       const result = await service.create(
-        { vehicleType: VehicleType.motorbike },
+        makeCreateDto(),
         driverId,
       );
 
       expect(result.reservation).toHaveProperty('id');
       expect(result.reservation).toHaveProperty('expiresAt');
+      expect(result.reservation).toHaveProperty('plannedArrivalAt');
       expect(result.reservation.status).toBe('active');
       expect(result.slot).toHaveProperty('code');
       expect(result.slot).toHaveProperty('floor');
       expect(allocationService.allocate).toHaveBeenCalledWith(VehicleType.motorbike);
+      expect(slotsService.getPlannedAvailability).toHaveBeenCalledWith(
+        VehicleType.motorbike,
+        expect.any(String),
+      );
       expect(logSpy).toHaveBeenCalledWith(
         expect.stringContaining('Reservation created'),
       );
@@ -174,7 +206,7 @@ describe('ReservationsService', () => {
       prisma.user.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.create({ vehicleType: VehicleType.motorbike }, driverId),
+        service.create(makeCreateDto(), driverId),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -186,7 +218,7 @@ describe('ReservationsService', () => {
       });
 
       await expect(
-        service.create({ vehicleType: VehicleType.motorbike }, driverId),
+        service.create(makeCreateDto(), driverId),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -198,7 +230,7 @@ describe('ReservationsService', () => {
       });
 
       await expect(
-        service.create({ vehicleType: VehicleType.motorbike }, driverId),
+        service.create(makeCreateDto(), driverId),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -208,7 +240,7 @@ describe('ReservationsService', () => {
       );
 
       await expect(
-        service.create({ vehicleType: VehicleType.motorbike }, driverId),
+        service.create(makeCreateDto(), driverId),
       ).rejects.toThrow(ConflictException);
     });
 
@@ -237,17 +269,117 @@ describe('ReservationsService', () => {
 
       jest.useFakeTimers().setSystemTime(new Date('2024-01-01T08:00:00Z'));
 
-      await service.create({ vehicleType: VehicleType.motorbike }, driverId);
+      await service.create(makeCreateDto(), driverId);
 
       // Slot set to reserved
       expect((capturedSlotUpdate as any).data.status).toBe('reserved');
 
-      // Reservation has expires_at = now + 30 min
+      // Reservation has expires_at = planned arrival + 30 min
       const expiresAt = (capturedReservationData as any).data.expiresAt as Date;
       expect(expiresAt.getTime()).toBe(
-        new Date('2024-01-01T08:30:00Z').getTime(),
+        new Date('2024-01-01T09:30:00Z').getTime(),
+      );
+      const plannedArrivalAt = (capturedReservationData as any).data.plannedArrivalAt as Date;
+      expect(plannedArrivalAt.getTime()).toBe(
+        new Date('2024-01-01T09:00:00Z').getTime(),
       );
 
+      jest.useRealTimers();
+    });
+
+    it('calculates expiresAt from plannedArrivalAt, not createdAt or now', async () => {
+      const plannedArrivalAt = '2026-06-27T05:00:00.000Z';
+      let capturedReservationData: unknown = null;
+
+      prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          $queryRaw: jest.fn().mockResolvedValue([{ id: slot.id, status: 'available' }]),
+          slot: { update: jest.fn().mockResolvedValue({ ...slot, status: 'reserved' }) },
+          reservation: {
+            create: jest.fn().mockImplementation((args) => {
+              capturedReservationData = args;
+              return Promise.resolve(
+                makeReservation({
+                  plannedArrivalAt: args.data.plannedArrivalAt,
+                  expiresAt: args.data.expiresAt,
+                }),
+              );
+            }),
+          },
+        };
+        return fn(tx);
+      });
+
+      jest.useFakeTimers().setSystemTime(new Date('2026-06-27T03:54:32.920Z'));
+
+      await service.create(
+        makeCreateDto({
+          vehicleType: VehicleType.car,
+          plannedArrivalAt,
+        }),
+        driverId,
+      );
+
+      const expiresAt = (capturedReservationData as any).data.expiresAt as Date;
+      expect(expiresAt.toISOString()).toBe('2026-06-27T05:30:00.000Z');
+      expect(expiresAt.toISOString()).not.toBe('2026-06-27T04:24:32.920Z');
+
+      jest.useRealTimers();
+    });
+
+    it('throws ConflictException when no slot is available for selected plannedArrivalAt', async () => {
+      slotsService.getPlannedAvailability.mockResolvedValue({
+        vehicleType: VehicleType.motorbike,
+        plannedArrivalAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        availableCount: 0,
+        reservedCount: 1,
+        occupiedCount: 0,
+        isAvailable: false,
+      });
+
+      await expect(
+        service.create(makeCreateDto(), driverId),
+      ).rejects.toThrow(ConflictException);
+
+      expect(allocationService.allocate).not.toHaveBeenCalled();
+    });
+
+    it('rejects invalid plannedArrivalAt', async () => {
+      await expect(
+        service.create(
+          makeCreateDto({ plannedArrivalAt: 'not-a-date' }),
+          driverId,
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(allocationService.allocate).not.toHaveBeenCalled();
+    });
+
+    it('rejects plannedArrivalAt in the past', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2024-01-01T08:00:00Z'));
+
+      await expect(
+        service.create(
+          makeCreateDto({ plannedArrivalAt: '2024-01-01T07:59:00.000Z' }),
+          driverId,
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(allocationService.allocate).not.toHaveBeenCalled();
+      jest.useRealTimers();
+    });
+
+    it('rejects plannedArrivalAt outside the 7 day booking window', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2024-01-01T08:00:00Z'));
+
+      await expect(
+        service.create(
+          makeCreateDto({ plannedArrivalAt: '2024-01-09T08:01:00.000Z' }),
+          driverId,
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(allocationService.allocate).not.toHaveBeenCalled();
       jest.useRealTimers();
     });
 
@@ -288,7 +420,7 @@ describe('ReservationsService', () => {
       });
 
       const result = await service.create(
-        { vehicleType: VehicleType.motorbike },
+        makeCreateDto(),
         driverId,
       );
 
@@ -298,6 +430,52 @@ describe('ReservationsService', () => {
       expect(result.slot.code).toBe('T1-B-09');
     });
 
+    it('ignores any selectedSlotId and still uses smart allocation', async () => {
+      const selectedSlot = makeSlot({
+        id: 12,
+        code: 'T1-B-12',
+        slotNumber: 12,
+      });
+      allocationService.allocate.mockResolvedValue({
+        slot: selectedSlot,
+        allocationStrategy: 'fair_distance_based',
+        allocationTimeMs: 4,
+      });
+
+      let reservedSlotId: number | null = null;
+      let createdSlotId: number | null = null;
+      prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          $queryRaw: jest.fn().mockResolvedValue([{ id: selectedSlot.id, status: 'available' }]),
+          slot: {
+            update: jest.fn().mockImplementation((args) => {
+              reservedSlotId = args.where.id;
+              return Promise.resolve({ ...selectedSlot, status: 'reserved' });
+            }),
+          },
+          reservation: {
+            create: jest.fn().mockImplementation((args) => {
+              createdSlotId = args.data.slotId;
+              return Promise.resolve(makeReservation({ slotId: selectedSlot.id, slot: selectedSlot }));
+            }),
+          },
+        };
+        return fn(tx);
+      });
+
+      const dtoWithSelectedSlot = {
+        ...makeCreateDto(),
+        selectedSlotId: 999,
+      } as any;
+
+      const result = await service.create(dtoWithSelectedSlot, driverId);
+
+      expect(allocationService.allocate).toHaveBeenCalledWith(VehicleType.motorbike);
+      expect(reservedSlotId).toBe(selectedSlot.id);
+      expect(createdSlotId).toBe(selectedSlot.id);
+      expect(result.slot.code).toBe('T1-B-12');
+    });
+
     // P1: duplicate active reservation guard
     it('throws ConflictException when driver already has an active reservation for the same vehicle type (P1)', async () => {
       prisma.reservation.findFirst.mockResolvedValue({
@@ -305,7 +483,7 @@ describe('ReservationsService', () => {
       });
 
       await expect(
-        service.create({ vehicleType: VehicleType.motorbike }, driverId),
+        service.create(makeCreateDto(), driverId),
       ).rejects.toThrow(ConflictException);
 
       // Allocation should never be called if guard fires
@@ -335,7 +513,7 @@ describe('ReservationsService', () => {
         return fn(tx);
       });
 
-      const result = await service.create({ vehicleType: VehicleType.car }, driverId);
+      const result = await service.create(makeCreateDto({ vehicleType: VehicleType.car }), driverId);
 
       expect(allocationService.allocate).toHaveBeenCalledWith(VehicleType.car);
       expect(result.reservation).toBeDefined();
@@ -364,12 +542,12 @@ describe('ReservationsService', () => {
 
       jest.useFakeTimers().setSystemTime(new Date('2024-01-01T08:00:00Z'));
 
-      await service.create({ vehicleType: VehicleType.motorbike }, driverId);
+      await service.create(makeCreateDto(), driverId);
 
-      // 15 min timeout
+      // 15 min timeout from planned arrival
       const expiresAt = (capturedReservationData as any).data.expiresAt as Date;
       expect(expiresAt.getTime()).toBe(
-        new Date('2024-01-01T08:15:00Z').getTime(),
+        new Date('2024-01-01T09:15:00Z').getTime(),
       );
 
       jest.useRealTimers();
@@ -610,6 +788,7 @@ describe('ReservationsService — findOne()', () => {
         ReservationsService,
         { provide: PrismaService, useValue: prisma },
         { provide: AllocationService, useValue: { allocate: jest.fn() } },
+        { provide: SlotsService, useValue: { getPlannedAvailability: jest.fn() } },
       ],
     }).compile();
 
