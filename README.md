@@ -183,8 +183,26 @@ Hệ thống quản lý tòa nhà đỗ xe đa tầng, xử lý:
 
 1. Đăng ký sandbox tại https://sandbox.vnpayment.vn/devreg/
 2. Cài ngrok: `winget install ngrok.ngrok`
-3. Chạy ngrok: `ngrok http 3001`
-4. Điền vào `apps/api/.env`:
+
+### Khởi động ngrok
+
+Trước khi test VNPAY payment, khởi động ngrok để expose local API ra internet (VNPAY cần gọi callback từ IPN server):
+
+```sh
+# Terminal riêng
+ngrok http 3001
+```
+
+Output sẽ hiển thị:
+```
+Forwarding                    https://<random-id>.ngrok.io -> http://localhost:3001
+```
+
+**Lưu ý:** Mỗi lần restart ngrok, URL sẽ khác. Cần cập nhật `VNPAY_RETURN_URL` và `VNPAY_IPN_URL` trong `.env`.
+
+### Cấu hình VNPAY env
+
+3. Điền vào `apps/api/.env`:
 
 ```dotenv
 VNPAY_TMN_CODE=<TMN Code từ VNPAY portal>
@@ -197,8 +215,6 @@ VNPAY_ORDER_TYPE=other
 # Để trống = hiện tất cả phương thức. VNPAY_BANK_CODE=NCB để force ATM nội địa
 VNPAY_BANK_CODE=
 ```
-
-### Thẻ test VNPAY sandbox
 
 **Thẻ quốc tế Visa (không có minimum):**
 
