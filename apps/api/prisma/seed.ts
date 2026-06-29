@@ -176,8 +176,8 @@ async function main() {
     },
     {
       configKey: 'reservation_timeout_minutes',
-      configValue: '30',
-      description: 'Auto-cancel reservation after this many minutes',
+      configValue: '60',
+      description: 'Short-term reservation hold duration in minutes',
     },
     {
       configKey: 'peak_hours',

@@ -97,12 +97,13 @@ export class SessionsController {
 
   /**
    * GET /sessions/active
-   * Staff only — list all active sessions.
+   * Staff and Manager — list all active sessions.
+   * Manager uses this for read-only slot inspection on the dashboard.
    * NOTE: must be declared before :id to avoid route conflict.
    */
   @Get('active')
   @UseGuards(RolesGuard)
-  @Roles(Role.staff)
+  @Roles(Role.staff, Role.manager)
   findActive() {
     return this.sessionsService.findActive();
   }

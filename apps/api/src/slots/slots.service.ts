@@ -4,16 +4,19 @@ import {
   NotFoundException,
   ConflictException,
 } from '@nestjs/common';
-import { ReservationStatus, SlotStatus, VehicleType } from '@prisma/client';
+import { SlotStatus, VehicleType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { AllocationService } from './allocation.service';
 import { UpdateSlotStatusDto } from './dto';
 
 @Injectable()
 export class SlotsService {
-  private static readonly DEFAULT_RESERVATION_WINDOW_MINUTES = 30;
-  private static readonly MAX_PLANNED_ARRIVAL_DAYS = 7;
+  private static readonly MAX_ADVANCE_MINUTES = 120;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly allocationService: AllocationService,
+  ) {}
 
   /**
    * 11.1 — Return all slots with floor info.
@@ -63,7 +66,7 @@ export class SlotsService {
       }
       const entry = map.get(key)!;
       entry.total++;
-      if (slot.status === 'available') entry.available++;
+      if (slot.status === SlotStatus.available) entry.available++;
     }
 
     return Array.from(map.values()).sort(
@@ -73,91 +76,25 @@ export class SlotsService {
   }
 
   /**
-   * Phase 3 availability for a planned reservation.
-   *
-   * Current PBMS still locks a slot immediately when a reservation is created,
-   * so reserved slots are conservatively unavailable for every selected time.
-   * The planned-arrival overlap check protects the time-window model and old
-   * data where slot status may not fully reflect an active reservation.
+   * Short-term reservation availability.
+   * Uses the same physical candidate helper as allocation, so the displayed
+   * count and the actual allocation decision cannot drift.
    */
   async getPlannedAvailability(
     vehicleType: VehicleType,
     plannedArrivalAtIso: string,
   ) {
     const plannedArrivalAt = this.parsePlannedArrival(plannedArrivalAtIso);
-    const timeoutMinutes = await this.getReservationWindowMinutes();
-    const requestedEnd = addMinutes(plannedArrivalAt, timeoutMinutes);
-
-    const [slots, activeReservations] = await Promise.all([
-      this.prisma.slot.findMany({
-        where: {
-          vehicleType,
-          status: { not: SlotStatus.maintenance },
-        },
-        select: {
-          id: true,
-          status: true,
-        },
-      }),
-      this.prisma.reservation.findMany({
-        where: {
-          vehicleType,
-          status: ReservationStatus.active,
-          slot: {
-            status: { not: SlotStatus.maintenance },
-          },
-        },
-        select: {
-          slotId: true,
-          plannedArrivalAt: true,
-          createdAt: true,
-          expiresAt: true,
-        },
-      }),
-    ]);
-
-    const conflictingSlotIds = new Set<number>();
-    for (const reservation of activeReservations) {
-      const windowStart = reservation.plannedArrivalAt ?? reservation.createdAt;
-      const windowEnd = reservation.plannedArrivalAt
-        ? addMinutes(reservation.plannedArrivalAt, timeoutMinutes)
-        : reservation.expiresAt;
-
-      if (windowsOverlap(plannedArrivalAt, requestedEnd, windowStart, windowEnd)) {
-        conflictingSlotIds.add(reservation.slotId);
-      }
-    }
-
-    let availableCount = 0;
-    let reservedCount = 0;
-    let occupiedCount = 0;
-
-    for (const slot of slots) {
-      if (slot.status === SlotStatus.occupied) {
-        occupiedCount++;
-        continue;
-      }
-
-      if (
-        slot.status === SlotStatus.reserved ||
-        conflictingSlotIds.has(slot.id)
-      ) {
-        reservedCount++;
-        continue;
-      }
-
-      if (slot.status === SlotStatus.available) {
-        availableCount++;
-      }
-    }
+    const { candidateSlots, reservedCount, occupiedCount } =
+      await this.allocationService.getCandidateSlots(vehicleType);
 
     return {
       vehicleType,
       plannedArrivalAt: plannedArrivalAt.toISOString(),
-      availableCount,
+      availableCount: candidateSlots.length,
       reservedCount,
       occupiedCount,
-      isAvailable: availableCount > 0,
+      isAvailable: candidateSlots.length > 0,
     };
   }
 
@@ -173,7 +110,8 @@ export class SlotsService {
 
     const total = slots.length;
     const occupied = slots.filter(
-      (s) => s.status === 'occupied' || s.status === 'reserved',
+      (s) =>
+        s.status === SlotStatus.occupied || s.status === SlotStatus.reserved,
     ).length;
     const available = total - occupied;
     const percent = total > 0 ? Math.round((occupied / total) * 100) : 0;
@@ -188,11 +126,11 @@ export class SlotsService {
       percent,
       zoneA: {
         total: zoneA.length,
-        available: zoneA.filter((s) => s.status === 'available').length,
+        available: zoneA.filter((s) => s.status === SlotStatus.available).length,
       },
       zoneB: {
         total: zoneB.length,
-        available: zoneB.filter((s) => s.status === 'available').length,
+        available: zoneB.filter((s) => s.status === SlotStatus.available).length,
       },
     };
   }
@@ -205,8 +143,11 @@ export class SlotsService {
     const slot = await this.prisma.slot.findUnique({ where: { id } });
     if (!slot) throw new NotFoundException(`Slot with id ${id} not found`);
 
-    // occupied/reserved are managed by session/reservation flows
-    if (slot.status === 'occupied' || slot.status === 'reserved') {
+    // occupied/reserved are managed by session/reservation flows.
+    if (
+      slot.status === SlotStatus.occupied ||
+      slot.status === SlotStatus.reserved
+    ) {
       throw new ConflictException(
         `Cannot change status of a slot that is currently ${slot.status}`,
       );
@@ -219,19 +160,6 @@ export class SlotsService {
     });
   }
 
-  private async getReservationWindowMinutes(): Promise<number> {
-    const config = await this.prisma.systemConfig.findUnique({
-      where: { configKey: 'reservation_timeout_minutes' },
-    });
-
-    if (config?.configValue) {
-      const parsed = parseInt(config.configValue, 10);
-      if (!isNaN(parsed) && parsed > 0) return parsed;
-    }
-
-    return SlotsService.DEFAULT_RESERVATION_WINDOW_MINUTES;
-  }
-
   private parsePlannedArrival(value: string): Date {
     const plannedArrivalAt = new Date(value);
 
@@ -240,14 +168,14 @@ export class SlotsService {
     }
 
     const now = new Date();
-    if (plannedArrivalAt.getTime() <= now.getTime()) {
-      throw new BadRequestException('plannedArrivalAt must not be in the past');
+    if (plannedArrivalAt.getTime() < now.getTime()) {
+      throw new BadRequestException('Arrival time cannot be in the past');
     }
 
-    const maxArrival = addDays(now, SlotsService.MAX_PLANNED_ARRIVAL_DAYS);
+    const maxArrival = addMinutes(now, SlotsService.MAX_ADVANCE_MINUTES);
     if (plannedArrivalAt.getTime() > maxArrival.getTime()) {
       throw new BadRequestException(
-        `plannedArrivalAt must be within ${SlotsService.MAX_PLANNED_ARRIVAL_DAYS} days`,
+        'You can only reserve for arrival within the next 2 hours',
       );
     }
 
@@ -257,17 +185,4 @@ export class SlotsService {
 
 function addMinutes(date: Date, minutes: number): Date {
   return new Date(date.getTime() + minutes * 60 * 1000);
-}
-
-function addDays(date: Date, days: number): Date {
-  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
-}
-
-function windowsOverlap(
-  aStart: Date,
-  aEnd: Date,
-  bStart: Date,
-  bEnd: Date,
-): boolean {
-  return aStart.getTime() < bEnd.getTime() && bStart.getTime() < aEnd.getTime();
 }

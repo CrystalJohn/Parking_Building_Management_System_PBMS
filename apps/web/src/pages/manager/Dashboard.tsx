@@ -26,6 +26,7 @@ import {
   type AdminSummary,
   type PaymentMonitoringRisk,
 } from '../../lib/admin-api'
+import { getActiveSessionBySlotId, type ActiveSessionDetail } from '../../lib/sessions-api'
 import { formatDateTimeVN } from '../../lib/date-time'
 
 type SlotStatus = 'available' | 'occupied' | 'reserved' | 'maintenance'
@@ -102,6 +103,23 @@ export default function Dashboard() {
   const [selectedFloorNumber, setSelectedFloorNumber] = useState<number | null>(null)
   const [selectedZone, setSelectedZone] = useState<Zone>('A')
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null)
+  const [sessionDetail, setSessionDetail] = useState<ActiveSessionDetail | null>(null)
+  const [sessionLoading, setSessionLoading] = useState(false)
+
+  const handleSlotSelect = useCallback(async (slot: Slot) => {
+    setSelectedSlot(slot)
+    setSessionDetail(null)
+    if (slot.status !== 'occupied') return
+    setSessionLoading(true)
+    try {
+      const detail = await getActiveSessionBySlotId(slot.id)
+      setSessionDetail(detail)
+    } catch {
+      setSessionDetail(null)
+    } finally {
+      setSessionLoading(false)
+    }
+  }, [])
 
   const loadDashboard = useCallback(async () => {
     try {
@@ -165,7 +183,15 @@ export default function Dashboard() {
     const updatedSlot = floors
       .flatMap((floor) => [...floor.zoneA, ...floor.zoneB])
       .find((slot) => slot.id === selectedSlot.id)
-    if (updatedSlot) setSelectedSlot(updatedSlot)
+    if (updatedSlot) {
+      setSelectedSlot(updatedSlot)
+      // Re-fetch session if slot is still occupied after poll
+      if (updatedSlot.status === 'occupied') {
+        void getActiveSessionBySlotId(updatedSlot.id).then(setSessionDetail).catch(() => setSessionDetail(null))
+      } else {
+        setSessionDetail(null)
+      }
+    }
   }, [floors, selectedSlot])
 
 
@@ -256,7 +282,7 @@ export default function Dashboard() {
                           key={slot.id}
                           slot={slot}
                           selected={selectedSlot?.id === slot.id}
-                          onSelect={() => setSelectedSlot(slot)}
+                          onSelect={() => void handleSlotSelect(slot)}
                         />
                       ))}
                     </div>
@@ -264,11 +290,135 @@ export default function Dashboard() {
                 </div>
               </section>
 
-
           </>
         ) : null}
       </div>
+
+      {/* Slot Inspect Modal */}
+      {selectedSlot ? (
+        <SlotInspectModal
+          slot={selectedSlot}
+          session={sessionDetail}
+          loading={sessionLoading}
+          onClose={() => {
+            setSelectedSlot(null)
+            setSessionDetail(null)
+          }}
+        />
+      ) : null}
     </main>
+  )
+}
+
+// ─── SlotInspectModal ─────────────────────────────────────────────────────────
+
+function SlotInspectModal({
+  slot,
+  session,
+  loading,
+  onClose,
+}: {
+  slot: Slot
+  session: ActiveSessionDetail | null
+  loading: boolean
+  onClose: () => void
+}) {
+  // Close on Escape key
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  const durationLabel = useMemo(() => {
+    if (!session) return null
+    const mins = Math.floor((Date.now() - new Date(session.checkInTime).getTime()) / 60_000)
+    if (mins < 60) return `${mins}m`
+    const h = Math.floor(mins / 60)
+    const m = mins % 60
+    return m > 0 ? `${h}h ${m}m` : `${h}h`
+  }, [session])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-slate-900"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3 p-5 border-b border-slate-100 dark:border-white/10">
+          <div>
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-2xl font-black text-slate-950 dark:text-white">{slot.code}</span>
+              <StatusBadge tone={slotTone(slot.status)} label={STATUS_LABELS[slot.status]} />
+            </div>
+            <p className="mt-1 text-sm text-slate-500">{slot.floor.name} · Zone {slot.zone} · {titleCase(slot.vehicleType)}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-slate-200 transition"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-5">
+          {slot.status !== 'occupied' ? (
+            <div className="rounded-xl border border-dashed border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-slate-950/50 p-6 text-sm font-semibold text-slate-500 text-center">
+              {slot.status === 'available' && 'Slot is available — no active session.'}
+              {slot.status === 'reserved' && 'Slot is reserved — vehicle has not checked in yet.'}
+              {slot.status === 'maintenance' && 'Slot is under maintenance.'}
+            </div>
+          ) : loading ? (
+            <div className="animate-pulse space-y-2">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="h-10 rounded-xl bg-slate-100 dark:bg-slate-800/60" />
+              ))}
+            </div>
+          ) : session ? (
+            <dl className="space-y-2">
+              <InspectRow label="Session code" value={session.sessionCode} mono />
+              <InspectRow label="License plate" value={session.licensePlate} mono />
+              <InspectRow label="Vehicle type" value={titleCase(session.vehicleType)} />
+              <InspectRow label="Check-in time" value={formatDateTimeVN(session.checkInTime)} />
+              <InspectRow label="Duration" value={durationLabel ?? '—'} />
+              <InspectRow label="Session status" value={session.status.replace(/_/g, ' ')} />
+              {session.isOvertime ? (
+                <div className="rounded-xl border border-amber-300/40 bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-700 dark:text-amber-200">
+                  ⚠ Overtime — vehicle has exceeded the standard parking threshold.
+                </div>
+              ) : null}
+            </dl>
+          ) : (
+            <div className="rounded-xl border border-dashed border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-slate-950/50 p-6 text-sm font-semibold text-slate-500 text-center">
+              No active session found for this slot.
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 pb-5">
+          <p className="text-xs font-medium text-slate-400 text-center">
+            Read-only view · No checkout or payment actions available here
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function InspectRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-slate-950/50 px-3 py-2">
+      <dt className="text-xs font-semibold text-slate-500">{label}</dt>
+      <dd className={`text-right text-xs font-black text-slate-800 dark:text-slate-200 ${mono ? 'font-mono' : ''}`}>{value}</dd>
+    </div>
   )
 }
 
@@ -279,32 +429,45 @@ function buildKpis(
     total: number
     available: number
     occupied: number
+    reserved: number
+    maintenance: number
     occupancyRate: number
   },
 ) {
+  const totalSlots = summary?.slots.total ?? fallback.total
+  const availableSlots = summary?.slots.available ?? fallback.available
+  const reservedSlots = summary?.slots.reserved ?? fallback.reserved
+  const occupiedSlots = summary?.slots.occupied ?? fallback.occupied
+  const maintenanceSlots = fallback.maintenance
+  const occupancyRate = summary?.slots.occupancyRate ?? fallback.occupancyRate
+
   return [
     {
       label: 'Total slots',
-      value: summary?.slots.total ?? fallback.total,
-      helper: `${summary?.slots.reserved ?? 0} reserved`,
+      value: totalSlots,
+      helper: `${availableSlots} available - ${reservedSlots} reserved - ${occupiedSlots} occupied`,
+      note: maintenanceSlots > 0 ? `${maintenanceSlots} under maintenance` : 'Source-of-truth slot inventory',
       icon: <ParkingCircle className="h-5 w-5" strokeWidth={1.8} />,
     },
     {
       label: 'Available slots',
-      value: summary?.slots.available ?? fallback.available,
-      helper: 'Ready for allocation',
+      value: `${availableSlots}/${totalSlots}`,
+      helper: 'Free now and ready for allocation',
+      note: `${reservedSlots} held by reservations, ${occupiedSlots} physically occupied`,
       icon: <CheckCircle2 className="h-5 w-5" strokeWidth={1.8} />,
     },
     {
       label: 'Occupied slots',
-      value: summary?.slots.occupied ?? fallback.occupied,
-      helper: 'Currently unavailable',
+      value: `${occupiedSlots}/${totalSlots}`,
+      helper: 'Vehicles physically parked now',
+      note: reservedSlots > 0 ? `${reservedSlots} reserved holds are tracked separately` : 'Reserved holds are not counted as occupied',
       icon: <Car className="h-5 w-5" strokeWidth={1.8} />,
     },
     {
       label: 'Occupancy rate',
-      value: `${summary?.slots.occupancyRate ?? fallback.occupancyRate}%`,
-      helper: 'Occupied over total',
+      value: `${occupancyRate}%`,
+      helper: `${occupiedSlots} occupied / ${totalSlots} total slots`,
+      note: 'Formula excludes reserved holds and maintenance slots from occupied count',
       icon: <Gauge className="h-5 w-5" strokeWidth={1.8} />,
     },
     {
@@ -342,12 +505,14 @@ function KpiCard({
   label,
   value,
   helper,
+  note,
   icon,
   unavailable = false,
 }: {
   label: string
   value: number | string
   helper: string
+  note?: string
   icon: ReactNode
   unavailable?: boolean
 }) {
@@ -366,6 +531,11 @@ function KpiCard({
         {value}
       </p>
       <p className="mt-2 text-xs font-semibold text-slate-500">{helper}</p>
+      {note ? (
+        <p className="mt-1 text-[11px] font-medium leading-4 text-slate-400 dark:text-slate-500">
+          {note}
+        </p>
+      ) : null}
     </article>
   )
 }

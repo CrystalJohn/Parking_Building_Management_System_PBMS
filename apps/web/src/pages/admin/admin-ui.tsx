@@ -29,18 +29,23 @@ export function AdminPageHeader({
   title,
   description,
   action,
+  weight = 'strong',
 }: {
   title: string
   description: string
   action?: ReactNode
+  weight?: 'strong' | 'normal'
 }) {
+  const titleWeight = weight === 'normal' ? 'font-normal' : 'font-black'
+  const descriptionWeight = weight === 'normal' ? 'font-normal' : 'font-medium'
+
   return (
     <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <h1 className="text-2xl font-black tracking-tight text-slate-950 dark:text-white">
+        <h1 className={`text-2xl ${titleWeight} tracking-tight text-slate-950 dark:text-white`}>
           {title}
         </h1>
-        <p className="mt-1 max-w-2xl text-sm font-medium leading-6 text-slate-500 dark:text-slate-400">
+        <p className={`mt-1 max-w-2xl text-sm ${descriptionWeight} leading-6 text-slate-500 dark:text-slate-400`}>
           {description}
         </p>
       </div>
@@ -90,9 +95,17 @@ export function StatCard({
   )
 }
 
-export function RoleBadge({ role }: { role: Role }) {
+export function RoleBadge({
+  role,
+  weight = 'strong',
+}: {
+  role: Role
+  weight?: 'strong' | 'normal'
+}) {
+  const fontWeight = weight === 'normal' ? 'font-normal' : 'font-black'
+
   return (
-    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-black ring-1 ${ROLE_TONES[role]}`}>
+    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs ${fontWeight} ring-1 ${ROLE_TONES[role]}`}>
       {ROLE_LABELS[role]}
     </span>
   )
@@ -101,12 +114,16 @@ export function RoleBadge({ role }: { role: Role }) {
 export function StatusBadge({
   label,
   tone,
+  weight = 'strong',
 }: {
   label: string
   tone: StatusTone
+  weight?: 'strong' | 'normal'
 }) {
+  const fontWeight = weight === 'normal' ? 'font-normal' : 'font-black'
+
   return (
-    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-black ring-1 ${STATUS_TONES[tone]}`}>
+    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs ${fontWeight} ring-1 ${STATUS_TONES[tone]}`}>
       {label}
     </span>
   )
@@ -115,14 +132,19 @@ export function StatusBadge({
 export function EmptyState({
   title,
   description,
+  weight = 'strong',
 }: {
   title: string
   description: string
+  weight?: 'strong' | 'normal'
 }) {
+  const titleWeight = weight === 'normal' ? 'font-normal' : 'font-black'
+  const descriptionWeight = weight === 'normal' ? 'font-normal' : 'font-medium'
+
   return (
     <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center dark:border-white/15 dark:bg-white/[0.04]">
-      <p className="text-base font-black text-slate-900 dark:text-white">{title}</p>
-      <p className="mx-auto mt-2 max-w-xl text-sm font-medium leading-6 text-slate-500 dark:text-slate-400">
+      <p className={`text-base ${titleWeight} text-slate-900 dark:text-white`}>{title}</p>
+      <p className={`mx-auto mt-2 max-w-xl text-sm ${descriptionWeight} leading-6 text-slate-500 dark:text-slate-400`}>
         {description}
       </p>
     </div>

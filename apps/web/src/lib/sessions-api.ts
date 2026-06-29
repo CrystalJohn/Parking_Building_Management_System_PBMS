@@ -484,3 +484,30 @@ export async function getRecentSessions(type: 'checkin' | 'checkout', limit = 20
   })
   return data
 }
+
+// ─── Manager slot inspection ──────────────────────────────────────────────────
+
+export interface ActiveSessionDetail {
+  id: string
+  sessionCode: string
+  licensePlate: string
+  vehicleType: VehicleType
+  checkInTime: string
+  status: SessionStatus
+  slotId: number
+  slot: {
+    id: number
+    code: string
+    zone: Zone
+    floor: { id: number; floorNumber: number; name: string }
+  }
+  driver: { id: string; phone: string; fullName: string } | null
+  feeAmount: number
+  penaltyAmount: number
+  isOvertime: boolean
+}
+
+export async function getActiveSessionBySlotId(slotId: number): Promise<ActiveSessionDetail | null> {
+  const { data } = await api.get<ActiveSessionDetail[]>('/sessions/active')
+  return data.find((s) => s.slotId === slotId) ?? null
+}

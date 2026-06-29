@@ -33,6 +33,10 @@ export type Reservation = {
   createdAt: string;
   expiresAt: string;
   licensePlate?: string | null;
+  driver?: {
+    fullName?: string | null;
+    phone?: string | null;
+  } | null;
   slot?: {
     id: number;
     code: string;

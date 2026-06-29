@@ -36,6 +36,7 @@ export function ReservationsScreen({ navigation }: Props) {
   const [vehicleType, setVehicleType] = useState<VehicleType>('car');
   const [selectedDateKey, setSelectedDateKey] = useState(initialBooking.dateKey);
   const [selectedTime, setSelectedTime] = useState(initialBooking.time);
+  const [showReservationHistory, setShowReservationHistory] = useState(false);
   const reservationsQuery = useReservationsQuery();
   const createReservation = useCreateReservationMutation();
   const cancelReservation = useCancelReservationMutation();
@@ -57,6 +58,15 @@ export function ReservationsScreen({ navigation }: Props) {
     () => sortReservations(reservationsQuery.data ?? []),
     [reservationsQuery.data],
   );
+  const activeReservations = useMemo(
+    () => sortedReservations.filter((reservation) => canCancelReservation(reservation.status)).slice(0, 2),
+    [sortedReservations],
+  );
+  const historicalReservations = useMemo(() => {
+    const visibleActiveIds = new Set(activeReservations.map((reservation) => reservation.id));
+    return sortedReservations.filter((reservation) => !visibleActiveIds.has(reservation.id));
+  }, [activeReservations, sortedReservations]);
+  const hasReservationHistory = sortedReservations.length > 0;
 
   useFocusEffect(
     useCallback(() => {
@@ -248,7 +258,7 @@ export function ReservationsScreen({ navigation }: Props) {
         </Button>
       </InfoCard>
 
-      <InfoCard title="My Reservations" subtitle="Tap a reservation to view staff check-in QR.">
+      <InfoCard title="My Reservations" subtitle="Your latest active reservations for staff check-in.">
         <QueryState
           loading={reservationsQuery.isLoading}
           error={reservationsQuery.error}
@@ -257,7 +267,16 @@ export function ReservationsScreen({ navigation }: Props) {
           onRetry={() => reservationsQuery.refetch()}
         />
 
-        {sortedReservations.map((reservation) => (
+        {!reservationsQuery.isLoading && !reservationsQuery.error && hasReservationHistory && activeReservations.length === 0 ? (
+          <View style={styles.inlineEmptyState}>
+            <Text style={styles.inlineEmptyTitle}>No active reservations</Text>
+            <Text style={styles.inlineEmptyText}>
+              Cancelled, expired, and fulfilled reservations are available in your reservation history.
+            </Text>
+          </View>
+        ) : null}
+
+        {activeReservations.map((reservation) => (
           <ReservationRow
             key={reservation.id}
             canceling={cancelReservation.isPending}
@@ -266,6 +285,52 @@ export function ReservationsScreen({ navigation }: Props) {
             onOpen={() => navigation.navigate('ReservationDetail', { reservationId: reservation.id })}
           />
         ))}
+
+        {hasReservationHistory ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setShowReservationHistory((value) => !value)}
+            style={({ pressed }) => [styles.historyButton, pressed && styles.pressed]}
+          >
+            <Ionicons
+              name={showReservationHistory ? 'chevron-up-outline' : 'time-outline'}
+              size={16}
+              color="#0b5ed7"
+            />
+            <Text style={styles.historyButtonText}>
+              {showReservationHistory
+                ? 'Ẩn lịch sử đã đặt'
+                : 'Xem lại toàn bộ lịch sử đã đặt'}
+            </Text>
+          </Pressable>
+        ) : null}
+
+        {showReservationHistory ? (
+          <View style={styles.historyList}>
+            <View style={styles.historyHeader}>
+              <Text style={styles.historyTitle}>Reservation history</Text>
+            <Text style={styles.historyCount}>{historicalReservations.length} items</Text>
+          </View>
+            {historicalReservations.length > 0 ? (
+              historicalReservations.map((reservation) => (
+              <ReservationRow
+                key={`history-${reservation.id}`}
+                canceling={cancelReservation.isPending}
+                reservation={reservation}
+                onCancel={() => handleCancel(reservation.id)}
+                onOpen={() => navigation.navigate('ReservationDetail', { reservationId: reservation.id })}
+              />
+              ))
+            ) : (
+              <View style={styles.inlineEmptyState}>
+                <Text style={styles.inlineEmptyTitle}>No older reservations</Text>
+                <Text style={styles.inlineEmptyText}>
+                  Your active reservation is already shown above.
+                </Text>
+              </View>
+            )}
+          </View>
+        ) : null}
       </InfoCard>
     </Screen>
   );
@@ -819,6 +884,63 @@ const styles = StyleSheet.create({
   summaryValue: {
     color: colors.text,
     fontSize: 14,
+    fontWeight: '800',
+  },
+  inlineEmptyState: {
+    backgroundColor: '#f8fafc',
+    borderColor: colors.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 4,
+    padding: 14,
+  },
+  inlineEmptyTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  inlineEmptyText: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  historyButton: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#eff6ff',
+    borderColor: '#bfdbfe',
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    minHeight: 38,
+    paddingHorizontal: 12,
+  },
+  historyButtonText: {
+    color: '#0b5ed7',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  historyList: {
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+    gap: 10,
+    marginTop: 2,
+    paddingTop: 12,
+  },
+  historyHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  historyTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  historyCount: {
+    color: colors.muted,
+    fontSize: 12,
     fontWeight: '800',
   },
   row: {

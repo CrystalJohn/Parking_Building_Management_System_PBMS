@@ -440,7 +440,9 @@ describe('AllocationService', () => {
     const slots = [
       makeSlot({ id: 1, floorId: 1, zone: Zone.A, vehicleType: VehicleType.car, status: SlotStatus.occupied, floor: floor1 }),
     ];
-    prisma.slot.findMany.mockResolvedValue(slots);
+    prisma.slot.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(slots);
 
     await expect(service.allocate(VehicleType.car)).rejects.toThrow(
       ConflictException,
@@ -452,7 +454,9 @@ describe('AllocationService', () => {
     const slots = [
       makeSlot({ id: 1, floorId: 1, zone: Zone.B, vehicleType: VehicleType.motorbike, status: SlotStatus.occupied, floor: floor1 }),
     ];
-    prisma.slot.findMany.mockResolvedValue(slots);
+    prisma.slot.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(slots);
 
     await expect(service.allocate(VehicleType.motorbike)).rejects.toThrow(
       ConflictException,
@@ -482,6 +486,92 @@ describe('AllocationService', () => {
     const result = await service.allocate(VehicleType.car);
 
     expect(result.allocationStrategy).toBe('balanced_occupancy');
+  });
+
+  it('does not hard-filter cars to Zone A', async () => {
+    const floor1 = makeFloor({ id: 1, floorNumber: 1 });
+    prisma.slot.findMany.mockResolvedValue([
+      makeSlot({
+        id: 1,
+        zone: Zone.B,
+        vehicleType: VehicleType.car,
+        status: SlotStatus.available,
+        floor: floor1,
+      }),
+    ]);
+
+    const result = await service.allocate(VehicleType.car);
+
+    expect(result.slot.id).toBe(1);
+    expect(result.slot.zone).toBe(Zone.B);
+    expect(result.slot.vehicleType).toBe(VehicleType.car);
+  });
+
+  describe('getCandidateSlots', () => {
+    it('returns physically available slots for the requested vehicle type', async () => {
+      const floor1 = makeFloor({ id: 1, floorNumber: 1 });
+      prisma.slot.findMany
+        .mockResolvedValueOnce([
+          makeSlot({
+            id: 1,
+            code: 'T1-A-01',
+            vehicleType: VehicleType.car,
+            status: SlotStatus.available,
+            floor: floor1,
+          }),
+        ])
+        .mockResolvedValueOnce([]);
+
+      const result = await service.getCandidateSlots(VehicleType.car);
+
+      expect(result.candidateSlots).toHaveLength(1);
+      expect(result.candidateSlots[0].code).toBe('T1-A-01');
+    });
+
+    it('counts reserved and occupied slots for scoring context', async () => {
+      const floor1 = makeFloor({ id: 1, floorNumber: 1 });
+      prisma.slot.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          makeSlot({ id: 1, status: SlotStatus.reserved, floor: floor1 }),
+          makeSlot({ id: 2, status: SlotStatus.occupied, floor: floor1 }),
+        ]);
+
+      const result = await service.getCandidateSlots(VehicleType.car);
+
+      expect(result.candidateSlots).toHaveLength(0);
+      expect(result.reservedCount).toBe(1);
+      expect(result.occupiedCount).toBe(1);
+    });
+
+    it('queries only currently available slots for the requested vehicle type', async () => {
+      prisma.slot.findMany.mockResolvedValue([]);
+
+      await service.getCandidateSlots(VehicleType.car);
+
+      expect(prisma.slot.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            vehicleType: VehicleType.car,
+            status: SlotStatus.available,
+          },
+        }),
+      );
+    });
+
+    it('excludes lost-lock slot ids when retrying reservation creation', async () => {
+      prisma.slot.findMany.mockResolvedValue([]);
+
+      await service.getCandidateSlots(VehicleType.car, undefined, new Set([1, 2]));
+
+      expect(prisma.slot.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            id: { notIn: [1, 2] },
+          }),
+        }),
+      );
+    });
   });
 
   // getActiveStrategyName

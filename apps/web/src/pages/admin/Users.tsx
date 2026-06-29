@@ -111,11 +111,12 @@ export default function Users() {
       <AdminPageHeader
         title="Manage Users"
         description="Create accounts, assign roles, and control access for administrators, managers, staff, and drivers."
+        weight="normal"
         action={
           <button
             type="button"
             onClick={handleCreate}
-            className="inline-flex h-11 items-center gap-2 rounded-2xl bg-primary-600 px-4 text-sm font-black text-white shadow-sm shadow-primary-600/20 transition hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:focus:ring-offset-slate-950"
+            className="inline-flex h-11 items-center gap-2 rounded-2xl bg-primary-600 px-4 text-sm font-normal text-white shadow-sm shadow-primary-600/20 transition hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:focus:ring-offset-slate-950"
           >
             <Plus className="h-4 w-4" strokeWidth={1.8} />
             Create account
@@ -131,7 +132,7 @@ export default function Users() {
                 key={role}
                 type="button"
                 onClick={() => setFilterRole(role)}
-                className={`rounded-xl px-3 py-2 text-sm font-black transition ${
+                className={`rounded-xl px-3 py-2 text-sm font-normal transition ${
                   filterRole === role
                     ? 'bg-primary-600 text-white shadow-sm shadow-primary-600/20'
                     : 'border border-slate-200 bg-white text-slate-600 hover:border-primary-200 hover:text-primary-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-300 dark:hover:text-white'
@@ -150,7 +151,7 @@ export default function Users() {
           <label className="relative block w-full xl:w-80">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" strokeWidth={1.8} />
             <input
-              className="h-11 w-full rounded-2xl border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100 dark:border-white/10 dark:bg-slate-950 dark:text-white dark:focus:ring-primary-500/20"
+              className="h-11 w-full rounded-2xl border border-slate-200 bg-white pl-9 pr-3 text-sm font-normal text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100 dark:border-white/10 dark:bg-slate-950 dark:text-white dark:focus:ring-primary-500/20"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search name or phone"
@@ -160,7 +161,7 @@ export default function Users() {
       </section>
 
       {error ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-100">
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-normal text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-100">
           {error}
         </div>
       ) : null}
@@ -171,7 +172,7 @@ export default function Users() {
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-sm">
-              <thead className="border-b border-slate-200 bg-slate-50 text-xs font-black uppercase text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-400">
+              <thead className="border-b border-slate-200 bg-slate-50 text-xs font-normal uppercase text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-400">
                 <tr>
                   <th className="px-5 py-4 text-left">Account</th>
                   <th className="px-5 py-4 text-left">Role</th>
@@ -187,23 +188,24 @@ export default function Users() {
                     className={!user.isActive ? 'bg-slate-50/70 opacity-75 dark:bg-white/[0.02]' : ''}
                   >
                     <td className="px-5 py-4">
-                      <p className="font-black text-slate-950 dark:text-white">
+                      <p className="font-normal text-slate-950 dark:text-white">
                         {user.fullName || 'Unnamed account'}
                       </p>
-                      <p className="mt-1 font-mono text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      <p className="mt-1 font-mono text-xs font-normal text-slate-500 dark:text-slate-400">
                         {user.phone}
                       </p>
                     </td>
                     <td className="px-5 py-4">
-                      <RoleBadge role={user.role} />
+                      <RoleBadge role={user.role} weight="normal" />
                     </td>
                     <td className="px-5 py-4">
                       <StatusBadge
                         label={user.isActive ? 'Active' : 'Inactive'}
                         tone={user.isActive ? 'green' : 'red'}
+                        weight="normal"
                       />
                     </td>
-                    <td className="px-5 py-4 font-semibold text-slate-500 dark:text-slate-400">
+                    <td className="px-5 py-4 font-normal text-slate-500 dark:text-slate-400">
                       {formatDate(user.createdAt)}
                     </td>
                     <td className="px-5 py-4">
@@ -211,14 +213,14 @@ export default function Users() {
                         <button
                           type="button"
                           onClick={() => handleEdit(user)}
-                          className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-700 transition hover:border-primary-200 hover:text-primary-700 dark:border-white/10 dark:text-slate-200 dark:hover:text-white"
+                          className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-normal text-slate-700 transition hover:border-primary-200 hover:text-primary-700 dark:border-white/10 dark:text-slate-200 dark:hover:text-white"
                         >
                           Edit
                         </button>
                         <button
                           type="button"
                           onClick={() => handleToggleActive(user)}
-                          className={`rounded-xl px-3 py-2 text-xs font-black transition ${
+                          className={`rounded-xl px-3 py-2 text-xs font-normal transition ${
                             user.isActive
                               ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-100'
                               : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-100'
@@ -239,6 +241,7 @@ export default function Users() {
               <EmptyState
                 title="No accounts match this view"
                 description="Adjust the role filter or search term to find the account you need."
+                weight="normal"
               />
             </div>
           ) : null}
@@ -286,7 +289,6 @@ function UserModal({
     try {
       if (isEdit) {
         const payload: Record<string, unknown> = { fullName, role }
-        if (password) payload.password = password
         await api.patch(`/users/${user.id}`, payload)
         toasts.showSuccess('Account updated')
       } else {
@@ -324,10 +326,10 @@ function UserModal({
       <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-slate-900">
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-white/10">
           <div>
-            <h3 className="text-lg font-black text-slate-950 dark:text-white">
+            <h3 className="text-lg font-normal text-slate-950 dark:text-white">
               {isEdit ? 'Edit account' : 'Create account'}
             </h3>
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+            <p className="text-sm font-normal text-slate-500 dark:text-slate-400">
               {isEdit ? 'Update role, name, or password.' : 'Add a new PBMS account.'}
             </p>
           </div>
@@ -343,11 +345,11 @@ function UserModal({
 
         <form onSubmit={handleSubmit} className="space-y-4 p-5">
           <div>
-            <label className="mb-1 block text-sm font-bold text-slate-700 dark:text-slate-200">
+            <label className="mb-1 block text-sm font-normal text-slate-700 dark:text-slate-200">
               Phone
             </label>
             <input
-              className="input dark:border-white/10 dark:bg-slate-950 dark:text-white"
+              className="input font-normal dark:border-white/10 dark:bg-slate-950 dark:text-white"
               value={phone}
               onChange={(event) => setPhone(event.target.value)}
               disabled={isEdit}
@@ -356,11 +358,11 @@ function UserModal({
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-bold text-slate-700 dark:text-slate-200">
+            <label className="mb-1 block text-sm font-normal text-slate-700 dark:text-slate-200">
               Full name
             </label>
             <input
-              className="input dark:border-white/10 dark:bg-slate-950 dark:text-white"
+              className="input font-normal dark:border-white/10 dark:bg-slate-950 dark:text-white"
               value={fullName}
               onChange={(event) => setFullName(event.target.value)}
               placeholder="Full name"
@@ -368,11 +370,11 @@ function UserModal({
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-bold text-slate-700 dark:text-slate-200">
+            <label className="mb-1 block text-sm font-normal text-slate-700 dark:text-slate-200">
               Role
             </label>
             <select
-              className="input dark:border-white/10 dark:bg-slate-950 dark:text-white"
+              className="input font-normal dark:border-white/10 dark:bg-slate-950 dark:text-white"
               value={role}
               onChange={(event) => setRole(event.target.value as Role)}
             >
@@ -383,30 +385,32 @@ function UserModal({
             </select>
           </div>
 
-          <div>
-            <label className="mb-1 block text-sm font-bold text-slate-700 dark:text-slate-200">
-              {isEdit ? 'New password' : 'Password'}
-            </label>
-            <input
-              className="input dark:border-white/10 dark:bg-slate-950 dark:text-white"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder={isEdit ? 'Leave blank to keep current' : 'At least 6 characters'}
-            />
-          </div>
+          {!isEdit ? (
+            <div>
+              <label className="mb-1 block text-sm font-normal text-slate-700 dark:text-slate-200">
+                Password
+              </label>
+              <input
+                className="input font-normal dark:border-white/10 dark:bg-slate-950 dark:text-white"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="At least 6 characters"
+              />
+            </div>
+          ) : null}
 
           {error ? (
-            <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-bold text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-100">
+            <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-normal text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-100">
               {error}
             </p>
           ) : null}
 
           <div className="grid grid-cols-2 gap-2 pt-2">
-            <button type="button" onClick={onClose} className="btn-secondary rounded-xl" disabled={saving}>
+            <button type="button" onClick={onClose} className="btn-secondary rounded-xl font-normal" disabled={saving}>
               Cancel
             </button>
-            <button type="submit" className="btn-primary rounded-xl" disabled={saving}>
+            <button type="submit" className="btn-primary rounded-xl font-normal" disabled={saving}>
               {saving ? 'Saving...' : isEdit ? 'Update' : 'Create'}
             </button>
           </div>

@@ -7,41 +7,37 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { VehicleType } from '@prisma/client';
+import { Prisma, VehicleType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AllocationService } from '../slots/allocation.service';
-import { SlotsService } from '../slots/slots.service';
 import { CreateReservationDto } from './dto';
+
+type PrismaLike = PrismaService | Prisma.TransactionClient;
 
 @Injectable()
 export class ReservationsService {
   private readonly logger = new Logger(ReservationsService.name);
 
-  /** Default reservation timeout in minutes (read from SystemConfig at runtime). */
-  private static readonly DEFAULT_TIMEOUT_MINUTES = 30;
-  private static readonly MAX_PLANNED_ARRIVAL_DAYS = 7;
+  private static readonly DEFAULT_TIMEOUT_MINUTES = 60;
+  private static readonly MAX_ADVANCE_MINUTES = 120;
+  private static readonly MAX_SLOT_LOCK_ATTEMPTS = 3;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly allocationService: AllocationService,
-    private readonly slotsService: SlotsService,
   ) {}
 
   /**
-   * 18.1: Create a reservation for a registered driver.
-   *
-   * Flow:
-   * 1. Validate driver has an active account (18.5)
-   * 2. P1: Guard — one active reservation per vehicle type per driver
-   * 3. Allocate a slot via AllocationService
-   * 4. In transaction: set slot → reserved, create Reservation with expires_at
-   *
-   * Req 8.1, 8.2, 8.3
+   * Final reservation model:
+   * - slot.status is current physical/hold state.
+   * - `available` means free now, `reserved` means held by a short-term reservation,
+   *   `occupied` means a vehicle is physically parked, and `maintenance` is closed.
+   * - reservation is a 60-minute short-term hold to arrive soon; no advance
+   *   booking/overlap model is used.
    */
   async create(dto: CreateReservationDto, driverId: string) {
     const plannedArrivalAt = this.parsePlannedArrival(dto.plannedArrivalAt);
 
-    // 18.5: Validate driver exists and is active
     const driver = await this.prisma.user.findUnique({
       where: { id: driverId },
       select: { id: true, role: true, isActive: true },
@@ -53,76 +49,76 @@ export class ReservationsService {
       );
     }
 
-    // P1: Prevent duplicate active reservations for the same vehicle type
-    const existingActive = await this.prisma.reservation.findFirst({
-      where: {
-        driverId,
-        vehicleType: dto.vehicleType,
-        status: 'active',
-      },
-      select: { id: true },
-    });
+    const reservation = await this.mapReservationConflict(dto.vehicleType, async () =>
+      this.runWithSerializableRetry(async () =>
+        this.prisma.$transaction(
+          async (tx) => {
+            const existingActive = await tx.reservation.findFirst({
+              where: {
+                driverId,
+                vehicleType: dto.vehicleType,
+                status: 'active',
+              },
+              select: { id: true },
+            });
 
-    if (existingActive) {
-      throw new ConflictException(
-        `You already have an active ${dto.vehicleType} reservation. Cancel it before creating a new one.`,
-      );
-    }
+            if (existingActive) {
+              throw new ConflictException(
+                `You already have an active ${dto.vehicleType} reservation. Cancel it before creating a new one.`,
+              );
+            }
 
-    const availability = await this.slotsService.getPlannedAvailability(
-      dto.vehicleType,
-      plannedArrivalAt.toISOString(),
+            const timeoutMinutes = await this.getTimeoutMinutes(tx);
+            const excludedSlotIds = new Set<number>();
+
+            for (
+              let attempt = 1;
+              attempt <= ReservationsService.MAX_SLOT_LOCK_ATTEMPTS;
+              attempt++
+            ) {
+              const { slot } = await this.allocationService.allocate(
+                dto.vehicleType,
+                undefined,
+                tx,
+                excludedSlotIds,
+              );
+              const lockedSlot = await this.lockAvailableSlot(tx, slot.id);
+
+              if (!lockedSlot) {
+                excludedSlotIds.add(slot.id);
+                continue;
+              }
+
+              await tx.slot.update({
+                where: { id: slot.id },
+                data: { status: 'reserved' },
+              });
+
+              const expiresAt = new Date(
+                plannedArrivalAt.getTime() + timeoutMinutes * 60_000,
+              );
+
+              return tx.reservation.create({
+                data: {
+                  driverId,
+                  slotId: slot.id,
+                  vehicleType: dto.vehicleType,
+                  plannedArrivalAt,
+                  expiresAt,
+                },
+                include: {
+                  driver: { select: { fullName: true, phone: true } },
+                  slot: { include: { floor: true } },
+                },
+              });
+            }
+
+            throw new ConflictException('No slot available for this time');
+          },
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        ),
+      ),
     );
-
-    if (!availability.isAvailable) {
-      throw new ConflictException('No available slots for the selected time.');
-    }
-
-    // Read timeout from SystemConfig
-    const timeoutMinutes = await this.getTimeoutMinutes();
-
-    // 18.1: Allocate slot using the same strategy as check-in
-    const { slot } = await this.allocationService.allocate(dto.vehicleType);
-
-    // Transaction: set slot → reserved, create reservation
-    const reservation = await this.prisma.$transaction(async (tx) => {
-      // Lock and verify slot is still available
-      const lockedSlot = await tx.$queryRaw<{ id: number; status: string }[]>`
-        SELECT id, status FROM slots
-        WHERE id = ${slot.id} AND status = 'available'
-        FOR UPDATE SKIP LOCKED
-      `;
-
-      if (!lockedSlot || lockedSlot.length === 0) {
-        throw new ConflictException(
-          `Slot ${slot.code} is no longer available. Please retry.`,
-        );
-      }
-
-      // 18.2: Set slot → reserved
-      await tx.slot.update({
-        where: { id: slot.id },
-        data: { status: 'reserved' },
-      });
-
-      // 18.2: Create reservation with expires_at = planned arrival + timeout.
-      const expiresAt = new Date(plannedArrivalAt.getTime() + timeoutMinutes * 60_000);
-
-      const newReservation = await tx.reservation.create({
-        data: {
-          driverId,
-          slotId: slot.id,
-          vehicleType: dto.vehicleType,
-          plannedArrivalAt,
-          expiresAt,
-        },
-        include: {
-          slot: { include: { floor: true } },
-        },
-      });
-
-      return newReservation;
-    });
 
     this.logger.log(
       `Reservation created | reservationId=${reservation.id} driverId=${driverId} vehicleType=${reservation.vehicleType} slotId=${reservation.slotId} slotCode=${reservation.slot.code} expiresAt=${reservation.expiresAt.toISOString()}`,
@@ -136,6 +132,7 @@ export class ReservationsService {
         status: reservation.status,
         createdAt: reservation.createdAt,
         expiresAt: reservation.expiresAt,
+        driver: reservation.driver,
       },
       slot: {
         id: reservation.slot.id,
@@ -150,27 +147,22 @@ export class ReservationsService {
     };
   }
 
-  /**
-   * 18.3: List reservations for the current driver.
-   */
   async findMyReservations(driverId: string) {
     return this.prisma.reservation.findMany({
       where: { driverId },
       include: {
+        driver: { select: { fullName: true, phone: true } },
         slot: { include: { floor: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  /**
-   * P0: Get a single reservation by ID.
-   * Ownership enforced: driver can only view their own reservation.
-   */
   async findOne(reservationId: string, driverId: string) {
     const reservation = await this.prisma.reservation.findUnique({
       where: { id: reservationId },
       include: {
+        driver: { select: { fullName: true, phone: true } },
         slot: { include: { floor: true } },
       },
     });
@@ -186,10 +178,6 @@ export class ReservationsService {
     return reservation;
   }
 
-  /**
-   * 18.4: Cancel a reservation and release the slot.
-   * Only the owning driver can cancel.
-   */
   async cancel(reservationId: string, driverId: string) {
     const reservation = await this.prisma.reservation.findUnique({
       where: { id: reservationId },
@@ -210,15 +198,14 @@ export class ReservationsService {
       );
     }
 
-    // Transaction: cancel reservation + release slot
     await this.prisma.$transaction(async (tx) => {
       await tx.reservation.update({
         where: { id: reservationId },
         data: { status: 'cancelled' },
       });
 
-      await tx.slot.update({
-        where: { id: reservation.slotId },
+      await tx.slot.updateMany({
+        where: { id: reservation.slotId, status: 'reserved' },
         data: { status: 'available' },
       });
     });
@@ -230,12 +217,6 @@ export class ReservationsService {
     return { message: 'Reservation cancelled successfully' };
   }
 
-  /**
-   * 19: Reservation timeout sweeper.
-   * Runs every minute. Expires reservations past their expires_at time.
-   * In transaction: reservation → expired, slot → available.
-   * Req 8.4
-   */
   @Cron(CronExpression.EVERY_MINUTE)
   async handleExpiredReservations() {
     const now = new Date();
@@ -250,7 +231,6 @@ export class ReservationsService {
 
     if (expiredReservations.length === 0) return;
 
-    // Process each expired reservation in a transaction
     for (const reservation of expiredReservations) {
       try {
         await this.prisma.$transaction(async (tx) => {
@@ -259,8 +239,8 @@ export class ReservationsService {
             data: { status: 'expired' },
           });
 
-          await tx.slot.update({
-            where: { id: reservation.slotId },
+          await tx.slot.updateMany({
+            where: { id: reservation.slotId, status: 'reserved' },
             data: { status: 'available' },
           });
         });
@@ -269,23 +249,17 @@ export class ReservationsService {
           `Reservation expired | reservationId=${reservation.id} slotId=${reservation.slotId}`,
         );
       } catch (error) {
-        // Log but don't throw — other reservations should still be processed
         this.logger.error(
           `Failed to expire reservation ${reservation.id}: ${error}`,
         );
       }
     }
 
-    this.logger.log(
-      `Expired ${expiredReservations.length} reservation(s)`,
-    );
+    this.logger.log(`Expired ${expiredReservations.length} reservation(s)`);
   }
 
-  /**
-   * Read reservation timeout from SystemConfig.
-   */
-  private async getTimeoutMinutes(): Promise<number> {
-    const config = await this.prisma.systemConfig.findUnique({
+  private async getTimeoutMinutes(client: PrismaLike = this.prisma): Promise<number> {
+    const config = await client.systemConfig.findUnique({
       where: { configKey: 'reservation_timeout_minutes' },
     });
 
@@ -297,27 +271,104 @@ export class ReservationsService {
     return ReservationsService.DEFAULT_TIMEOUT_MINUTES;
   }
 
-  private parsePlannedArrival(value: string): Date {
-    const plannedArrivalAt = new Date(value);
+  private async runWithSerializableRetry<T>(
+    operation: () => Promise<T>,
+    maxAttempts = 3,
+  ): Promise<T> {
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        if (!isSerializationFailure(error) || attempt === maxAttempts) {
+          throw error;
+        }
+        lastError = error;
+      }
+    }
+
+    throw lastError;
+  }
+
+  private async mapReservationConflict<T>(
+    vehicleType: VehicleType,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException(
+          `You already have an active ${vehicleType} reservation. Cancel it first.`,
+        );
+      }
+      throw error;
+    }
+  }
+
+  private async lockAvailableSlot(
+    tx: Prisma.TransactionClient,
+    slotId: number,
+  ): Promise<{ id: number; status: string } | null> {
+    const rows = await tx.$queryRaw<{ id: number; status: string }[]>`
+      SELECT id, status FROM slots
+      WHERE id = ${slotId} AND status = ${'available'}::"SlotStatus"
+      FOR UPDATE SKIP LOCKED
+    `;
+
+    return rows[0] ?? null;
+  }
+
+  private parsePlannedArrival(value?: string): Date {
+    const plannedArrivalAt = value ? new Date(value) : new Date();
 
     if (Number.isNaN(plannedArrivalAt.getTime())) {
       throw new BadRequestException('plannedArrivalAt must be a valid ISO date string');
     }
 
     const now = new Date();
-    if (plannedArrivalAt.getTime() <= now.getTime()) {
-      throw new BadRequestException('plannedArrivalAt must not be in the past');
+    if (plannedArrivalAt.getTime() < now.getTime()) {
+      throw new BadRequestException('Arrival time cannot be in the past');
     }
 
     const maxArrival = new Date(
-      now.getTime() + ReservationsService.MAX_PLANNED_ARRIVAL_DAYS * 24 * 60 * 60 * 1000,
+      now.getTime() + ReservationsService.MAX_ADVANCE_MINUTES * 60_000,
     );
     if (plannedArrivalAt.getTime() > maxArrival.getTime()) {
       throw new BadRequestException(
-        `plannedArrivalAt must be within ${ReservationsService.MAX_PLANNED_ARRIVAL_DAYS} days`,
+        'You can only reserve for arrival within the next 2 hours',
       );
     }
 
     return plannedArrivalAt;
   }
+}
+
+function isSerializationFailure(error: unknown): boolean {
+  const candidate = error as {
+    code?: string;
+    meta?: { code?: string };
+    cause?: { code?: string };
+  };
+
+  return (
+    candidate?.code === 'P2034' ||
+    candidate?.meta?.code === '40001' ||
+    candidate?.cause?.code === '40001'
+  );
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  const candidate = error as {
+    code?: string;
+    meta?: { code?: string; constraint?: string; target?: string[] };
+    cause?: { code?: string };
+  };
+
+  return (
+    candidate?.code === 'P2002' ||
+    candidate?.meta?.code === '23505' ||
+    candidate?.cause?.code === '23505'
+  );
 }
