@@ -643,6 +643,20 @@ function SessionTicketPreview({ ticket, issuedAt }: { ticket: SessionTicket; iss
   const derivedLocation = deriveLocationFromSlotCode(ticket.slotCode)
   const floorDisplay = ticket.floorName || derivedLocation.floorName || '-'
   const zoneDisplay = ticket.zone || derivedLocation.zone || '-'
+  const toasts = useToasts()
+
+  const copySessionCode = useCallback(async () => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(ticket.sessionCode)
+      } else {
+        copyTextFallback(ticket.sessionCode)
+      }
+      toasts.showSuccess('Session code copied')
+    } catch {
+      toasts.showError('Unable to copy session code')
+    }
+  }, [ticket.sessionCode, toasts])
 
   return (
     <div className="mt-3 rounded-xl border border-dashed border-gray-300 bg-white p-3 text-xs shadow-sm print:mx-auto print:mt-0 print:w-[80mm] print:rounded-none print:border-0 print:p-0 print:shadow-none">
@@ -669,6 +683,15 @@ function SessionTicketPreview({ ticket, issuedAt }: { ticket: SessionTicket; iss
           className="mx-auto my-3 h-48 w-48 rounded-xl border border-gray-200 bg-white p-3 print:my-2 print:h-40 print:w-40 print:p-2"
         />
       )}
+
+      <button
+        type="button"
+        onClick={copySessionCode}
+        className="mx-auto -mt-1 mb-2 flex max-w-full items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-center font-mono text-[11px] font-bold tracking-wider text-slate-700 transition hover:border-primary-200 hover:bg-primary-50 hover:text-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500/30 print:hidden"
+        title="Copy session code"
+      >
+        {ticket.sessionCode}
+      </button>
 
       <div className="mt-2 rounded-lg border border-slate-100 bg-slate-50/50 p-2 text-center hidden print:block print:mt-3">
         <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-slate-400">Session Code</p>
@@ -715,6 +738,18 @@ function SessionTicketPreview({ ticket, issuedAt }: { ticket: SessionTicket; iss
       )}
     </div>
   )
+}
+
+function copyTextFallback(value: string) {
+  const input = document.createElement('textarea')
+  input.value = value
+  input.setAttribute('readonly', '')
+  input.style.position = 'fixed'
+  input.style.left = '-9999px'
+  document.body.appendChild(input)
+  input.select()
+  document.execCommand('copy')
+  document.body.removeChild(input)
 }
 
 function extractErrorMessage(error: unknown): string {

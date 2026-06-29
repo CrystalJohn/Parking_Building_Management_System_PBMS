@@ -199,7 +199,7 @@ export default function Dashboard() {
   const kpis = buildKpis(summary, pendingPayments, slotTotals)
 
   return (
-    <main className="min-h-screen bg-slate-100 px-4 py-5 text-slate-950 transition-colors duration-300 dark:bg-slate-950 dark:text-slate-100 lg:px-6">
+    <div className="min-h-screen bg-slate-100 px-4 py-5 text-slate-950 transition-colors duration-300 dark:bg-slate-950 dark:text-slate-100 lg:px-6">
       <div className="mx-auto max-w-[1500px] space-y-5">
         {error ? (
           <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-700 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-100">
@@ -306,7 +306,7 @@ export default function Dashboard() {
           }}
         />
       ) : null}
-    </main>
+    </div>
   )
 }
 
@@ -1061,4 +1061,3 @@ export function flagDot(severity: AdminOperationFlag['severity']) {
   if (severity === 'warning') return 'bg-amber-400'
   return 'bg-cyan-300'
 }
-

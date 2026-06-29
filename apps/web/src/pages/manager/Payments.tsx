@@ -44,7 +44,7 @@ export default function Payments() {
   const recentPaymentIssues = pendingPayments?.items.slice(0, 5) ?? []
 
   return (
-    <main className="min-h-screen bg-slate-100 px-4 py-5 text-slate-950 transition-colors duration-300 dark:bg-slate-950 dark:text-slate-100 lg:px-6">
+    <div className="min-h-screen bg-slate-100 px-4 py-5 text-slate-950 transition-colors duration-300 dark:bg-slate-950 dark:text-slate-100 lg:px-6">
       <div className="mx-auto max-w-[1500px] space-y-5">
         <h1 className="text-2xl font-black tracking-tight text-slate-950 dark:text-white md:text-3xl">
           Payments & Revenue
@@ -69,6 +69,6 @@ export default function Payments() {
           </div>
         )}
       </div>
-    </main>
+    </div>
   )
 }

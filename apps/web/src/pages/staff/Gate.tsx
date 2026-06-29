@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { isAxiosError } from 'axios'
-import { NavLink, useNavigate } from 'react-router-dom'
 import { ToastContainer } from '../../components/ui/Toast'
-import { clearAuth, getUser } from '../../lib/auth'
 import { useToasts } from '../../lib/use-toasts'
 import {
   checkIn,
@@ -55,11 +53,6 @@ const GATE_TABS: Array<{
   },
 ]
 
-const STAFF_NAV = [
-  { to: '/staff/gate', label: 'Gate' },
-  { to: '/staff/lost-ticket', label: 'Lost Ticket' },
-]
-
 const VND = (n: number) =>
   `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(Math.round(n))} VND`
 
@@ -106,54 +99,11 @@ export default function Gate() {
   })()
   const [tab, setTab] = useState<Tab>(initialTab as Tab)
   const toasts = useToasts()
-  const navigate = useNavigate()
-  const user = getUser()
-  const userInitial = (user?.fullName || user?.phone || 'S')[0].toUpperCase()
-
-  const handleLogout = () => {
-    clearAuth()
-    navigate('/login', { replace: true })
-  }
 
   return (
-    <div className="min-h-screen bg-slate-100">
-      <div className="sticky top-0 z-50 border-b border-slate-200/80 bg-slate-100/95 shadow-sm backdrop-blur-xl print:hidden">
-        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-2.5 sm:px-6 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-primary-600 to-indigo-400 text-xs font-black text-white shadow-md shadow-primary-600/20">
-                {userInitial}
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-black text-slate-950">
-                  {user?.fullName || user?.phone || 'Gate Staff'}
-                </p>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  Gate Operator
-                </p>
-              </div>
-            </div>
-
-            <nav className="flex flex-wrap items-center gap-1 lg:border-l lg:border-slate-300 lg:pl-3" aria-label="Staff navigation">
-              {STAFF_NAV.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={({ isActive }) =>
-                    `rounded-lg px-2.5 py-1.5 text-xs font-bold transition-all ${
-                      isActive
-                        ? 'bg-white text-slate-950 shadow-sm ring-1 ring-slate-200'
-                        : 'text-slate-500 hover:bg-white/70 hover:text-slate-900'
-                    }`
-                  }
-                >
-                  {item.label}
-                </NavLink>
-              ))}
-            </nav>
-          </div>
-
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+    <div className="bg-slate-100 dark:bg-slate-950">
+      <div className="mx-auto max-w-7xl px-4 pb-4 sm:px-6 print:hidden">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
             <nav
               className="grid grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm sm:min-w-[240px]"
               role="tablist"
@@ -184,19 +134,10 @@ export default function Gate() {
                 )
               })}
             </nav>
-
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-bold text-slate-600 shadow-sm transition-all hover:border-primary-200 hover:bg-primary-50 hover:text-primary-700 focus:outline-none"
-            >
-              Sign out
-            </button>
-          </div>
         </div>
       </div>
 
-      <main className="mx-auto max-w-7xl px-4 py-4 sm:px-6 print:max-w-none print:p-0">
+      <div className="mx-auto max-w-7xl px-4 pb-4 sm:px-6 print:max-w-none print:p-0">
         <div
           id={`gate-panel-${tab}`}
           role="tabpanel"
@@ -208,7 +149,7 @@ export default function Gate() {
             <CheckOutPanel toasts={toasts} />
           )}
         </div>
-      </main>
+      </div>
 
       <ToastContainer toasts={toasts.toasts} onDismiss={toasts.dismiss} />
     </div>

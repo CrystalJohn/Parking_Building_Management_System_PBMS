@@ -4,6 +4,7 @@ const USER_KEY = 'parking_user'
 export interface AuthUser {
   id: string
   phone: string
+  username?: string | null
   role: 'admin' | 'manager' | 'staff' | 'driver'
   fullName: string
 }

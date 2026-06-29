@@ -20,13 +20,14 @@ async function main() {
 
   // ─── 1. Users: 1 admin, 1 manager, 1 staff ──────────────────────────────
   const saltRounds = 10;
-  const defaultPassword = await bcrypt.hash('password123', saltRounds);
+  const defaultPassword = await bcrypt.hash('123456', saltRounds);
 
   const admin = await prisma.user.upsert({
     where: { phone: '0900000001' },
-    update: {},
+    update: { username: 'admin', passwordHash: defaultPassword },
     create: {
       phone: '0900000001',
+      username: 'admin',
       passwordHash: defaultPassword,
       role: Role.admin,
       fullName: 'System Admin',
@@ -35,9 +36,10 @@ async function main() {
 
   const manager = await prisma.user.upsert({
     where: { phone: '0900000002' },
-    update: {},
+    update: { username: 'manager', passwordHash: defaultPassword },
     create: {
       phone: '0900000002',
+      username: 'manager',
       passwordHash: defaultPassword,
       role: Role.manager,
       fullName: 'Facility Manager',
@@ -46,9 +48,10 @@ async function main() {
 
   const staff = await prisma.user.upsert({
     where: { phone: '0900000003' },
-    update: {},
+    update: { username: 'staff', passwordHash: defaultPassword },
     create: {
       phone: '0900000003',
+      username: 'staff',
       passwordHash: defaultPassword,
       role: Role.staff,
       fullName: 'Gate Staff',

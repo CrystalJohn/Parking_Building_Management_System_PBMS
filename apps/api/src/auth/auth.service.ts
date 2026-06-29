@@ -1,5 +1,6 @@
 import {
   Injectable,
+  BadRequestException,
   ConflictException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -54,12 +55,24 @@ export class AuthService {
   }
 
   /**
-   * Login with phone + password, returns JWT containing userId and role
+   * Login with phone/username + password, returns JWT containing userId and role
    * Req 9.3
    */
   async login(dto: LoginDto) {
-    const user = await this.prisma.user.findUnique({
-      where: { phone: dto.phone },
+    const identifier = (dto.identifier ?? dto.phone ?? '').trim();
+
+    if (!identifier) {
+      throw new BadRequestException('Phone or username is required');
+    }
+
+    const username = this.normalizeUsername(identifier);
+    const user = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { phone: identifier },
+          { username },
+        ],
+      },
     });
 
     if (!user) {
@@ -82,6 +95,7 @@ export class AuthService {
       user: {
         id: user.id,
         phone: user.phone,
+        username: user.username,
         role: user.role,
         fullName: user.fullName,
       },
@@ -103,5 +117,9 @@ export class AuthService {
   private generateToken(userId: string, role: string): string {
     const payload = { sub: userId, role };
     return this.jwtService.sign(payload);
+  }
+
+  private normalizeUsername(value: string): string {
+    return value.trim().toLowerCase();
   }
 }

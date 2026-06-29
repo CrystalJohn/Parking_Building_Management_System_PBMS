@@ -6,7 +6,6 @@ import api from '../../lib/api'
 import { getToken, getUser, saveAuth, type AuthUser } from '../../lib/auth'
 import { ToastContainer } from '../../components/ui/Toast'
 import { useToasts } from '../../lib/use-toasts'
-import parkingHero from '../../assets/parking-hero.jpg'
 
 interface RegisterResponse {
   access_token: string
@@ -18,10 +17,10 @@ function isValidPhone(value: string): boolean {
 }
 
 /**
- * Register page — Glassmorphism card-in-card on parking hero background
+ * Register page with a centered auth card.
  *
- * - Background: parking hero image + dark overlay
- * - Center: large glassmorphism outer card
+ * - Background: plain app surface
+ * - Center: large outer card
  *   - Left: branding sub-card with illustration
  *   - Right: form sub-card with full name, phone, password
  * - Auto login after registration → redirect /driver/home
@@ -108,33 +107,20 @@ export default function Register() {
   }
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center p-4 sm:p-6">
+    <div className="min-h-screen relative flex items-center justify-center bg-slate-100 p-4 text-slate-950 dark:bg-slate-950 dark:text-slate-100 sm:p-6">
       <Link
         to="/"
-        className="fixed left-4 top-4 z-20 inline-flex h-10 items-center gap-2 rounded-xl border border-white/20 bg-white/15 px-3 text-sm font-semibold text-white shadow-lg shadow-black/10 backdrop-blur-xl transition hover:bg-white/25 focus:outline-none focus:ring-2 focus:ring-white/50 sm:left-6 sm:top-6"
+        className="fixed left-4 top-4 z-20 inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-primary-200 hover:bg-primary-50 hover:text-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 sm:left-6 sm:top-6"
       >
         <ArrowLeft className="h-4 w-4" strokeWidth={1.8} />
         Back to PBMS
       </Link>
-      {/* ── Background: parking hero image ── */}
-      <div className="fixed inset-0 -z-10">
-        <img
-          src={parkingHero}
-          alt=""
-          className="w-full h-full object-cover"
-        />
-        {/* Dark overlay */}
-        <div className="absolute inset-0 bg-black/60 dark:bg-black/75" />
-        {/* Warm tint */}
-        <div className="absolute inset-0 bg-gradient-to-tr from-amber-900/20 via-transparent to-orange-900/10 mix-blend-overlay" />
-      </div>
-
-      {/* ── Outer glassmorphism card (card-in-card) ── */}
-      <div className="w-full max-w-[1000px] bg-white/10 dark:bg-white/[0.06] backdrop-blur-3xl rounded-[1.5rem] sm:rounded-[2rem] border border-white/20 dark:border-white/[0.1] shadow-[0_8px_80px_rgba(0,0,0,0.3)] ring-1 ring-white/[0.05] overflow-hidden">
+      {/* ── Outer card (card-in-card) ── */}
+      <div className="w-full max-w-[1000px] overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-xl shadow-slate-200/70 ring-1 ring-slate-100 dark:border-white/10 dark:bg-slate-900 dark:shadow-none dark:ring-white/5 sm:rounded-[2rem]">
         <div className="grid lg:grid-cols-2 lg:min-h-[560px]">
 
           {/* ── Left: Branding sub-card ── */}
-          <div className="hidden lg:flex relative min-h-[560px] items-center justify-center overflow-hidden bg-white/10">
+          <div className="hidden lg:flex relative min-h-[560px] items-center justify-center overflow-hidden bg-slate-50 dark:bg-white/[0.03]">
             <img
               src="/image_login.png"
               alt="Parking building illustration"
@@ -145,10 +131,10 @@ export default function Register() {
           {/* ── Right: Form sub-card ── */}
           <div className="flex items-center justify-center p-3 sm:p-8">
             <div className="w-full max-w-sm">
-              {/* Inner glass card for form */}
-              <div className="overflow-hidden bg-white/80 dark:bg-white/[0.06] backdrop-blur-2xl rounded-[1.25rem] sm:rounded-[1.5rem] border border-white/40 dark:border-white/[0.08] shadow-[0_4px_40px_rgba(0,0,0,0.1)] sm:p-8">
+              {/* Inner card for form */}
+              <div className="overflow-hidden rounded-[1.25rem] border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-950 sm:rounded-[1.5rem] sm:p-8">
                 {/* Mobile-only image */}
-                <div className="lg:hidden bg-white/40 dark:bg-white/[0.05]">
+                <div className="bg-slate-50 dark:bg-white/[0.03] lg:hidden">
                   <img
                     src="/image_login.png"
                     alt="Parking building illustration"
@@ -345,7 +331,7 @@ export default function Register() {
                     <div className="w-full border-t border-black/5 dark:border-white/10" />
                   </div>
                   <div className="relative flex justify-center text-[11px]">
-                    <span className="bg-white/80 dark:bg-white/[0.06] px-3 text-[#888]">or</span>
+                    <span className="bg-white px-3 text-[#888] dark:bg-slate-950">or</span>
                   </div>
                 </div>
 

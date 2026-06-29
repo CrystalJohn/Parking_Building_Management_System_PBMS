@@ -52,7 +52,7 @@ export default function Operations() {
   const recentFlags = flags?.flags.slice(0, 3) ?? []
 
   return (
-    <main className="min-h-screen bg-slate-100 px-4 py-5 text-slate-950 transition-colors duration-300 dark:bg-slate-950 dark:text-slate-100 lg:px-6">
+    <div className="min-h-screen bg-slate-100 px-4 py-5 text-slate-950 transition-colors duration-300 dark:bg-slate-950 dark:text-slate-100 lg:px-6">
       <div className="mx-auto max-w-[1500px] space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <h1 className="text-2xl font-black tracking-tight text-slate-950 dark:text-white md:text-3xl">
@@ -95,6 +95,6 @@ export default function Operations() {
           </div>
         )}
       </div>
-    </main>
+    </div>
   )
 }

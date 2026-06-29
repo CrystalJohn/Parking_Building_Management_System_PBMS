@@ -1,6 +1,5 @@
 import { Navigate, Routes, Route } from 'react-router-dom'
 import RequireAuth from '../components/auth/RequireAuth'
-import AdminLayout from '../layouts/AdminLayout'
 
 // Landing
 import Landing from '../pages/Landing'
@@ -14,7 +13,6 @@ import Gate from '../pages/staff/Gate'
 import LostTicket from '../pages/staff/LostTicket'
 
 // Manager
-import ManagerLayout from '../layouts/ManagerLayout'
 import Dashboard from '../pages/manager/Dashboard'
 import Operations from '../pages/manager/Operations'
 import Payments from '../pages/manager/Payments'
@@ -59,7 +57,7 @@ export default function AppRoutes() {
       <Route
         path="/staff/gate"
         element={
-          <RequireAuth allowedRoles={['staff']} hideAppHeader>
+          <RequireAuth allowedRoles={['staff']}>
             <Gate />
           </RequireAuth>
         }
@@ -67,7 +65,7 @@ export default function AppRoutes() {
       <Route
         path="/staff/lost-ticket"
         element={
-          <RequireAuth allowedRoles={['staff']} hideAppHeader>
+          <RequireAuth allowedRoles={['staff']}>
             <LostTicket />
           </RequireAuth>
         }
@@ -77,60 +75,48 @@ export default function AppRoutes() {
       <Route
         path="/manager/dashboard"
         element={
-          <RequireAuth allowedRoles={['manager']} hideAppHeader>
-            <ManagerLayout>
-              <Dashboard />
-            </ManagerLayout>
+          <RequireAuth allowedRoles={['manager']}>
+            <Dashboard />
           </RequireAuth>
         }
       />
       <Route
         path="/manager/operations"
         element={
-          <RequireAuth allowedRoles={['manager']} hideAppHeader>
-            <ManagerLayout>
-              <Operations />
-            </ManagerLayout>
+          <RequireAuth allowedRoles={['manager']}>
+            <Operations />
           </RequireAuth>
         }
       />
       <Route
         path="/manager/payments"
         element={
-          <RequireAuth allowedRoles={['manager']} hideAppHeader>
-            <ManagerLayout>
-              <Payments />
-            </ManagerLayout>
+          <RequireAuth allowedRoles={['manager']}>
+            <Payments />
           </RequireAuth>
         }
       />
       <Route
         path="/manager/reservations"
         element={
-          <RequireAuth allowedRoles={['manager']} hideAppHeader>
-            <ManagerLayout>
-              <ManagerReservations />
-            </ManagerLayout>
+          <RequireAuth allowedRoles={['manager']}>
+            <ManagerReservations />
           </RequireAuth>
         }
       />
       <Route
         path="/manager/reports"
         element={
-          <RequireAuth allowedRoles={['manager']} hideAppHeader>
-            <ManagerLayout>
-              <Reports />
-            </ManagerLayout>
+          <RequireAuth allowedRoles={['manager']}>
+            <Reports />
           </RequireAuth>
         }
       />
       <Route
         path="/manager/config"
         element={
-          <RequireAuth allowedRoles={['manager']} hideAppHeader>
-            <ManagerLayout>
-              <Config />
-            </ManagerLayout>
+          <RequireAuth allowedRoles={['manager']}>
+            <Config />
           </RequireAuth>
         }
       />
@@ -140,40 +126,32 @@ export default function AppRoutes() {
       <Route
         path="/admin/dashboard"
         element={
-          <RequireAuth allowedRoles={['admin']} hideAppHeader>
-            <AdminLayout>
-              <AdminDashboard />
-            </AdminLayout>
+          <RequireAuth allowedRoles={['admin']}>
+            <AdminDashboard />
           </RequireAuth>
         }
       />
       <Route
         path="/admin/users"
         element={
-          <RequireAuth allowedRoles={['admin']} hideAppHeader>
-            <AdminLayout>
-              <Users />
-            </AdminLayout>
+          <RequireAuth allowedRoles={['admin']}>
+            <Users />
           </RequireAuth>
         }
       />
       <Route
         path="/admin/reservations"
         element={
-          <RequireAuth allowedRoles={['admin']} hideAppHeader>
-            <AdminLayout>
-              <AdminReservations />
-            </AdminLayout>
+          <RequireAuth allowedRoles={['admin']}>
+            <AdminReservations />
           </RequireAuth>
         }
       />
       <Route
         path="/admin/reports"
         element={
-          <RequireAuth allowedRoles={['admin']} hideAppHeader>
-            <AdminLayout>
-              <AdminReportsFlags />
-            </AdminLayout>
+          <RequireAuth allowedRoles={['admin']}>
+            <AdminReportsFlags />
           </RequireAuth>
         }
       />

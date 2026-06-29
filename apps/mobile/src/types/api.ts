@@ -6,6 +6,7 @@ export type SessionStatus = 'active' | 'checkout_pending' | 'exit_authorized' | 
 export type User = {
   id: string;
   phone: string;
+  username?: string | null;
   role: Role;
   fullName?: string | null;
 };
@@ -16,11 +17,14 @@ export type AuthResponse = {
 };
 
 export type LoginPayload = {
-  phone: string;
+  phone?: string;
+  identifier?: string;
   password: string;
 };
 
-export type RegisterPayload = LoginPayload & {
+export type RegisterPayload = {
+  phone: string;
+  password: string;
   fullName: string;
 };
 

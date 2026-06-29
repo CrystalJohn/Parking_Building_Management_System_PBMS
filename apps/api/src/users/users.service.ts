@@ -10,6 +10,7 @@ import { CreateUserDto, UpdateUserDto } from './dto';
 const USER_SELECT = {
   id: true,
   phone: true,
+  username: true,
   role: true,
   fullName: true,
   isActive: true,
@@ -56,6 +57,7 @@ export class UsersService {
    * Req 12.2
    */
   async create(dto: CreateUserDto) {
+    const username = this.normalizeUsername(dto.username);
     const existing = await this.prisma.user.findUnique({
       where: { phone: dto.phone },
     });
@@ -64,14 +66,25 @@ export class UsersService {
       throw new ConflictException('Phone number already registered');
     }
 
+    if (username) {
+      const existingUsername = await this.prisma.user.findUnique({
+        where: { username },
+      });
+
+      if (existingUsername) {
+        throw new ConflictException('Username already registered');
+      }
+    }
+
     const passwordHash = await bcrypt.hash(dto.password, this.SALT_ROUNDS);
 
     return this.prisma.user.create({
       data: {
         phone: dto.phone,
+        username,
         passwordHash,
         role: dto.role,
-        fullName: dto.fullName,
+        fullName: this.normalizeNullableText(dto.fullName),
       },
       select: USER_SELECT,
     });
@@ -85,9 +98,29 @@ export class UsersService {
     // Ensure user exists
     await this.findOne(id);
 
-    const { password, ...rest } = dto;
+    const { password, username, fullName, ...rest } = dto;
 
     const data: Record<string, unknown> = { ...rest };
+
+    if (username !== undefined) {
+      const normalizedUsername = this.normalizeUsername(username);
+
+      if (normalizedUsername) {
+        const existingUsername = await this.prisma.user.findUnique({
+          where: { username: normalizedUsername },
+        });
+
+        if (existingUsername && existingUsername.id !== id) {
+          throw new ConflictException('Username already registered');
+        }
+      }
+
+      data.username = normalizedUsername;
+    }
+
+    if (fullName !== undefined) {
+      data.fullName = this.normalizeNullableText(fullName);
+    }
 
     if (password) {
       data.passwordHash = await bcrypt.hash(password, this.SALT_ROUNDS);
@@ -114,5 +147,15 @@ export class UsersService {
       data: { isActive: false },
       select: USER_SELECT,
     });
+  }
+
+  private normalizeUsername(value: string | null | undefined): string | null {
+    const normalized = value?.trim().toLowerCase();
+    return normalized || null;
+  }
+
+  private normalizeNullableText(value: string | null | undefined): string | null {
+    const normalized = value?.trim();
+    return normalized || null;
   }
 }

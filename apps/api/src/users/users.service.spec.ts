@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 interface UserShape {
   id: string;
   phone: string;
+  username: string | null;
   role: Role;
   fullName: string;
   isActive: boolean;
@@ -17,6 +18,7 @@ interface UserShape {
 const makeUser = (overrides: Partial<UserShape> = {}): UserShape => ({
   id: 'uuid-1',
   phone: '0912345678',
+  username: null,
   role: Role.driver,
   fullName: 'Test User',
   isActive: true,

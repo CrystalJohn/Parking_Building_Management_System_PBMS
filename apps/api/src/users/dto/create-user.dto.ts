@@ -16,14 +16,21 @@ export class CreateUserDto {
   })
   phone: string;
 
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-zA-Z][a-zA-Z0-9._-]{2,31}$/, {
+    message: 'Username must start with a letter and contain 3-32 letters, numbers, dots, underscores, or hyphens',
+  })
+  username?: string;
+
   @IsString()
   @IsNotEmpty()
   @MinLength(6, { message: 'Password must be at least 6 characters' })
   password: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  fullName: string;
+  fullName?: string;
 
   @IsEnum(Role, { message: 'Role must be one of: admin, manager, staff, driver' })
   role: Role;

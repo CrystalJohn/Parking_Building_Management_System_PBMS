@@ -1,20 +1,26 @@
 import type { ReactNode } from 'react'
-import AppHeader from '../ui/AppHeader'
+import AppHeader from './AppHeader'
+import AppSidebar from './AppSidebar'
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 
 interface Props {
   children: ReactNode
-  hideHeader?: boolean
 }
 
 /**
  * Layout wrapper for all authenticated pages.
- * Renders the shared header (with logout button) above page content.
+ * Renders the shared shadcn/ui sidebar shell for every signed-in role.
  */
-export default function AuthenticatedLayout({ children, hideHeader = false }: Props) {
+export default function AuthenticatedLayout({ children }: Props) {
   return (
-    <div className="min-h-screen flex flex-col">
-      {!hideHeader && <AppHeader />}
-      <main className="flex-1">{children}</main>
-    </div>
+    <SidebarProvider>
+      <AppSidebar />
+      <SidebarInset className="min-h-svh bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-slate-100">
+        <AppHeader />
+        <div className="flex-1 p-4 sm:p-5 lg:p-6">
+          <div className="mx-auto w-full max-w-[1500px]">{children}</div>
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }

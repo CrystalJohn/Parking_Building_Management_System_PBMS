@@ -1,40 +1,115 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { isAxiosError } from 'axios'
-import { Plus, Search } from 'lucide-react'
-import api from '../../lib/api'
-import { ToastContainer } from '../../components/ui/Toast'
-import { useToasts } from '../../lib/use-toasts'
 import {
-  AdminPageHeader,
-  EmptyState,
-  LoadingRows,
-  ROLE_LABELS,
-  RoleBadge,
-  StatusBadge,
-} from './admin-ui'
+  AlertCircle,
+  ListFilter,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Power,
+  RotateCcw,
+  Search,
+  Users as UsersIcon,
+} from 'lucide-react'
+import { toast } from 'sonner'
+import api from '../../lib/api'
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from '@/components/ui/alert'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Card,
+  CardContent,
+} from '@/components/ui/card'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Toaster } from '@/components/ui/sonner'
+import { cn } from '@/lib/utils'
 
 type Role = 'admin' | 'manager' | 'staff' | 'driver'
 
 interface User {
   id: string
   phone: string
+  username: string | null
   fullName: string | null
   role: Role
   isActive: boolean
   createdAt: string
 }
 
+const ROLE_LABELS: Record<Role, string> = {
+  admin: 'Admin',
+  manager: 'Manager',
+  staff: 'Staff',
+  driver: 'Driver',
+}
+
+const ROLE_OPTIONS: Role[] = ['driver', 'staff', 'manager', 'admin']
 const FILTERS: Array<Role | 'all'> = ['all', 'admin', 'manager', 'staff', 'driver']
 
+const ROLE_BADGE_CLASS: Record<Role, string> = {
+  admin: 'border-primary-200 bg-primary-50 text-primary-700 dark:border-primary-400/20 dark:bg-primary-500/15 dark:text-primary-100',
+  manager: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-400/20 dark:bg-sky-500/15 dark:text-sky-100',
+  staff: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/15 dark:text-emerald-100',
+  driver: 'border-slate-200 bg-slate-100 text-slate-700 dark:border-white/10 dark:bg-white/10 dark:text-slate-200',
+}
+
 export default function Users() {
-  const toasts = useToasts()
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [filterRole, setFilterRole] = useState<Role | 'all'>('all')
   const [query, setQuery] = useState('')
-  const [showModal, setShowModal] = useState(false)
+  const [dialogOpen, setDialogOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
+  const [pendingStatusUser, setPendingStatusUser] = useState<User | null>(null)
 
   useEffect(() => {
     void loadUsers()
@@ -46,9 +121,10 @@ export default function Users() {
     try {
       const { data } = await api.get<User[]>('/users')
       setUsers(data)
-    } catch {
-      setError('Unable to load user list')
-      toasts.showError('Unable to load user list')
+    } catch (err) {
+      const message = getErrorMessage(err, 'Unable to load user list')
+      setError(message)
+      toast.error(message)
     } finally {
       setLoading(false)
     }
@@ -56,7 +132,6 @@ export default function Users() {
 
   const handleToggleActive = async (user: User) => {
     const action = user.isActive ? 'deactivate' : 'activate'
-    if (!confirm(`Are you sure you want to ${action} account ${user.phone}?`)) return
 
     try {
       if (user.isActive) {
@@ -64,35 +139,50 @@ export default function Users() {
       } else {
         await api.patch(`/users/${user.id}`, { isActive: true })
       }
-      toasts.showSuccess(`Account ${user.phone} has been ${action}d`)
+      toast.success(`Account ${user.phone} has been ${action}d`)
       await loadUsers()
     } catch (err) {
-      if (isAxiosError(err)) {
-        const msg = err.response?.data?.message
-        toasts.showError(typeof msg === 'string' ? msg : `Unable to ${action} account`)
-      }
+      toast.error(getErrorMessage(err, `Unable to ${action} account`))
     }
   }
 
   const handleEdit = (user: User) => {
     setEditingUser(user)
-    setShowModal(true)
+    setDialogOpen(true)
   }
 
   const handleCreate = () => {
     setEditingUser(null)
-    setShowModal(true)
+    setDialogOpen(true)
   }
 
-  const handleModalClose = () => {
-    setShowModal(false)
-    setEditingUser(null)
+  const handleDialogOpenChange = (open: boolean) => {
+    setDialogOpen(open)
+    if (!open) setEditingUser(null)
   }
 
-  const handleModalSave = async () => {
+  const handleDialogSaved = async () => {
     await loadUsers()
-    handleModalClose()
+    handleDialogOpenChange(false)
   }
+
+  const handleStatusConfirm = () => {
+    if (!pendingStatusUser) return
+    const user = pendingStatusUser
+    setPendingStatusUser(null)
+    void handleToggleActive(user)
+  }
+
+  const roleCounts = useMemo(() => {
+    return users.reduce<Record<Role | 'all', number>>(
+      (counts, user) => {
+        counts.all += 1
+        counts[user.role] += 1
+        return counts
+      },
+      { all: 0, admin: 0, manager: 0, staff: 0, driver: 0 },
+    )
+  }, [users])
 
   const filteredUsers = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
@@ -101,323 +191,489 @@ export default function Users() {
       const queryMatches =
         !normalizedQuery ||
         user.phone.toLowerCase().includes(normalizedQuery) ||
+        (user.username ?? '').toLowerCase().includes(normalizedQuery) ||
         (user.fullName ?? '').toLowerCase().includes(normalizedQuery)
       return roleMatches && queryMatches
     })
   }, [filterRole, query, users])
 
+  const pendingAction = pendingStatusUser?.isActive ? 'deactivate' : 'activate'
+
   return (
     <div className="space-y-6">
-      <AdminPageHeader
-        title="Manage Users"
-        description="Create accounts, assign roles, and control access for administrators, managers, staff, and drivers."
-        weight="normal"
-        action={
-          <button
-            type="button"
-            onClick={handleCreate}
-            className="inline-flex h-11 items-center gap-2 rounded-2xl bg-primary-600 px-4 text-sm font-normal text-white shadow-sm shadow-primary-600/20 transition hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:focus:ring-offset-slate-950"
-          >
-            <Plus className="h-4 w-4" strokeWidth={1.8} />
-            Create account
-          </button>
-        }
-      />
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            Manage Users
+          </h1>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+            Create accounts, assign roles, and control access for administrators, managers, staff, and drivers.
+          </p>
+        </div>
+        <Button type="button" onClick={handleCreate} className="h-10 shrink-0">
+          <Plus className="size-4" strokeWidth={1.8} />
+          Create account
+        </Button>
+      </div>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex flex-wrap gap-2">
-            {FILTERS.map((role) => (
-              <button
-                key={role}
-                type="button"
-                onClick={() => setFilterRole(role)}
-                className={`rounded-xl px-3 py-2 text-sm font-normal transition ${
-                  filterRole === role
-                    ? 'bg-primary-600 text-white shadow-sm shadow-primary-600/20'
-                    : 'border border-slate-200 bg-white text-slate-600 hover:border-primary-200 hover:text-primary-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-300 dark:hover:text-white'
-                }`}
-              >
-                {role === 'all' ? 'All' : ROLE_LABELS[role]}
-                <span className="ml-1 text-xs opacity-75">
-                  {role === 'all'
-                    ? users.length
-                    : users.filter((user) => user.role === role).length}
+      <Card>
+        <CardContent className="grid gap-4 pt-4 sm:pt-5 lg:grid-cols-[260px_1fr] lg:items-end">
+          <div className="space-y-2">
+            <Label
+              htmlFor="role-filter"
+              className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+            >
+              Role filter
+            </Label>
+            <Select
+              value={filterRole}
+              onValueChange={(value) => setFilterRole(value as Role | 'all')}
+            >
+              <SelectTrigger id="role-filter" className="h-10 w-full">
+                <span className="flex min-w-0 items-center gap-2">
+                  <ListFilter className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.8} />
+                  <SelectValue placeholder="All roles" />
                 </span>
-              </button>
-            ))}
+              </SelectTrigger>
+              <SelectContent align="start">
+                {FILTERS.map((role) => (
+                  <SelectItem key={role} value={role}>
+                    {role === 'all' ? 'All roles' : ROLE_LABELS[role]} ({roleCounts[role]})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
-          <label className="relative block w-full xl:w-80">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" strokeWidth={1.8} />
-            <input
-              className="h-11 w-full rounded-2xl border border-slate-200 bg-white pl-9 pr-3 text-sm font-normal text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100 dark:border-white/10 dark:bg-slate-950 dark:text-white dark:focus:ring-primary-500/20"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search name or phone"
-            />
-          </label>
-        </div>
-      </section>
+          <div className="space-y-2">
+            <Label
+              htmlFor="user-search"
+              className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+            >
+              Search
+            </Label>
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                strokeWidth={1.8}
+              />
+              <Input
+                id="user-search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search name, username, or phone"
+                className="h-10 pl-9"
+                aria-label="Search users"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {error ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-normal text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-100">
-          {error}
-        </div>
+        <Alert variant="destructive">
+          <AlertCircle className="size-4" strokeWidth={1.8} />
+          <AlertTitle>Could not load users</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       ) : null}
 
-      {loading ? <LoadingRows rows={6} /> : null}
+      {loading ? <UsersTableSkeleton /> : null}
 
       {!loading && !error ? (
-        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm">
-              <thead className="border-b border-slate-200 bg-slate-50 text-xs font-normal uppercase text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-400">
-                <tr>
-                  <th className="px-5 py-4 text-left">Account</th>
-                  <th className="px-5 py-4 text-left">Role</th>
-                  <th className="px-5 py-4 text-left">Status</th>
-                  <th className="px-5 py-4 text-left">Created</th>
-                  <th className="px-5 py-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-white/10">
-                {filteredUsers.map((user) => (
-                  <tr
-                    key={user.id}
-                    className={!user.isActive ? 'bg-slate-50/70 opacity-75 dark:bg-white/[0.02]' : ''}
-                  >
-                    <td className="px-5 py-4">
-                      <p className="font-normal text-slate-950 dark:text-white">
-                        {user.fullName || 'Unnamed account'}
+        <Card>
+          <Table className="min-w-[760px]">
+            <TableHeader>
+              <TableRow className="bg-muted/50 hover:bg-muted/50">
+                <TableHead className="px-5 py-3">Account</TableHead>
+                <TableHead className="px-5 py-3">Role</TableHead>
+                <TableHead className="px-5 py-3">Status</TableHead>
+                <TableHead className="px-5 py-3">Created</TableHead>
+                <TableHead className="px-5 py-3 text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredUsers.map((user) => (
+                <TableRow
+                  key={user.id}
+                  className={cn(!user.isActive && 'bg-muted/40 opacity-75')}
+                >
+                  <TableCell className="px-5 py-4 whitespace-normal">
+                    <p className="font-medium text-foreground">
+                      {user.fullName || 'Unnamed account'}
+                    </p>
+                    <p className="mt-1 font-mono text-xs text-muted-foreground">
+                      {user.phone}
+                    </p>
+                    {user.username ? (
+                      <p className="mt-1 font-mono text-xs text-muted-foreground">
+                        @{user.username}
                       </p>
-                      <p className="mt-1 font-mono text-xs font-normal text-slate-500 dark:text-slate-400">
-                        {user.phone}
-                      </p>
-                    </td>
-                    <td className="px-5 py-4">
-                      <RoleBadge role={user.role} weight="normal" />
-                    </td>
-                    <td className="px-5 py-4">
-                      <StatusBadge
-                        label={user.isActive ? 'Active' : 'Inactive'}
-                        tone={user.isActive ? 'green' : 'red'}
-                        weight="normal"
-                      />
-                    </td>
-                    <td className="px-5 py-4 font-normal text-slate-500 dark:text-slate-400">
-                      {formatDate(user.createdAt)}
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="flex justify-end gap-2">
-                        <button
+                    ) : null}
+                  </TableCell>
+                  <TableCell className="px-5 py-4">
+                    <RoleBadge role={user.role} />
+                  </TableCell>
+                  <TableCell className="px-5 py-4">
+                    <StatusBadge active={user.isActive} />
+                  </TableCell>
+                  <TableCell className="px-5 py-4 text-muted-foreground">
+                    {formatDate(user.createdAt)}
+                  </TableCell>
+                  <TableCell className="px-5 py-4 text-right">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
                           type="button"
-                          onClick={() => handleEdit(user)}
-                          className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-normal text-slate-700 transition hover:border-primary-200 hover:text-primary-700 dark:border-white/10 dark:text-slate-200 dark:hover:text-white"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Open actions for ${user.phone}`}
                         >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleToggleActive(user)}
-                          className={`rounded-xl px-3 py-2 text-xs font-normal transition ${
-                            user.isActive
-                              ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-100'
-                              : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-100'
-                          }`}
+                          <MoreHorizontal className="size-4" strokeWidth={1.8} />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-44">
+                        <DropdownMenuLabel>Account actions</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onSelect={() => handleEdit(user)}>
+                          <Pencil className="size-4" strokeWidth={1.8} />
+                          Edit account
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          variant={user.isActive ? 'destructive' : 'default'}
+                          onSelect={() => setPendingStatusUser(user)}
                         >
+                          {user.isActive ? (
+                            <Power className="size-4" strokeWidth={1.8} />
+                          ) : (
+                            <RotateCcw className="size-4" strokeWidth={1.8} />
+                          )}
                           {user.isActive ? 'Deactivate' : 'Activate'}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
 
           {filteredUsers.length === 0 ? (
-            <div className="p-5">
-              <EmptyState
+            <div className="border-t p-5">
+              <EmptyUsersState
                 title="No accounts match this view"
                 description="Adjust the role filter or search term to find the account you need."
-                weight="normal"
               />
             </div>
           ) : null}
-        </section>
+        </Card>
       ) : null}
 
-      {showModal ? (
-        <UserModal
-          user={editingUser}
-          onClose={handleModalClose}
-          onSave={handleModalSave}
-          toasts={toasts}
-        />
-      ) : null}
+      <UserDialog
+        open={dialogOpen}
+        user={editingUser}
+        onOpenChange={handleDialogOpenChange}
+        onSave={handleDialogSaved}
+      />
 
-      <ToastContainer toasts={toasts.toasts} onDismiss={toasts.dismiss} />
+      <AlertDialog
+        open={pendingStatusUser !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingStatusUser(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingStatusUser?.isActive ? 'Deactivate account?' : 'Activate account?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will {pendingAction} account {pendingStatusUser?.phone}. You can change this again later.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant={pendingStatusUser?.isActive ? 'destructive' : 'default'}
+              onClick={handleStatusConfirm}
+            >
+              {pendingStatusUser?.isActive ? 'Deactivate' : 'Activate'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Toaster position="top-right" richColors closeButton />
     </div>
   )
 }
 
-function UserModal({
+function UserDialog({
+  open,
   user,
-  onClose,
+  onOpenChange,
   onSave,
-  toasts,
 }: {
+  open: boolean
   user: User | null
-  onClose: () => void
-  onSave: () => void
-  toasts: ReturnType<typeof useToasts>
+  onOpenChange: (open: boolean) => void
+  onSave: () => Promise<void>
 }) {
   const isEdit = user !== null
-  const [phone, setPhone] = useState(user?.phone ?? '')
-  const [fullName, setFullName] = useState(user?.fullName ?? '')
-  const [role, setRole] = useState<Role>(user?.role ?? 'driver')
+  const [phone, setPhone] = useState('')
+  const [username, setUsername] = useState('')
+  const [fullName, setFullName] = useState('')
+  const [role, setRole] = useState<Role>('driver')
   const [password, setPassword] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const handleSubmit = async (event: React.FormEvent) => {
+  useEffect(() => {
+    if (!open) return
+    setPhone(user?.phone ?? '')
+    setUsername(user?.username ?? '')
+    setFullName(user?.fullName ?? '')
+    setRole(user?.role ?? 'driver')
+    setPassword('')
+    setError(null)
+  }, [open, user])
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setError(null)
     setSaving(true)
 
     try {
+      const normalizedUsername = username.trim()
+      const normalizedFullName = fullName.trim()
+
       if (isEdit) {
-        const payload: Record<string, unknown> = { fullName, role }
-        await api.patch(`/users/${user.id}`, payload)
-        toasts.showSuccess('Account updated')
+        await api.patch(`/users/${user.id}`, {
+          username: normalizedUsername || null,
+          fullName: normalizedFullName || null,
+          role,
+        })
+        toast.success('Account updated')
       } else {
         if (!password || password.length < 6) {
           setError('Password must be at least 6 characters')
           setSaving(false)
           return
         }
-        await api.post('/users', { phone, password, fullName, role })
-        toasts.showSuccess('Account created')
+        await api.post('/users', {
+          phone,
+          username: normalizedUsername || undefined,
+          password,
+          fullName: normalizedFullName || undefined,
+          role,
+        })
+        toast.success('Account created')
       }
-      onSave()
+      await onSave()
     } catch (err) {
-      if (isAxiosError(err)) {
-        const msg = err.response?.data?.message
-        setError(
-          typeof msg === 'string'
-            ? msg
-            : Array.isArray(msg)
-              ? msg.join(', ')
-              : 'Error saving data',
-        )
-      }
+      setError(getErrorMessage(err, 'Error saving data'))
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 p-4"
-      role="dialog"
-      aria-modal="true"
-    >
-      <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-slate-900">
-        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-white/10">
-          <div>
-            <h3 className="text-lg font-normal text-slate-950 dark:text-white">
-              {isEdit ? 'Edit account' : 'Create account'}
-            </h3>
-            <p className="text-sm font-normal text-slate-500 dark:text-slate-400">
-              {isEdit ? 'Update role, name, or password.' : 'Add a new PBMS account.'}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-xl text-xl leading-none text-slate-400 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-white/10 dark:hover:text-white"
-            aria-label="Close"
-          >
-            &times;
-          </button>
-        </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="p-0 sm:max-w-lg">
+        <DialogHeader className="px-5 pt-5 pr-12">
+          <DialogTitle>{isEdit ? 'Edit account' : 'Create account'}</DialogTitle>
+          <DialogDescription>
+            {isEdit ? 'Update name and role for this PBMS account.' : 'Add a new PBMS account with an initial password.'}
+          </DialogDescription>
+        </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4 p-5">
-          <div>
-            <label className="mb-1 block text-sm font-normal text-slate-700 dark:text-slate-200">
+        <form onSubmit={handleSubmit} className="space-y-4 px-5 pb-5">
+          <div className="space-y-2">
+            <Label htmlFor="user-phone">
               Phone
-            </label>
-            <input
-              className="input font-normal dark:border-white/10 dark:bg-slate-950 dark:text-white"
+              <RequiredMark />
+            </Label>
+            <Input
+              id="user-phone"
+              type="tel"
               value={phone}
               onChange={(event) => setPhone(event.target.value)}
-              disabled={isEdit}
+              disabled={isEdit || saving}
+              required
+              autoComplete="tel"
               placeholder="0901234567"
+              className="h-10"
             />
           </div>
 
-          <div>
-            <label className="mb-1 block text-sm font-normal text-slate-700 dark:text-slate-200">
-              Full name
-            </label>
-            <input
-              className="input font-normal dark:border-white/10 dark:bg-slate-950 dark:text-white"
+          <div className="space-y-2">
+            <Label htmlFor="user-full-name">Full name</Label>
+            <Input
+              id="user-full-name"
               value={fullName}
               onChange={(event) => setFullName(event.target.value)}
+              disabled={saving}
+              autoComplete="name"
               placeholder="Full name"
+              className="h-10"
             />
           </div>
 
-          <div>
-            <label className="mb-1 block text-sm font-normal text-slate-700 dark:text-slate-200">
+          <div className="space-y-2">
+            <Label htmlFor="user-username">Username</Label>
+            <Input
+              id="user-username"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              disabled={saving}
+              autoComplete="username"
+              placeholder="admin, manager, staff..."
+              className="h-10"
+            />
+            <p className="text-xs leading-5 text-muted-foreground">
+              Optional quick login name for staff accounts.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="user-role">
               Role
-            </label>
-            <select
-              className="input font-normal dark:border-white/10 dark:bg-slate-950 dark:text-white"
+              <RequiredMark />
+            </Label>
+            <Select
               value={role}
-              onChange={(event) => setRole(event.target.value as Role)}
+              onValueChange={(value) => setRole(value as Role)}
+              disabled={saving}
             >
-              <option value="driver">Driver</option>
-              <option value="staff">Staff</option>
-              <option value="manager">Manager</option>
-              <option value="admin">Admin</option>
-            </select>
+              <SelectTrigger id="user-role" className="h-10 w-full">
+                <SelectValue placeholder="Select role" />
+              </SelectTrigger>
+              <SelectContent>
+                {ROLE_OPTIONS.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {ROLE_LABELS[option]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {!isEdit ? (
-            <div>
-              <label className="mb-1 block text-sm font-normal text-slate-700 dark:text-slate-200">
+            <div className="space-y-2">
+              <Label htmlFor="user-password">
                 Password
-              </label>
-              <input
-                className="input font-normal dark:border-white/10 dark:bg-slate-950 dark:text-white"
+                <RequiredMark />
+              </Label>
+              <Input
+                id="user-password"
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
+                disabled={saving}
+                required
+                minLength={6}
+                autoComplete="new-password"
                 placeholder="At least 6 characters"
+                className="h-10"
               />
             </div>
           ) : null}
 
           {error ? (
-            <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-normal text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-100">
-              {error}
-            </p>
+            <Alert variant="destructive">
+              <AlertCircle className="size-4" strokeWidth={1.8} />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           ) : null}
 
-          <div className="grid grid-cols-2 gap-2 pt-2">
-            <button type="button" onClick={onClose} className="btn-secondary rounded-xl font-normal" disabled={saving}>
-              Cancel
-            </button>
-            <button type="submit" className="btn-primary rounded-xl font-normal" disabled={saving}>
+          <DialogFooter className="-mx-5 -mb-5 mt-2 px-5">
+            <DialogClose asChild>
+              <Button type="button" variant="outline" disabled={saving}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button type="submit" disabled={saving}>
               {saving ? 'Saving...' : isEdit ? 'Update' : 'Create'}
-            </button>
-          </div>
+            </Button>
+          </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function RequiredMark() {
+  return (
+    <>
+      <span className="text-destructive" aria-hidden="true">
+        *
+      </span>
+      <span className="sr-only"> required</span>
+    </>
+  )
+}
+
+function RoleBadge({ role }: { role: Role }) {
+  return (
+    <Badge variant="outline" className={ROLE_BADGE_CLASS[role]}>
+      {ROLE_LABELS[role]}
+    </Badge>
+  )
+}
+
+function StatusBadge({ active }: { active: boolean }) {
+  return (
+    <Badge
+      variant="outline"
+      className={
+        active
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/15 dark:text-emerald-100'
+          : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/15 dark:text-rose-100'
+      }
+    >
+      {active ? 'Active' : 'Inactive'}
+    </Badge>
+  )
+}
+
+function UsersTableSkeleton() {
+  return (
+    <Card>
+      <CardContent className="space-y-3 pt-4 sm:pt-5">
+        {Array.from({ length: 6 }).map((_, index) => (
+          <Skeleton key={index} className="h-12 w-full rounded-lg" />
+        ))}
+      </CardContent>
+    </Card>
+  )
+}
+
+function EmptyUsersState({
+  title,
+  description,
+}: {
+  title: string
+  description: string
+}) {
+  return (
+    <div className="rounded-lg border border-dashed bg-muted/30 p-8 text-center">
+      <div className="mx-auto flex size-10 items-center justify-center rounded-lg bg-background text-muted-foreground ring-1 ring-border">
+        <UsersIcon className="size-5" strokeWidth={1.8} />
       </div>
+      <p className="mt-3 text-sm font-medium text-foreground">{title}</p>
+      <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+        {description}
+      </p>
     </div>
   )
+}
+
+function getErrorMessage(err: unknown, fallback: string) {
+  if (!isAxiosError(err)) return fallback
+  const message = err.response?.data?.message
+  if (typeof message === 'string') return message
+  if (Array.isArray(message)) return message.join(', ')
+  return fallback
 }
 
 function formatDate(value: string) {

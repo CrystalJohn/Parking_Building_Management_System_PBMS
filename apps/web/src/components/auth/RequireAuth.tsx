@@ -12,8 +12,6 @@ interface RequireAuthProps {
    * If omitted, any authenticated user is allowed.
    */
   allowedRoles?: AuthUser['role'][]
-  /** Allows dense operational screens to provide their own integrated header. */
-  hideAppHeader?: boolean
 }
 
 /**
@@ -29,7 +27,6 @@ interface RequireAuthProps {
 export default function RequireAuth({
   children,
   allowedRoles,
-  hideAppHeader = false,
 }: RequireAuthProps) {
   const location = useLocation()
   const token = getToken()
@@ -45,7 +42,7 @@ export default function RequireAuth({
     return <Navigate to={defaultHomeForRole(user.role)} replace />
   }
 
-  return <AuthenticatedLayout hideHeader={hideAppHeader}>{children}</AuthenticatedLayout>
+  return <AuthenticatedLayout>{children}</AuthenticatedLayout>
 }
 
 /** Returns the default landing page for each role. */

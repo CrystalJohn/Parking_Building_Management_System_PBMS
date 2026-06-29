@@ -17,6 +17,13 @@ export class UpdateUserDto {
 
   @IsOptional()
   @IsString()
+  @Matches(/^[a-zA-Z][a-zA-Z0-9._-]{2,31}$/, {
+    message: 'Username must start with a letter and contain 3-32 letters, numbers, dots, underscores, or hyphens',
+  })
+  username?: string | null;
+
+  @IsOptional()
+  @IsString()
   @MinLength(6, { message: 'Password must be at least 6 characters' })
   password?: string;
 

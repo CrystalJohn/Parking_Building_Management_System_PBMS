@@ -14,6 +14,7 @@ export default defineConfig({
     // duplicate React when both root node_modules and apps/web/node_modules
     // contain their own copy.
     alias: {
+      '@': path.resolve(__dirname, 'src'),
       react: path.resolve(workspaceRoot, 'node_modules/react'),
       'react-dom': path.resolve(workspaceRoot, 'node_modules/react-dom'),
     },

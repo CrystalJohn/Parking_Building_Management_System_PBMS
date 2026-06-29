@@ -3,6 +3,7 @@ import { BrowserRouter } from 'react-router-dom'
 import './App.css'
 import AppRoutes from './routes/AppRoutes'
 import { ThemeProvider } from './lib/ThemeContext'
+import { TooltipProvider } from '@/components/ui/tooltip'
 
 // Error boundary to catch runtime errors and show a readable message
 // instead of a blank page
@@ -38,11 +39,13 @@ class ErrorBoundary extends Component<
 export default function App() {
   return (
     <ThemeProvider>
-      <ErrorBoundary>
-        <BrowserRouter>
-          <AppRoutes />
-        </BrowserRouter>
-      </ErrorBoundary>
+      <TooltipProvider>
+        <ErrorBoundary>
+          <BrowserRouter>
+            <AppRoutes />
+          </BrowserRouter>
+        </ErrorBoundary>
+      </TooltipProvider>
     </ThemeProvider>
   )
 }
