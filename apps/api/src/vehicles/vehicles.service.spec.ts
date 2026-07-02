@@ -136,6 +136,137 @@ describe('VehiclesService', () => {
     await expect(service.matchPlate('')).rejects.toThrow(BadRequestException);
   });
 
+  it('lookupPlate returns WALK_IN when no vehicle matches', async () => {
+    prisma.vehicle.findFirst.mockResolvedValue(null);
+
+    const result = await service.lookupPlate('00A-00000');
+
+    expect(result).toMatchObject({
+      normalizedPlate: '00A00000',
+      matched: false,
+      mode: 'WALK_IN',
+      vehicleType: null,
+      ownerName: null,
+      driverCount: 0,
+      subscription: null,
+    });
+    expect(prisma.parkingSession.findMany).not.toHaveBeenCalled();
+  });
+
+  it('lookupPlate returns SUBSCRIBER with owner, drivers, and active subscription', async () => {
+    const now = Date.now();
+    prisma.vehicle.findFirst.mockResolvedValue({
+      id: 'vehicle-1',
+      plateNumber: '92CA00001',
+      vehicleType: 'motorbike',
+      isActive: true,
+      registeredAt: new Date('2026-06-01T00:00:00.000Z'),
+      vehicleUsers: [
+        {
+          role: 'owner',
+          user: {
+            id: 'owner-1',
+            fullName: 'Nguyen Van A',
+            phone: '0900000001',
+            email: null,
+            isActive: true,
+          },
+        },
+        {
+          role: 'driver',
+          user: {
+            id: 'driver-1',
+            fullName: 'Tran Thi B',
+            phone: '0900000002',
+            email: null,
+            isActive: true,
+          },
+        },
+      ],
+      subscriptions: [
+        {
+          id: 'subscription-active',
+          planType: 'monthly',
+          validFrom: new Date(now - 24 * 60 * 60 * 1000),
+          validTo: new Date(now + 24 * 60 * 60 * 1000),
+        },
+      ],
+    });
+    prisma.parkingSession.findMany.mockResolvedValue([]);
+
+    const result = await service.lookupPlate('92CA-00001');
+
+    expect(result).toMatchObject({
+      matched: true,
+      mode: 'SUBSCRIBER',
+      vehicleType: 'motorbike',
+      ownerName: 'Nguyen Van A',
+      driverCount: 2,
+      subscription: {
+        id: 'subscription-active',
+        planType: 'monthly',
+        isActive: true,
+        isExpired: false,
+      },
+    });
+  });
+
+  it('lookupPlate returns expired subscription details for frontend warning', async () => {
+    const now = Date.now();
+    prisma.vehicle.findFirst.mockResolvedValue({
+      id: 'vehicle-2',
+      plateNumber: '92CA00002',
+      vehicleType: 'car',
+      isActive: true,
+      registeredAt: new Date('2026-06-01T00:00:00.000Z'),
+      vehicleUsers: [],
+      subscriptions: [
+        {
+          id: 'subscription-expired',
+          planType: 'monthly',
+          validFrom: new Date(now - 60 * 24 * 60 * 60 * 1000),
+          validTo: new Date(now - 24 * 60 * 60 * 1000),
+        },
+      ],
+    });
+    prisma.parkingSession.findMany.mockResolvedValue([]);
+
+    const result = await service.lookupPlate('92CA-00002');
+
+    expect(result).toMatchObject({
+      matched: true,
+      mode: 'SUBSCRIBER',
+      vehicleType: 'car',
+      subscription: {
+        id: 'subscription-expired',
+        isActive: false,
+        isExpired: true,
+      },
+    });
+  });
+
+  it('lookupPlate returns REGISTERED when vehicle has no subscription', async () => {
+    prisma.vehicle.findFirst.mockResolvedValue({
+      id: 'vehicle-3',
+      plateNumber: '59T99999',
+      vehicleType: 'motorbike',
+      isActive: true,
+      registeredAt: new Date('2026-06-01T00:00:00.000Z'),
+      vehicleUsers: [],
+      subscriptions: [],
+    });
+    prisma.parkingSession.findMany.mockResolvedValue([]);
+
+    const result = await service.lookupPlate('59T-99999');
+
+    expect(result).toMatchObject({
+      matched: true,
+      mode: 'REGISTERED',
+      vehicleType: 'motorbike',
+      subscription: null,
+    });
+  });
+
   it('links a driver to a vehicle', async () => {
     prisma.vehicle.findUnique.mockResolvedValue({ id: 'vehicle-1' });
     prisma.user.findUnique.mockResolvedValue({

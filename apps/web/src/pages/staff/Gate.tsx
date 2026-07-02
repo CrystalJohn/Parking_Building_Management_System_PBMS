@@ -1,6 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { isAxiosError } from 'axios'
-import { ArrowDownToLine, ArrowUpFromLine } from 'lucide-react'
+import {
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Banknote,
+  CheckCircle2,
+  CircleAlert,
+  CreditCard,
+  Loader2,
+  LogOut,
+  Printer,
+  QrCode,
+  ReceiptText,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  TicketCheck,
+  WalletCards,
+} from 'lucide-react'
 import { ToastContainer } from '../../components/ui/Toast'
 import { useToasts } from '../../lib/use-toasts'
 import {
@@ -31,8 +48,20 @@ import { RecentSessionsCard } from '../../components/ui/RecentSessionsCard'
 import { LicensePlateScanner } from '../../components/plate-scanner/LicensePlateScanner'
 import { formatDateTimeVN } from '../../lib/date-time'
 import { StaffOcrCheckInPanel } from './StaffOcrCheckInPanel'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 
 type Tab = 'check-in' | 'check-out'
@@ -169,9 +198,6 @@ export default function Gate() {
           role="tabpanel"
           className={cn(
             "print:rounded-none print:border-0 print:p-0 print:shadow-none",
-            tab === 'check-in'
-              ? ''
-              : 'rounded-xl border bg-card p-4 shadow-sm sm:p-5',
           )}
         >
           {tab === 'check-in' ? (
@@ -1119,171 +1145,204 @@ function CheckOutPanel({ toasts }: PanelProps) {
   const amountDue = workflow ? VND(workflow.payment?.amount ?? workflow.fee.total) : ''
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-500">
-            Exit gate workflow
-          </p>
-          <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-950">Staff Check-out</h2>
-          <p className="mt-1 max-w-2xl text-sm text-slate-500">
-            Load the session ticket, collect payment, then release the slot only after the vehicle exits.
-          </p>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <span className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-600">
-            {workflow ? readableStatus(workflow.session.status) : 'Ready'}
-          </span>
-          <button
-            type="button"
-            onClick={reset}
-            className="rounded-2xl border border-primary-200 bg-white px-4 py-2 text-sm font-black text-primary-700 transition hover:bg-primary-50"
-          >
-            Next Vehicle
-          </button>
-        </div>
-      </div>
-
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_400px]">
-        <div className="space-y-5">
-          <section>
-            <form onSubmit={handleLookupBySession} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">
-                    Session ticket
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-slate-500">
-                    Scan QR or enter the printed session code.
-                  </p>
-                </div>
-                <button
+    <div className="space-y-4">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.45fr)]">
+        <div className="space-y-4">
+          <Card className="border-primary/20 shadow-sm print:hidden">
+            <CardHeader className="grid-cols-[1fr_auto] border-b bg-muted/30">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
+                    <TicketCheck className="size-4" />
+                  </span>
+                  Session ticket checkout
+                </CardTitle>
+                <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className="inline-flex items-center gap-1">
+                    <QrCode className="size-3.5" />
+                    Session QR first
+                  </span>
+                  <span>Plate lookup only for lost tickets</span>
+                </CardDescription>
+              </div>
+              <CardAction>
+                <Button
                   type="button"
+                  variant="outline"
+                  onClick={reset}
+                  disabled={Boolean(action)}
+                  className="h-10 px-3"
+                >
+                  <RotateCcw className="size-4" />
+                  Next Vehicle
+                </Button>
+              </CardAction>
+            </CardHeader>
+            <CardContent>
+              <form
+                onSubmit={handleLookupBySession}
+                className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-end"
+              >
+                <div className="space-y-2">
+                  <Label htmlFor="checkout-session-code" className="text-xs font-semibold">
+                    Session Code / QR
+                  </Label>
+                  <Input
+                    id="checkout-session-code"
+                    className="h-11 font-mono text-base font-semibold uppercase"
+                    placeholder="PBMS-D1878BC500"
+                    value={sessionCode}
+                    onChange={(event) => setSessionCode(event.target.value)}
+                    autoFocus
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
                   onClick={() => setShowScanner(true)}
-                  className="h-11 rounded-xl border border-primary-500 bg-primary-600 px-4 text-sm font-black text-white shadow-sm shadow-primary-600/20 transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
                   disabled={action === 'lookup'}
+                  className="h-11 lg:min-w-32"
                 >
+                  <QrCode className="size-4" />
                   Scan QR
-                </button>
-              </div>
-              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                <input
-                  className="input h-12 font-mono text-base font-black uppercase tracking-[0.08em]"
-                  placeholder="PBMS-D1878BC500"
-                  value={sessionCode}
-                  onChange={(event) => setSessionCode(event.target.value)}
-                  autoFocus
-                />
-                <button
+                </Button>
+                <Button
                   type="submit"
-                  className="btn-primary h-12 whitespace-nowrap rounded-xl"
                   disabled={action === 'lookup'}
+                  className="h-11 lg:min-w-28"
                 >
+                  {action === 'lookup' ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Search className="size-4" />
+                  )}
                   {action === 'lookup' ? 'Loading...' : 'Lookup'}
-                </button>
-              </div>
-            </form>
-          </section>
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
 
           {workflow ? (
-            <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 lg:flex-row lg:items-start lg:justify-between">
+            <Card className="border-primary/20 shadow-sm">
+              <CardHeader className="grid-cols-[1fr_auto] border-b bg-muted/30">
                 <div>
-                  <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">
+                  <CardTitle className="flex items-center gap-2">
+                    <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
+                      <ReceiptText className="size-4" />
+                    </span>
                     Loaded session
-                  </p>
-                  <div className="mt-2 flex flex-wrap items-center gap-3">
-                    <p className="font-mono text-2xl font-black tracking-[0.08em] text-slate-950">
+                  </CardTitle>
+                  <CardDescription className="font-mono">
+                    {workflow.session.sessionCode}
+                  </CardDescription>
+                </div>
+                <CardAction>
+                  <StatusBadge status={workflow.session.status} />
+                </CardAction>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(15rem,0.45fr)]">
+                  <div className="rounded-lg border bg-muted/30 p-4">
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">
+                      Vehicle plate
+                    </p>
+                    <p className="mt-2 break-words font-mono text-3xl font-bold text-foreground">
                       {workflow.session.licensePlate}
                     </p>
-                    <StatusBadge status={workflow.session.status} />
-                  </div>
-                  <p className="mt-1 font-mono text-sm font-bold text-slate-500">
-                    {workflow.session.sessionCode}
-                  </p>
-                </div>
-                <div className="rounded-2xl bg-gradient-to-br from-primary-600 to-indigo-400 px-5 py-4 text-white shadow-lg shadow-primary-600/20">
-                  <p className="text-[11px] font-black uppercase tracking-[0.16em] text-blue-100">Amount due</p>
-                  <p className="mt-1 text-3xl font-black">{VND(workflow.fee.total)}</p>
-                </div>
-              </div>
-
-              <div className="mt-4 grid gap-3 md:grid-cols-4">
-                <CheckoutMetric label="Vehicle" value={formatVehicleType(workflow.session.vehicleType)} />
-                <CheckoutMetric label="Slot" value={workflow.slot.code} mono />
-                <CheckoutMetric label="Floor / Zone" value={`${workflow.slot.floor.name} / Zone ${workflow.slot.zone}`} />
-                <CheckoutMetric
-                  label="Duration"
-                  value={`${workflow.fee.durationHours} hour${workflow.fee.durationHours > 1 ? 's' : ''}`}
-                />
-              </div>
-
-              <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
-                    Fee breakdown
-                  </p>
-                  <div className="mt-3 space-y-2 text-sm">
-                    <DetailRow label="Base fee" value={VND(workflow.fee.baseFee)} />
-                    <DetailRow label="Penalty" value={VND(workflow.fee.penalty)} />
-                    <DetailRow label="Check-in" value={formatDateTime(workflow.session.checkInTime)} />
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
-                        Payment
-                      </p>
-                      <p className="mt-1 text-sm font-semibold text-slate-500">
-                        {workflow.payment ? readablePaymentMethod(workflow.payment.method) : 'Method not selected'}
-                      </p>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <CheckoutMetric label="Vehicle" value={formatVehicleType(workflow.session.vehicleType)} />
+                      <CheckoutMetric label="Slot" value={workflow.slot.code} mono />
+                      <CheckoutMetric
+                        label="Floor / Zone"
+                        value={`${workflow.slot.floor.name} / Zone ${workflow.slot.zone}`}
+                      />
+                      <CheckoutMetric
+                        label="Duration"
+                        value={`${workflow.fee.durationHours} hour${workflow.fee.durationHours > 1 ? 's' : ''}`}
+                      />
                     </div>
-                    <PaymentBadge status={paymentStatus} />
                   </div>
-                  <div className="mt-4 space-y-2 text-sm">
-                    <DetailRow
-                      label="Status"
-                      value={workflow.payment ? readablePaymentStatus(workflow.payment.status) : 'Not created'}
-                    />
-                    {workflow.payment?.paidAt ? (
-                      <DetailRow label="Paid at" value={formatDateTime(workflow.payment.paidAt)} />
-                    ) : null}
+
+                  <div className="rounded-lg bg-primary p-4 text-primary-foreground shadow-sm">
+                    <p className="text-xs font-semibold uppercase text-primary-foreground/70">
+                      Amount due
+                    </p>
+                    <p className="mt-2 text-3xl font-bold">
+                      {VND(workflow.fee.total)}
+                    </p>
+                    <p className="mt-2 text-sm text-primary-foreground/70">
+                      {workflow.payment
+                        ? `${readablePaymentMethod(workflow.payment.method)} - ${readablePaymentStatus(workflow.payment.status)}`
+                        : 'Calculated fee preview'}
+                    </p>
                   </div>
                 </div>
-              </div>
+
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+                  <div className="rounded-lg border bg-muted/30 p-4">
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">
+                      Fee breakdown
+                    </p>
+                    <div className="mt-3 space-y-2 text-sm">
+                      <DetailRow label="Base fee" value={VND(workflow.fee.baseFee)} />
+                      <DetailRow label="Penalty" value={VND(workflow.fee.penalty)} />
+                      <DetailRow label="Check-in" value={formatDateTime(workflow.session.checkInTime)} />
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border bg-card p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase text-muted-foreground">
+                          Payment
+                        </p>
+                        <p className="mt-1 text-sm font-medium text-muted-foreground">
+                          {workflow.payment ? readablePaymentMethod(workflow.payment.method) : 'Method not selected'}
+                        </p>
+                      </div>
+                      <PaymentBadge status={paymentStatus} />
+                    </div>
+                    <div className="mt-4 space-y-2 text-sm">
+                      <DetailRow
+                        label="Status"
+                        value={workflow.payment ? readablePaymentStatus(workflow.payment.status) : 'Not created'}
+                      />
+                      {workflow.payment?.paidAt ? (
+                        <DetailRow label="Paid at" value={formatDateTime(workflow.payment.paidAt)} />
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
 
                 {workflow.payment?.method === 'bank_qr' ? (
-                  <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                  <div className="rounded-lg border bg-muted/30 p-4">
+                    <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
+                      <QrCode className="size-4 text-primary" />
                       VNPAY Bank QR payment
-                    </p>
+                    </div>
                     {workflow.payment.qrCode ? (
                       workflow.payment.qrCode.startsWith('data:image') ? (
                         <img
                           src={workflow.payment.qrCode}
                           alt="VNPAY Bank QR"
-                          className="mx-auto mt-3 h-44 w-44 rounded-xl border border-slate-200 bg-white object-contain p-2"
+                          className="mx-auto mt-3 h-44 w-44 rounded-lg border bg-background object-contain p-2"
                         />
                       ) : (
-                        <div className="mt-3 rounded-xl bg-white p-3 font-mono text-xs text-slate-700 ring-1 ring-slate-200 break-all">
+                        <div className="mt-3 break-all rounded-lg border bg-background p-3 font-mono text-xs text-foreground">
                           {workflow.payment.qrCode}
                         </div>
                       )
                     ) : null}
                     {workflow.payment.checkoutUrl ? (
-                      <a
-                        href={workflow.payment.checkoutUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-3 inline-flex w-full justify-center rounded-xl border border-primary-200 bg-white px-3 py-2 text-sm font-black text-primary-700 transition hover:bg-primary-50"
-                      >
-                        Open VNPAY Payment Page
-                      </a>
+                      <Button asChild variant="outline" className="mt-3 h-11 w-full">
+                        <a href={workflow.payment.checkoutUrl} target="_blank" rel="noreferrer">
+                          <CreditCard className="size-4" />
+                          Open VNPAY Payment Page
+                        </a>
+                      </Button>
                     ) : null}
                     {workflow.payment.expiredAt ? (
-                      <p className="mt-2 text-xs font-semibold text-slate-500">
+                      <p className="mt-2 text-xs font-medium text-muted-foreground">
                         Expires at {formatDateTime(workflow.payment.expiredAt)}
                       </p>
                     ) : null}
@@ -1291,291 +1350,348 @@ function CheckOutPanel({ toasts }: PanelProps) {
                 ) : null}
 
                 {workflow.fee.isOvertime || workflow.fee.isLostTicket ? (
-                  <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
-                    Fee includes penalty.
-                  </p>
+                  <Alert className="border-amber-200 bg-amber-50 text-amber-950">
+                    <CircleAlert className="size-4" />
+                    <AlertTitle>Fee includes penalty</AlertTitle>
+                    <AlertDescription className="text-amber-800">
+                      Overtime or lost-ticket surcharge is included in the total amount.
+                    </AlertDescription>
+                  </Alert>
                 ) : null}
-            </section>
+              </CardContent>
+            </Card>
           ) : (
-            <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
-              <p className="text-sm font-black uppercase tracking-[0.18em] text-slate-400">
-                Waiting for Session Ticket
-              </p>
-              <p className="mt-2 text-lg font-bold text-slate-700">
-                Enter Session Code or scan QR to load checkout details.
-              </p>
-            </section>
+            <Card className="border-dashed shadow-sm">
+              <CardContent className="grid min-h-44 place-items-center p-8 text-center">
+                <div className="space-y-2">
+                  <QrCode className="mx-auto size-8 text-primary/70" />
+                  <p className="text-sm font-semibold uppercase text-muted-foreground">
+                    Waiting for Session Ticket
+                  </p>
+                  <p className="text-base font-medium text-foreground">
+                    Enter Session Code or scan QR to load checkout details.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
           )}
 
           {isCompleted && receipt ? (
-            <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <Card className="border-emerald-200 bg-emerald-50 shadow-sm">
+              <CardHeader className="grid-cols-[1fr_auto]">
                 <div>
-                  <p className="text-xl font-black text-emerald-950">Checkout completed</p>
-                  <p className="text-sm font-semibold text-emerald-700">
+                  <CardTitle className="flex items-center gap-2 text-emerald-950">
+                    <CheckCircle2 className="size-5" />
+                    Checkout completed
+                  </CardTitle>
+                  <CardDescription className="text-emerald-700">
                     Vehicle exited. Slot released.
-                  </p>
+                  </CardDescription>
                 </div>
-                <div className="flex gap-2">
-                  <button type="button" onClick={handlePrint} className="btn-secondary print:hidden">
-                    Print Receipt
-                  </button>
-                  <button type="button" onClick={reset} className="btn-primary print:hidden">
-                    Next Vehicle
-                  </button>
-                </div>
-              </div>
-              <div className="mt-4 print:block">
+                <CardAction className="flex gap-2">
+                  {receipt ? (
+                    <Button type="button" variant="outline" onClick={handlePrint} className="h-10 print:hidden">
+                      <Printer className="size-4" />
+                      Print
+                    </Button>
+                  ) : null}
+                  <Button type="button" onClick={reset} className="h-10 print:hidden">
+                    <RotateCcw className="size-4" />
+                    Next
+                  </Button>
+                </CardAction>
+              </CardHeader>
+              <CardContent className="print:block">
                 <Receipt data={receipt} sessionCode={workflow?.session.sessionCode} />
-              </div>
-            </section>
+              </CardContent>
+            </Card>
           ) : null}
         </div>
 
         <aside className="space-y-4 xl:sticky xl:top-28 xl:self-start print:hidden">
-          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-start justify-between gap-4">
+          <Card className="border-primary/20 shadow-sm">
+            <CardHeader className="grid-cols-[1fr_auto] border-b bg-muted/30">
               <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">
+                <CardTitle className="flex items-center gap-2">
+                  <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
+                    <WalletCards className="size-4" />
+                  </span>
                   Next staff action
-                </p>
-                <h3 className="mt-2 text-lg font-black tracking-tight text-slate-950">
-                  {guide.title}
-                </h3>
+                </CardTitle>
+                <CardDescription>{guide.title}</CardDescription>
               </div>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-slate-700 ring-1 ring-slate-200">
-                {workflow ? readableStatus(workflow.session.status) : 'Ready'}
-              </span>
-            </div>
+              <CardAction>
+                <Badge variant="outline" className="bg-background">
+                  {workflow ? readableStatus(workflow.session.status) : 'Ready'}
+                </Badge>
+              </CardAction>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                {guide.description}
+              </p>
 
-            <p className="mt-3 text-sm font-semibold leading-5 text-slate-500">
-              {guide.description}
-            </p>
-
-            {workflow ? (
-              <div className="mt-4 grid grid-cols-3 gap-2">
-                <OperatorSignal
-                  label="Payment"
-                  value={workflow.payment ? readablePaymentStatus(workflow.payment.status) : 'Not started'}
-                  tone={workflow.payment?.status === 'paid' ? 'good' : workflow.payment?.status === 'pending' ? 'warn' : 'idle'}
-                />
-                <OperatorSignal
-                  label="Exit"
-                  value={readableExitStatus(status)}
-                  tone={status === 'exit_authorized' || status === 'completed' ? 'good' : status === 'checkout_pending' ? 'warn' : 'idle'}
-                />
-                <OperatorSignal
-                  label="Slot"
-                  value={readableSlotStatus(workflow.slot.status)}
-                  tone={workflow.slot.status === 'available' ? 'good' : 'warn'}
-                />
-              </div>
-            ) : (
-              <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-xs font-semibold text-slate-600">
-                Scan Session QR or enter Session Code from the parking ticket.
-              </div>
-            )}
-
-            <div className="mt-5 border-t border-slate-200 pt-4">
-              {!workflow ? (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-xs font-bold text-slate-500">
-                  Load a session first. Payment and exit actions stay hidden until then.
+              {workflow ? (
+                <div className="grid grid-cols-3 gap-2">
+                  <OperatorSignal
+                    label="Payment"
+                    value={workflow.payment ? readablePaymentStatus(workflow.payment.status) : 'Not started'}
+                    tone={workflow.payment?.status === 'paid' ? 'good' : workflow.payment?.status === 'pending' ? 'warn' : 'idle'}
+                  />
+                  <OperatorSignal
+                    label="Exit"
+                    value={readableExitStatus(status)}
+                    tone={status === 'exit_authorized' || status === 'completed' ? 'good' : status === 'checkout_pending' ? 'warn' : 'idle'}
+                  />
+                  <OperatorSignal
+                    label="Slot"
+                    value={readableSlotStatus(workflow.slot.status)}
+                    tone={workflow.slot.status === 'available' ? 'good' : 'warn'}
+                  />
                 </div>
-              ) : null}
+              ) : (
+                <Alert className="border-dashed bg-muted/30">
+                  <QrCode className="size-4" />
+                  <AlertTitle>Load a session first</AlertTitle>
+                  <AlertDescription>
+                    Payment and exit actions appear after staff scans the ticket.
+                  </AlertDescription>
+                </Alert>
+              )}
 
-              {canRequestCheckout ? (
-                <button
-                  type="button"
-                  onClick={handleRequestCheckout}
-                  disabled={Boolean(action)}
-                  className="h-12 w-full rounded-2xl bg-primary-600 px-4 text-sm font-black text-white shadow-sm shadow-primary-600/20 transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
-                >
-                  {action === 'checkout' ? 'Starting checkout...' : 'Calculate Fee & Start Checkout'}
-                </button>
-              ) : null}
+              <Separator />
 
-              {canConfirmPayment ? (
-                <div className="space-y-3">
+              <div className="space-y-3">
+                {canRequestCheckout ? (
+                  <Button
+                    type="button"
+                    onClick={handleRequestCheckout}
+                    disabled={Boolean(action)}
+                    className="h-11 w-full"
+                  >
+                    {action === 'checkout' ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <ReceiptText className="size-4" />
+                    )}
+                    {action === 'checkout' ? 'Starting checkout...' : 'Calculate Fee & Start Checkout'}
+                  </Button>
+                ) : null}
+
+                {canConfirmPayment ? (
                   <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-                    <button
+                    <Button
                       type="button"
                       onClick={handleConfirmPayment}
                       disabled={Boolean(action)}
-                      className="h-12 w-full rounded-2xl bg-emerald-600 px-4 text-sm font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                      className="h-11 w-full bg-emerald-600 text-white hover:bg-emerald-700"
                     >
+                      {action === 'payment' ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Banknote className="size-4" />
+                      )}
                       {action === 'payment' ? 'Confirming cash...' : 'Confirm Cash Payment'}
-                    </button>
+                    </Button>
                     {canGenerateBankQr ? (
-                      <button
+                      <Button
                         type="button"
+                        variant="secondary"
                         onClick={handleGenerateBankQr}
                         disabled={Boolean(action)}
-                        className="h-12 w-full rounded-2xl bg-indigo-500 px-4 text-sm font-black text-white shadow-sm shadow-indigo-500/20 transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                        className="h-11 w-full"
                       >
+                        {action === 'bankQr' ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <CreditCard className="size-4" />
+                        )}
                         {action === 'bankQr' ? 'Generating VNPAY QR...' : 'Generate VNPAY Payment Link'}
-                      </button>
+                      </Button>
                     ) : null}
                   </div>
-                </div>
-              ) : null}
+                ) : null}
 
-              {isBankQrFailed ? (
-                <div className="space-y-3">
-                  <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
-                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-rose-800">
-                      Payment failed / cancelled
-                    </p>
-                    <p className="mt-1 text-lg font-bold text-rose-950">
-                      {amountDue}
-                    </p>
-                    <p className="mt-1 text-[10px] font-semibold text-rose-700">
-                      Customer cancelled or payment failed. Regenerate link or switch to cash.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleGenerateBankQr}
-                    disabled={Boolean(action)}
-                    className="h-12 w-full rounded-2xl bg-indigo-500 px-4 text-sm font-black text-white shadow-sm shadow-indigo-500/20 transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
-                  >
-                    {action === 'bankQr' ? 'Generating new link...' : 'Regenerate VNPAY Payment Link'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleConfirmPayment}
-                    disabled={Boolean(action)}
-                    className="h-12 w-full rounded-2xl bg-emerald-600 px-4 text-sm font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
-                  >
-                    {action === 'payment' ? 'Confirming cash...' : 'Confirm Cash Payment Instead'}
-                  </button>
-                </div>
-              ) : null}
-
-              {isBankQrExpired ? (
-                <div className="space-y-3">
-                  <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4">
-                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-orange-800">
-                      VNPAY link expired
-                    </p>
-                    <p className="mt-1 text-lg font-bold text-orange-950">
-                      {amountDue}
-                    </p>
-                    <p className="mt-1 text-[10px] font-semibold text-orange-700">
-                      Payment link has expired. Generate a new link to continue.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleGenerateBankQr}
-                    disabled={Boolean(action)}
-                    className="h-12 w-full rounded-2xl bg-indigo-500 px-4 text-sm font-black text-white shadow-sm shadow-indigo-500/20 transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
-                  >
-                    {action === 'bankQr' ? 'Generating new link...' : 'Regenerate VNPAY Payment Link'}
-                  </button>
-                </div>
-              ) : null}
-
-              {isBankQrPending ? (
-                <div className="space-y-3">
-                  <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
-                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-blue-800">
-                      Waiting for VNPAY Bank QR payment
-                    </p>
-                    <p className="mt-1 text-lg font-bold text-blue-950">
-                      {amountDue}
-                    </p>
-                    <p className="mt-1 text-[10px] font-semibold text-blue-700">
-                      Slot remains occupied. Refresh or wait for VNPAY confirmation.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void refreshPaymentStatus(true)}
-                    disabled={Boolean(action)}
-                    className="h-11 w-full rounded-2xl border border-slate-300 bg-white px-4 text-sm font-black text-slate-700 transition hover:border-slate-950 hover:text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                  >
-                    {action === 'refresh' ? 'Refreshing...' : 'Refresh Payment Status'}
-                  </button>
-                  {workflow?.payment?.checkoutUrl ? (
-                    <a
-                      href={workflow.payment.checkoutUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex h-11 w-full items-center justify-center rounded-2xl bg-primary-600 px-4 text-sm font-black text-white shadow-sm shadow-primary-600/20 transition hover:bg-primary-700"
+                {isBankQrFailed ? (
+                  <div className="space-y-3">
+                    <Alert variant="destructive" className="border-rose-200 bg-rose-50">
+                      <CircleAlert className="size-4" />
+                      <AlertTitle>Payment failed / cancelled</AlertTitle>
+                      <AlertDescription>
+                        {amountDue}. Regenerate the link or switch to cash.
+                      </AlertDescription>
+                    </Alert>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={handleGenerateBankQr}
+                      disabled={Boolean(action)}
+                      className="h-11 w-full"
                     >
-                      Open VNPAY Payment Page
-                    </a>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {canConfirmExit ? (
-                <div className="space-y-3">
-                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-xs font-semibold text-emerald-950">
-                    Payment confirmed. Vehicle is authorized to exit. Slot is still occupied until exit is confirmed.
+                      {action === 'bankQr' ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <CreditCard className="size-4" />
+                      )}
+                      {action === 'bankQr' ? 'Generating new link...' : 'Regenerate VNPAY Payment Link'}
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={handleConfirmPayment}
+                      disabled={Boolean(action)}
+                      className="h-11 w-full bg-emerald-600 text-white hover:bg-emerald-700"
+                    >
+                      {action === 'payment' ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Banknote className="size-4" />
+                      )}
+                      {action === 'payment' ? 'Confirming cash...' : 'Confirm Cash Payment Instead'}
+                    </Button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleConfirmExit}
-                    disabled={Boolean(action)}
-                    className="h-12 w-full rounded-2xl bg-primary-600 px-4 text-sm font-black text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
-                  >
-                    {action === 'exit' ? 'Releasing slot...' : 'Confirm Vehicle Exited'}
-                  </button>
-                </div>
-              ) : null}
+                ) : null}
 
-              {isCompleted ? (
-                <div className="space-y-3">
-                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-xs font-semibold text-emerald-950">
-                    Checkout completed. Vehicle exited and slot released.
+                {isBankQrExpired ? (
+                  <div className="space-y-3">
+                    <Alert className="border-orange-200 bg-orange-50 text-orange-950">
+                      <CircleAlert className="size-4" />
+                      <AlertTitle>VNPAY link expired</AlertTitle>
+                      <AlertDescription className="text-orange-800">
+                        {amountDue}. Generate a new link to continue.
+                      </AlertDescription>
+                    </Alert>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={handleGenerateBankQr}
+                      disabled={Boolean(action)}
+                      className="h-11 w-full"
+                    >
+                      {action === 'bankQr' ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <CreditCard className="size-4" />
+                      )}
+                      {action === 'bankQr' ? 'Generating new link...' : 'Regenerate VNPAY Payment Link'}
+                    </Button>
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {receipt ? (
-                      <button type="button" onClick={handlePrint} className="btn-secondary print:hidden shadow-sm">
-                        Print Receipt
-                      </button>
+                ) : null}
+
+                {isBankQrPending ? (
+                  <div className="space-y-3">
+                    <Alert className="border-sky-200 bg-sky-50 text-sky-950">
+                      <CreditCard className="size-4" />
+                      <AlertTitle>Waiting for VNPAY Bank QR payment</AlertTitle>
+                      <AlertDescription className="text-sky-800">
+                        {amountDue}. Slot remains occupied until payment is confirmed.
+                      </AlertDescription>
+                    </Alert>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void refreshPaymentStatus(true)}
+                      disabled={Boolean(action)}
+                      className="h-11 w-full"
+                    >
+                      {action === 'refresh' ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="size-4" />
+                      )}
+                      {action === 'refresh' ? 'Refreshing...' : 'Refresh Payment Status'}
+                    </Button>
+                    {workflow?.payment?.checkoutUrl ? (
+                      <Button asChild className="h-11 w-full">
+                        <a href={workflow.payment.checkoutUrl} target="_blank" rel="noreferrer">
+                          <CreditCard className="size-4" />
+                          Open VNPAY Payment Page
+                        </a>
+                      </Button>
                     ) : null}
-                    <button type="button" onClick={reset} className="btn-primary print:hidden shadow-sm">
-                      Next Vehicle
-                    </button>
                   </div>
-                </div>
-              ) : null}
+                ) : null}
 
-              {workflow && !canRequestCheckout && !canConfirmPayment && !canConfirmExit && !isCompleted ? (
-                <div className="rounded-2xl border border-rose-200/60 bg-white/80 p-4 text-xs font-bold text-rose-800 shadow-sm">
-                  This session cannot continue checkout from the current status.
-                </div>
-              ) : null}
-            </div>
+                {canConfirmExit ? (
+                  <div className="space-y-3">
+                    <Alert className="border-emerald-200 bg-emerald-50 text-emerald-950">
+                      <CheckCircle2 className="size-4" />
+                      <AlertTitle>Payment confirmed</AlertTitle>
+                      <AlertDescription className="text-emerald-800">
+                        Vehicle is authorized to exit. Confirm only after it has left the gate.
+                      </AlertDescription>
+                    </Alert>
+                    <Button
+                      type="button"
+                      onClick={handleConfirmExit}
+                      disabled={Boolean(action)}
+                      className="h-11 w-full"
+                    >
+                      {action === 'exit' ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <LogOut className="size-4" />
+                      )}
+                      {action === 'exit' ? 'Releasing slot...' : 'Confirm Vehicle Exited'}
+                    </Button>
+                  </div>
+                ) : null}
 
-            <div className={`mt-5 border-t pt-4 ${status === 'completed' ? 'border-white/10' : 'border-slate-200/50'}`}>
-              <p className="text-[11px] font-black uppercase tracking-[0.18em] opacity-70">
-                Gate Summary
-              </p>
-              <div className="mt-3 space-y-2 text-xs">
-                <div className={`flex items-center justify-between border-b pb-1.5 last:border-0 last:pb-0 ${status === 'completed' ? 'border-white/5' : 'border-black/5'}`}>
-                  <span className="opacity-70">Slot status</span>
-                  <span className="font-bold">{workflow?.slot.status ?? 'Not loaded'}</span>
-                </div>
-                <div className={`flex items-center justify-between border-b pb-1.5 last:border-0 last:pb-0 ${status === 'completed' ? 'border-white/5' : 'border-black/5'}`}>
-                  <span className="opacity-70">Exit status</span>
-                  <span className="font-bold">{readableExitStatus(status)}</span>
-                </div>
-                <div className="flex items-center justify-between last:border-0 last:pb-0">
-                  <span className="opacity-70">Exit time</span>
-                  <span className="font-bold">
-                    {workflow?.session.checkOutTime
+                {isCompleted ? (
+                  <div className="space-y-3">
+                    <Alert className="border-emerald-200 bg-emerald-50 text-emerald-950">
+                      <CheckCircle2 className="size-4" />
+                      <AlertTitle>Checkout completed</AlertTitle>
+                      <AlertDescription className="text-emerald-800">
+                        Vehicle exited and slot released.
+                      </AlertDescription>
+                    </Alert>
+                    <div className="grid grid-cols-2 gap-2">
+                      {receipt ? (
+                        <Button type="button" variant="outline" onClick={handlePrint} className="h-10">
+                          <Printer className="size-4" />
+                          Print
+                        </Button>
+                      ) : null}
+                      <Button type="button" onClick={reset} className="h-10">
+                        <RotateCcw className="size-4" />
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {workflow && !canRequestCheckout && !canConfirmPayment && !canConfirmExit && !isCompleted ? (
+                  <Alert variant="destructive">
+                    <CircleAlert className="size-4" />
+                    <AlertTitle>Checkout cannot continue</AlertTitle>
+                    <AlertDescription>
+                      This session cannot continue checkout from the current status.
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
+              </div>
+
+              <Separator />
+
+              <div className="space-y-2 text-sm">
+                <p className="text-xs font-semibold uppercase text-muted-foreground">
+                  Gate Summary
+                </p>
+                <DetailRow label="Slot status" value={workflow?.slot.status ?? 'Not loaded'} />
+                <DetailRow label="Exit status" value={readableExitStatus(status)} />
+                <DetailRow
+                  label="Exit time"
+                  value={
+                    workflow?.session.checkOutTime
                       ? formatDateTime(workflow.session.checkOutTime)
                       : exitResult?.session.checkOutTime
                         ? formatDateTime(exitResult.session.checkOutTime)
-                        : 'Pending'}
-                  </span>
-                </div>
+                        : 'Pending'
+                  }
+                />
               </div>
-            </div>
-          </section>
+            </CardContent>
+          </Card>
 
           <RecentSessionsCard type="checkout" refreshTrigger={checkOutCount} />
         </aside>
@@ -1698,11 +1814,11 @@ function DetailRow({
   strong?: boolean
 }) {
   return (
-    <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-2 last:border-0 last:pb-0">
-      <span className="text-slate-500">{label}</span>
+    <div className="flex items-start justify-between gap-3 border-b pb-2 last:border-0 last:pb-0">
+      <span className="text-muted-foreground">{label}</span>
       <span
         className={`text-right ${mono ? 'font-mono' : ''} ${
-          strong ? 'font-black text-slate-950' : 'font-bold text-slate-700'
+          strong ? 'font-semibold text-foreground' : 'font-medium text-foreground'
         }`}
       >
         {value}
@@ -1721,48 +1837,48 @@ function CheckoutMetric({
   mono?: boolean
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p className={`mt-1 text-sm font-black text-slate-950 ${mono ? 'font-mono' : ''}`}>{value}</p>
+    <div className="rounded-lg border bg-muted/30 px-4 py-3">
+      <p className="text-xs font-semibold uppercase text-muted-foreground">{label}</p>
+      <p className={`mt-1 text-sm font-semibold text-foreground ${mono ? 'font-mono' : ''}`}>{value}</p>
     </div>
   )
 }
 
 function StatusBadge({ status }: { status: SessionStatus }) {
   const tone: Record<SessionStatus, string> = {
-    active: 'bg-blue-50 text-blue-700 ring-blue-200',
-    checkout_pending: 'bg-amber-50 text-amber-700 ring-amber-200',
-    exit_authorized: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-    completed: 'bg-slate-100 text-slate-700 ring-slate-200',
-    cancelled: 'bg-rose-50 text-rose-700 ring-rose-200',
+    active: 'border-sky-200 bg-sky-50 text-sky-700',
+    checkout_pending: 'border-amber-200 bg-amber-50 text-amber-700',
+    exit_authorized: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    completed: 'border-border bg-muted text-muted-foreground',
+    cancelled: 'border-rose-200 bg-rose-50 text-rose-700',
   }
   return (
-    <span className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.12em] ring-1 ${tone[status]}`}>
+    <Badge variant="outline" className={cn('h-6 px-2.5 font-semibold', tone[status])}>
       {readableStatus(status)}
-    </span>
+    </Badge>
   )
 }
 
 function PaymentBadge({ status }: { status: PaymentStatus | null }) {
   if (!status) {
     return (
-      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-slate-500 ring-1 ring-slate-200">
+      <Badge variant="outline" className="h-6 bg-muted px-2.5 font-semibold text-muted-foreground">
         No Payment
-      </span>
+      </Badge>
     )
   }
 
   const tone: Record<PaymentStatus, string> = {
-    pending: 'bg-amber-50 text-amber-700 ring-amber-200',
-    paid: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-    failed: 'bg-rose-50 text-rose-700 ring-rose-200',
-    cancelled: 'bg-slate-100 text-slate-700 ring-slate-200',
-    expired: 'bg-orange-50 text-orange-700 ring-orange-200',
+    pending: 'border-amber-200 bg-amber-50 text-amber-700',
+    paid: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    failed: 'border-rose-200 bg-rose-50 text-rose-700',
+    cancelled: 'border-border bg-muted text-muted-foreground',
+    expired: 'border-orange-200 bg-orange-50 text-orange-700',
   }
   return (
-    <span className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.12em] ring-1 ${tone[status]}`}>
+    <Badge variant="outline" className={cn('h-6 px-2.5 font-semibold', tone[status])}>
       {readablePaymentStatus(status)}
-    </span>
+    </Badge>
   )
 }
 
@@ -1776,17 +1892,17 @@ function OperatorSignal({
   tone: 'idle' | 'warn' | 'good'
 }) {
   const toneClass = {
-    idle: 'bg-white/70 text-slate-600 ring-slate-200',
-    warn: 'bg-amber-100 text-amber-900 ring-amber-200',
-    good: 'bg-emerald-100 text-emerald-900 ring-emerald-200',
+    idle: 'bg-background text-muted-foreground',
+    warn: 'border-amber-200 bg-amber-50 text-amber-900',
+    good: 'border-emerald-200 bg-emerald-50 text-emerald-900',
   }[tone]
 
   return (
-    <div className={`rounded-2xl p-3 ring-1 ${toneClass}`}>
-      <span className="block text-[10px] font-black uppercase tracking-[0.16em] opacity-70">
+    <div className={cn('rounded-lg border p-3', toneClass)}>
+      <span className="block text-xs font-semibold uppercase opacity-70">
         {label}
       </span>
-      <span className="mt-1 block text-sm font-black leading-tight">{value}</span>
+      <span className="mt-1 block text-sm font-semibold leading-tight">{value}</span>
     </div>
   )
 }

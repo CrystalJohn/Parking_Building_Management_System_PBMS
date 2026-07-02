@@ -14,7 +14,7 @@ import { Role } from '@prisma/client';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
 import { Roles } from '../auth/decorators';
 import { VehiclesService } from './vehicles.service';
-import { LinkVehicleUserDto } from './dto';
+import { LinkVehicleUserDto, LookupPlateDto } from './dto';
 
 @Controller('vehicles')
 @UseGuards(JwtAuthGuard)
@@ -26,6 +26,14 @@ export class VehiclesController {
   @Roles(Role.staff, Role.manager, Role.admin)
   matchPlate(@Query('plateNumber') plateNumber: string) {
     return this.vehiclesService.matchPlate(plateNumber);
+  }
+
+  @Post('lookup-plate')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(RolesGuard)
+  @Roles(Role.staff, Role.manager, Role.admin)
+  lookupPlate(@Body() dto: LookupPlateDto) {
+    return this.vehiclesService.lookupPlate(dto.plateNumber);
   }
 
   @Post(':vehicleId/users')

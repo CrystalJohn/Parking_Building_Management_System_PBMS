@@ -285,16 +285,28 @@ describe('SessionsService', () => {
       await expect(service.checkIn(dto, staffId)).rejects.toThrow(ConflictException);
     });
 
-    it('logs duplicate active session rejection before check-in allocation', async () => {
+    it('maps duplicate active plate constraint to a clear check-in time message', async () => {
       const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
-      prisma.parkingSession.findFirst.mockResolvedValue(
-        makeSession({ id: 'existing-session-uuid', licensePlate: '59A-12345' }),
-      );
+      const existingCheckInTime = new Date('2026-06-30T04:05:00.000Z');
+      prisma.$transaction.mockRejectedValue({
+        code: 'P2002',
+        meta: { target: 'uniq_active_plate' },
+      });
+      prisma.parkingSession.findFirst.mockResolvedValue({
+        id: 'existing-session-uuid',
+        checkInTime: existingCheckInTime,
+      });
 
       const dto = { licensePlate: '59A-12345', vehicleType: VehicleType.car };
 
-      await expect(service.checkIn(dto, staffId)).rejects.toThrow(ConflictException);
-      expect(allocationService.allocate).not.toHaveBeenCalled();
+      await expect(service.checkIn(dto, staffId)).rejects.toThrow('Xe đang trong bãi từ');
+      expect(allocationService.allocate).toHaveBeenCalledWith(VehicleType.car);
+      expect(prisma.parkingSession.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { licensePlate: '59A-12345', status: 'active' },
+          select: { id: true, checkInTime: true },
+        }),
+      );
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('Duplicate active session rejected'),
       );
@@ -354,8 +366,14 @@ describe('SessionsService', () => {
 
     it('maps DB duplicate active plate protection to ConflictException', async () => {
       const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
-      prisma.parkingSession.findFirst.mockResolvedValue(null);
-      prisma.$transaction.mockRejectedValue({ code: 'P2002' });
+      prisma.$transaction.mockRejectedValue({
+        code: 'P2002',
+        meta: { target: ['license_plate'] },
+      });
+      prisma.parkingSession.findFirst.mockResolvedValue({
+        id: 'existing-session-uuid',
+        checkInTime: new Date('2026-06-30T04:05:00.000Z'),
+      });
 
       const dto = { licensePlate: '59A-12345', vehicleType: VehicleType.car };
 
@@ -363,6 +381,49 @@ describe('SessionsService', () => {
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('Duplicate active session rejected'),
       );
+    });
+
+    it('allows only one concurrent check-in for the same active plate', async () => {
+      prisma.$transaction
+        .mockImplementationOnce(async (fn: (tx: unknown) => Promise<unknown>) => {
+          const tx = {
+            $queryRaw: jest.fn().mockResolvedValue([{ id: slot.id, status: 'available' }]),
+            slot: { update: jest.fn().mockResolvedValue(slot) },
+            reservation: { update: jest.fn() },
+            parkingSession: {
+              create: jest.fn().mockImplementation(({ data }) =>
+                Promise.resolve(makeSession({
+                  id: data.id,
+                  licensePlate: data.licensePlate,
+                  qrCode: data.qrCode,
+                  sessionCode: data.sessionCode,
+                  ticketGeneratedAt: data.ticketGeneratedAt,
+                })),
+              ),
+            },
+          };
+          return fn(tx);
+        })
+        .mockRejectedValueOnce({
+          code: 'P2002',
+          meta: { target: 'uniq_active_plate' },
+        });
+      prisma.parkingSession.findFirst.mockResolvedValue({
+        id: 'existing-session-uuid',
+        checkInTime: new Date('2026-06-30T04:05:00.000Z'),
+      });
+
+      const dto = { licensePlate: '59A-12345', vehicleType: VehicleType.car };
+      const results = await Promise.allSettled([
+        service.checkIn(dto, staffId),
+        service.checkIn(dto, staffId),
+      ]);
+
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+      const rejected = results.find((result) => result.status === 'rejected') as PromiseRejectedResult;
+      expect(rejected.reason).toBeInstanceOf(ConflictException);
+      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
     });
 
     // 13.6: Response shape

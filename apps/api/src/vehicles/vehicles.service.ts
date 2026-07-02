@@ -61,6 +61,30 @@ export interface MatchedVehicleSummary {
   }>;
 }
 
+export type VehicleLookupMode = 'WALK_IN' | 'REGISTERED' | 'SUBSCRIBER';
+
+export interface LookupPlateResult {
+  inputPlate: string;
+  normalizedPlate: string;
+  matched: boolean;
+  mode: VehicleLookupMode;
+  vehicle: MatchedVehicleSummary['vehicle'];
+  vehicleType: string | null;
+  owner: MatchedVehicleSummary['owner'];
+  ownerName: string | null;
+  driverCount: number;
+  linkedUsers: MatchedVehicleSummary['linkedUsers'];
+  subscription: null | {
+    id: string;
+    planType: string;
+    validFrom: Date;
+    validTo: Date;
+    isActive: boolean;
+    isExpired: boolean;
+  };
+  recentSessions: MatchedVehicleSummary['recentSessions'];
+}
+
 @Injectable()
 export class VehiclesService {
   constructor(private readonly prisma: PrismaService) {}
@@ -239,6 +263,142 @@ export class VehiclesService {
             validTo: activeSubscription.validTo,
           }
         : null,
+      recentSessions: recentSessions.map((session) => ({
+        id: session.id,
+        licensePlate: session.licensePlate,
+        plateNumberOcr: session.plateNumberOcr,
+        plateNumberConfirmed: session.plateNumberConfirmed,
+        vehicleType: session.vehicleType,
+        status: session.status,
+        checkInTime: session.checkInTime,
+        checkOutTime: session.checkOutTime,
+        slot: {
+          id: session.slot.id,
+          code: session.slot.code,
+          zone: session.slot.zone,
+          floor: {
+            id: session.slot.floor.id,
+            name: session.slot.floor.name,
+            floorNumber: session.slot.floor.floorNumber,
+          },
+        },
+      })),
+    };
+  }
+
+  async lookupPlate(plateNumber: string): Promise<LookupPlateResult> {
+    const normalizedPlate = normalizePlateNumber(plateNumber);
+    if (!normalizedPlate) {
+      throw new BadRequestException('plateNumber is required');
+    }
+
+    const vehicle = await this.prisma.vehicle.findFirst({
+      where: {
+        plateNumber: normalizedPlate,
+        isActive: true,
+      },
+      include: {
+        vehicleUsers: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                fullName: true,
+                phone: true,
+                email: true,
+                isActive: true,
+              },
+            },
+          },
+          orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
+        },
+        subscriptions: {
+          orderBy: { validTo: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!vehicle) {
+      return {
+        inputPlate: plateNumber,
+        normalizedPlate,
+        matched: false,
+        mode: 'WALK_IN',
+        vehicle: null,
+        vehicleType: null,
+        owner: null,
+        ownerName: null,
+        driverCount: 0,
+        linkedUsers: [],
+        subscription: null,
+        recentSessions: [],
+      };
+    }
+
+    const linkedUsers = vehicle.vehicleUsers
+      .filter((link) => link.user.isActive)
+      .map((link) => ({
+        id: link.user.id,
+        fullName: link.user.fullName,
+        phone: link.user.phone,
+        email: link.user.email,
+        role: link.role,
+      }));
+
+    const owner =
+      linkedUsers.find((user) => user.role === 'owner') ??
+      linkedUsers[0] ??
+      null;
+
+    const subscription = vehicle.subscriptions[0] ?? null;
+    const now = new Date();
+    const subscriptionSummary = subscription
+      ? {
+          id: subscription.id,
+          planType: subscription.planType,
+          validFrom: subscription.validFrom,
+          validTo: subscription.validTo,
+          isActive:
+            subscription.validFrom.getTime() <= now.getTime() &&
+            subscription.validTo.getTime() >= now.getTime(),
+          isExpired: subscription.validTo.getTime() < now.getTime(),
+        }
+      : null;
+
+    const recentSessions = await this.prisma.parkingSession.findMany({
+      where: {
+        OR: [
+          { vehicleId: vehicle.id },
+          { plateNumberConfirmed: vehicle.plateNumber },
+          { licensePlate: vehicle.plateNumber },
+        ],
+      },
+      orderBy: { checkInTime: 'desc' },
+      take: 5,
+      include: {
+        slot: { include: { floor: true } },
+      },
+    });
+
+    return {
+      inputPlate: plateNumber,
+      normalizedPlate,
+      matched: true,
+      mode: subscriptionSummary ? 'SUBSCRIBER' : 'REGISTERED',
+      vehicle: {
+        id: vehicle.id,
+        plateNumber: vehicle.plateNumber,
+        vehicleType: vehicle.vehicleType,
+        isActive: vehicle.isActive,
+        registeredAt: vehicle.registeredAt,
+      },
+      vehicleType: vehicle.vehicleType,
+      owner,
+      ownerName: owner?.fullName ?? null,
+      driverCount: linkedUsers.length,
+      linkedUsers,
+      subscription: subscriptionSummary,
       recentSessions: recentSessions.map((session) => ({
         id: session.id,
         licensePlate: session.licensePlate,

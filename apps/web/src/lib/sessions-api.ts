@@ -8,6 +8,7 @@ export type SessionStatus = 'active' | 'checkout_pending' | 'exit_authorized' | 
 export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'cancelled' | 'expired'
 export type PaymentMethod = 'cash' | 'bank_qr'
 export type CheckInIdentificationMethod = 'RESERVATION_QR' | 'OCR' | 'MANUAL_PLATE'
+export type VehicleLookupMode = 'WALK_IN' | 'REGISTERED' | 'SUBSCRIBER'
 
 export interface CheckInRequest {
   licensePlate: string
@@ -88,6 +89,57 @@ export interface OcrRecognizeResponse {
   gateName: string
   error: string | null
   durationMs: number
+}
+
+export interface VehicleLookupUser {
+  id: string
+  fullName: string | null
+  phone: string
+  email: string | null
+  role: 'owner' | 'driver'
+}
+
+export interface VehicleLookupResponse {
+  inputPlate: string
+  normalizedPlate: string
+  matched: boolean
+  mode: VehicleLookupMode
+  vehicle: {
+    id: string
+    plateNumber: string
+    vehicleType: VehicleType
+    isActive: boolean
+    registeredAt: string
+  } | null
+  vehicleType: VehicleType | null
+  owner: VehicleLookupUser | null
+  ownerName: string | null
+  driverCount: number
+  linkedUsers: VehicleLookupUser[]
+  subscription: {
+    id: string
+    planType: 'casual' | 'monthly' | 'yearly'
+    validFrom: string
+    validTo: string
+    isActive: boolean
+    isExpired: boolean
+  } | null
+  recentSessions: Array<{
+    id: string
+    licensePlate: string
+    plateNumberOcr: string | null
+    plateNumberConfirmed: string | null
+    vehicleType: VehicleType
+    status: SessionStatus
+    checkInTime: string
+    checkOutTime: string | null
+    slot: {
+      id: number
+      code: string
+      zone: Zone
+      floor: FloorInfo
+    }
+  }>
 }
 
 // ─── Check-out types ─────────────────────────────────────────────────────────
@@ -336,7 +388,14 @@ function mapBackendCheckout(data: BackendCheckOutResponse): CheckoutWorkflowResp
 // ─── API methods ─────────────────────────────────────────────────────────────
 
 export async function checkIn(request: CheckInRequest): Promise<CheckInResponse> {
-  const { data } = await api.post<CheckInResponse>('/sessions/check-in', request)
+  const { data } = await api.post<CheckInResponse>('/checkin/confirm', request)
+  return data
+}
+
+export async function lookupPlate(plateNumber: string): Promise<VehicleLookupResponse> {
+  const { data } = await api.post<VehicleLookupResponse>('/vehicles/lookup-plate', {
+    plateNumber,
+  })
   return data
 }
 

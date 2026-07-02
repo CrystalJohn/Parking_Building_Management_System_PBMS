@@ -112,21 +112,6 @@ export class SessionsService {
         ? normalizePlateNumber(identity.licensePlate)
         : null;
 
-    // Check for duplicate active session with same license plate
-    const existingSession = await this.prisma.parkingSession.findFirst({
-      where: { licensePlate, status: 'active' },
-      select: { id: true, licensePlate: true },
-    });
-
-    if (existingSession) {
-      this.logger.warn(
-        `Duplicate active session rejected | licensePlate=${licensePlate} existingSessionId=${existingSession.id}`,
-      );
-      throw new ConflictException(
-        `Biển số ${licensePlate} đang có phiên gửi xe chưa check-out`,
-      );
-    }
-
     // Resolve registered driver (optional — via phone or from reservation owner)
     let driverId: string | null = null;
     if (dto.driverPhone) {
@@ -316,11 +301,18 @@ export class SessionsService {
       });
     } catch (error) {
       if (this.isPrismaUniqueConstraintError(error)) {
+        const duplicateSession = await this.findActiveSessionForPlate(licensePlate);
+        if (!this.isActivePlateUniqueConstraintError(error) && !duplicateSession) {
+          throw error;
+        }
+
         this.logger.warn(
-          `Duplicate active session rejected | licensePlate=${licensePlate} source=db_unique_constraint`,
+          `Duplicate active session rejected | licensePlate=${licensePlate} existingSessionId=${duplicateSession?.id ?? 'unknown'} source=db_unique_constraint`,
         );
         throw new ConflictException(
-          'Duplicate active parking session detected for this license plate',
+          duplicateSession
+            ? `Xe đang trong bãi từ ${this.formatCheckInTime(duplicateSession.checkInTime)}`
+            : 'Xe đang có phiên gửi xe chưa check-out',
         );
       }
       throw error;
@@ -401,6 +393,53 @@ export class SessionsService {
       'code' in error &&
       (error as { code?: string }).code === 'P2002'
     );
+  }
+
+  private isActivePlateUniqueConstraintError(error: unknown): boolean {
+    if (
+      typeof error !== 'object' ||
+      error === null ||
+      !('meta' in error)
+    ) {
+      return false;
+    }
+
+    const target = (error as { meta?: { target?: unknown } }).meta?.target;
+    if (Array.isArray(target)) {
+      return target.includes('license_plate') || target.includes('licensePlate');
+    }
+
+    return target === 'uniq_active_plate' || target === 'license_plate';
+  }
+
+  private async findActiveSessionForPlate(licensePlate: string): Promise<{
+    id: string;
+    checkInTime: Date;
+  } | null> {
+    return this.prisma.parkingSession.findFirst({
+      where: {
+        licensePlate,
+        status: 'active',
+      },
+      select: {
+        id: true,
+        checkInTime: true,
+      },
+      orderBy: {
+        checkInTime: 'asc',
+      },
+    });
+  }
+
+  private formatCheckInTime(value: Date): string {
+    return new Intl.DateTimeFormat('vi-VN', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      hour: '2-digit',
+      minute: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }).format(value);
   }
 
   private mapBreakdownToCheckoutFee(breakdown: FeeBreakdown) {
