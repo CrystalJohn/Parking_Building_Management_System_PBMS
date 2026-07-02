@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { isAxiosError } from 'axios'
 import api from '../../lib/api'
-import { ToastContainer } from '../../components/ui/Toast'
 import { useToasts } from '../../lib/use-toasts'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -53,8 +52,6 @@ export default function Config() {
 
         <PricingSection toasts={toasts} />
         <BuildingSection toasts={toasts} />
-
-        <ToastContainer toasts={toasts.toasts} onDismiss={toasts.dismiss} />
       </div>
     </div>
   )

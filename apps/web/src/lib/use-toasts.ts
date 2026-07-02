@@ -1,30 +1,27 @@
-import { useCallback, useRef, useState } from 'react'
-import type { ToastMessage, ToastType } from '../components/ui/Toast'
+import { useCallback } from 'react'
+import { toast } from 'sonner'
+import type { ToastMessage } from '../components/ui/Toast'
 
 /**
- * Lightweight toast state hook. Designed to be used at page-level
- * and passed to a <ToastContainer />.
+ * Backwards-compatible adapter over Sonner.
+ * Keeps the previous API shape so older pages can migrate without
+ * touching their local toast call sites.
  */
 export function useToasts() {
-  const [toasts, setToasts] = useState<ToastMessage[]>([])
-  const idRef = useRef(0)
-
-  const show = useCallback((type: ToastType, text: string) => {
-    idRef.current += 1
-    const id = idRef.current
-    setToasts((prev) => [...prev, { id, type, text }])
-  }, [])
-
-  const dismiss = useCallback((id: number) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id))
+  const dismiss = useCallback((id?: number) => {
+    if (typeof id === 'number') {
+      toast.dismiss(id)
+      return
+    }
+    toast.dismiss()
   }, [])
 
   return {
-    toasts,
+    toasts: [] as ToastMessage[],
     dismiss,
-    showSuccess: (text: string) => show('success', text),
-    showError: (text: string) => show('error', text),
-    showWarning: (text: string) => show('warning', text),
-    showInfo: (text: string) => show('info', text),
+    showSuccess: (text: string) => toast.success(text),
+    showError: (text: string) => toast.error(text),
+    showWarning: (text: string) => toast.warning(text),
+    showInfo: (text: string) => toast.info(text),
   }
 }

@@ -1,14 +1,12 @@
-import { IsEnum, IsISO8601, IsOptional } from 'class-validator';
-import { VehicleType } from '@prisma/client';
+import { IsISO8601, IsOptional, IsUUID } from 'class-validator';
 
 /**
- * 18.1: Create reservation DTO.
- * Driver specifies vehicle type; slot is assigned by allocation service.
- * Req 8.1
+ * Driver must choose one of their linked vehicles.
+ * Backend derives vehicleType and plateNumber from the linked vehicle record.
  */
 export class CreateReservationDto {
-  @IsEnum(VehicleType)
-  vehicleType: VehicleType;
+  @IsUUID()
+  vehicleId: string;
 
   @IsOptional()
   @IsISO8601()

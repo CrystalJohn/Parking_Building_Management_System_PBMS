@@ -3,6 +3,21 @@ export type VehicleType = 'car' | 'motorbike';
 export type ReservationStatus = 'active' | 'fulfilled' | 'expired' | 'cancelled';
 export type SessionStatus = 'active' | 'checkout_pending' | 'exit_authorized' | 'completed' | 'cancelled';
 
+export type DriverVehicle = {
+  id: string;
+  plateNumber: string;
+  vehicleType: VehicleType;
+  isActive: boolean;
+  registeredAt: string;
+  linkedRole: 'owner' | 'driver';
+  activeSubscription: {
+    id: string;
+    planType: 'casual' | 'monthly' | 'yearly';
+    validFrom: string;
+    validTo: string;
+  } | null;
+};
+
 export type User = {
   id: string;
   phone: string;
@@ -30,6 +45,7 @@ export type RegisterPayload = {
 
 export type Reservation = {
   id: string;
+  vehicleId?: string | null;
   reservationCode?: string;
   vehicleType: VehicleType;
   plannedArrivalAt?: string | null;
@@ -37,6 +53,11 @@ export type Reservation = {
   createdAt: string;
   expiresAt: string;
   licensePlate?: string | null;
+  vehicle?: {
+    id: string;
+    plateNumber: string;
+    vehicleType: VehicleType;
+  } | null;
   driver?: {
     fullName?: string | null;
     phone?: string | null;
@@ -55,8 +76,36 @@ export type Reservation = {
 };
 
 export type CreateReservationRequest = {
+  vehicleId: string;
+  plannedArrivalAt: string;
+};
+
+export type ReservationAvailabilityRequest = {
   vehicleType: VehicleType;
   plannedArrivalAt: string;
+};
+
+export type ReservationCheckInQr = {
+  reservationId: string;
+  token: string;
+  issuedAt: string;
+  expiresAt: string;
+  refreshAfterMs: number;
+  vehicle: {
+    id: string;
+    plateNumber: string;
+    vehicleType: VehicleType;
+  };
+  slot: {
+    id: number;
+    code: string;
+    zone: string;
+    floor: {
+      id: number;
+      floorNumber: number;
+      name: string;
+    };
+  };
 };
 
 export type ReservationAvailability = {

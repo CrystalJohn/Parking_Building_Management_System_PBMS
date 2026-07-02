@@ -69,7 +69,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Toaster } from '@/components/ui/sonner'
 import { cn } from '@/lib/utils'
 
 type Role = 'admin' | 'manager' | 'staff' | 'driver'
@@ -402,8 +401,6 @@ export default function Users() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      <Toaster position="top-right" richColors closeButton />
     </div>
   )
 }

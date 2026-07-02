@@ -9,10 +9,11 @@ import { QueryState } from '../../components/QueryState';
 import { Screen } from '../../components/Screen';
 import {
   useCancelReservationMutation,
+  useReservationCheckInQrQuery,
   useReservationDetailQuery,
 } from '../../hooks/useDriverQueries';
-import { colors } from '../../theme/colors';
 import type { RootStackParamList } from '../../navigation/types';
+import { colors } from '../../theme/colors';
 import { formatDateTimeVN } from '../../utils/dateTime';
 import { canCancelReservation, getReservationStatusLabel } from '../../utils/reservationStatus';
 
@@ -22,6 +23,11 @@ export function ReservationDetailScreen({ navigation, route }: Props) {
   const reservationQuery = useReservationDetailQuery(route.params.reservationId);
   const cancelReservation = useCancelReservationMutation();
   const reservation = reservationQuery.data;
+  const isActiveReservation = canCancelReservation(reservation?.status ?? 'expired');
+  const qrQuery = useReservationCheckInQrQuery(
+    route.params.reservationId,
+    Boolean(isActiveReservation),
+  );
 
   async function handleCancel() {
     if (!reservation) {
@@ -38,7 +44,10 @@ export function ReservationDetailScreen({ navigation, route }: Props) {
 
   return (
     <Screen>
-      <InfoCard title="Chi tiết đặt chỗ" subtitle="Thông tin đặt chỗ dùng cho check-in tại cổng">
+      <InfoCard
+        title="Reservation Detail"
+        subtitle="Active reservations show a short-lived QR for staff gate check-in."
+      >
         <QueryState
           loading={reservationQuery.isLoading}
           error={reservationQuery.error}
@@ -49,35 +58,43 @@ export function ReservationDetailScreen({ navigation, route }: Props) {
 
         {reservation ? (
           <View style={styles.details}>
-            {reservation.reservationCode ? (
-              <Detail label="Mã đặt chỗ" value={reservation.reservationCode} />
-            ) : null}
             <Detail label="Status" value={getReservationStatusLabel(reservation.status)} />
             <Detail label="Vehicle type" value={reservation.vehicleType} />
             <Detail
-              label="Planned arrival"
-              value={formatDate(reservation.plannedArrivalAt)}
+              label="Linked plate"
+              value={reservation.licensePlate ?? reservation.vehicle?.plateNumber ?? 'Not linked'}
             />
-            <Detail label="License plate" value={reservation.licensePlate ?? 'Not assigned'} />
+            <Detail label="Planned arrival" value={formatDate(reservation.plannedArrivalAt)} />
             <Detail label="Assigned slot" value={reservation.slot?.code ?? 'Not assigned'} />
             <Detail label="Floor" value={formatFloor(reservation.slot)} />
             <Detail label="Zone" value={reservation.slot?.zone ?? 'N/A'} />
             <Detail label="Created time" value={formatDate(reservation.createdAt)} />
             <Detail label="Expires time" value={formatDate(reservation.expiresAt)} />
 
-            {canCancelReservation(reservation.status) ? (
+            {isActiveReservation ? (
               <>
                 <View style={styles.reservationCodeCard}>
-                  <Text style={styles.codeTitle}>Mã QR đặt chỗ</Text>
+                  <Text style={styles.codeTitle}>Reservation Check-in QR</Text>
                   <Text style={styles.codeHelp}>
-                    Vui lòng đưa mã này cho nhân viên bãi xe để check-in.
+                    Show this live QR to staff at the gate. It refreshes automatically every 30 seconds.
                   </Text>
-                  <View style={styles.qrWrap}>
-                    <QRCode value={reservation.id} size={210} />
-                  </View>
-                  <Text style={styles.codeNote}>
-                    Mã QR này chỉ dùng cho bước check-in trước khi phiên gửi xe bắt đầu.
-                  </Text>
+                  <QueryState
+                    loading={qrQuery.isLoading}
+                    error={qrQuery.error}
+                    empty={!qrQuery.data}
+                    emptyMessage="QR is unavailable for this reservation."
+                    onRetry={() => qrQuery.refetch()}
+                  />
+                  {qrQuery.data ? (
+                    <>
+                      <View style={styles.qrWrap}>
+                        <QRCode value={qrQuery.data.token} size={210} />
+                      </View>
+                      <Text style={styles.codeNote}>
+                        Current QR expires at {formatDate(qrQuery.data.expiresAt)}.
+                      </Text>
+                    </>
+                  ) : null}
                 </View>
 
                 <Button
@@ -91,10 +108,10 @@ export function ReservationDetailScreen({ navigation, route }: Props) {
             ) : (
               <View style={styles.inactiveCard}>
                 <Text style={styles.inactiveTitle}>
-                  This reservation is no longer valid for check-in
+                  This reservation is no longer valid for QR check-in
                 </Text>
                 <Text style={styles.inactiveText}>
-                  Reservation QR/code is only available while the reservation status is active.
+                  Expired, fulfilled, or cancelled reservations must use OCR / manual fallback at the gate.
                 </Text>
               </View>
             )}

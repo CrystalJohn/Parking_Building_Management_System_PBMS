@@ -1,9 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { driverApi } from '../api/driver';
-import type { CreateReservationRequest, Reservation } from '../types/api';
+import type {
+  CreateReservationRequest,
+  Reservation,
+  ReservationAvailabilityRequest,
+} from '../types/api';
 
 export const driverQueryKeys = {
+  vehicles: ['driver', 'vehicles'] as const,
   availability: ['driver', 'availability'] as const,
   reservationAvailability: (vehicleType: string, plannedArrivalAt: string) =>
     ['driver', 'reservation-availability', vehicleType, plannedArrivalAt] as const,
@@ -11,10 +16,18 @@ export const driverQueryKeys = {
     all: ['driver', 'reservations'] as const,
     list: ['driver', 'reservations', 'list'] as const,
     detail: (reservationId: string) => ['driver', 'reservations', 'detail', reservationId] as const,
+    checkInQr: (reservationId: string) => ['driver', 'reservations', 'checkin-qr', reservationId] as const,
   },
   activeSessions: ['driver', 'active-sessions'] as const,
   history: ['driver', 'history'] as const,
 };
+
+export function useMyVehiclesQuery() {
+  return useQuery({
+    queryKey: driverQueryKeys.vehicles,
+    queryFn: driverApi.getMyVehicles,
+  });
+}
 
 export function useSlotAvailabilityQuery() {
   return useQuery({
@@ -24,7 +37,7 @@ export function useSlotAvailabilityQuery() {
 }
 
 export function useReservationAvailabilityQuery(
-  vehicleType: CreateReservationRequest['vehicleType'],
+  vehicleType: ReservationAvailabilityRequest['vehicleType'],
   plannedArrivalAt: string,
 ) {
   return useQuery({
@@ -48,6 +61,18 @@ export function useReservationDetailQuery(reservationId: string) {
   });
 }
 
+export function useReservationCheckInQrQuery(
+  reservationId: string,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: driverQueryKeys.reservations.checkInQr(reservationId),
+    queryFn: () => driverApi.getReservationCheckInQr(reservationId),
+    enabled,
+    refetchInterval: enabled ? 30_000 : false,
+  });
+}
+
 export function useCreateReservationMutation() {
   const queryClient = useQueryClient();
 
@@ -60,6 +85,7 @@ export function useCreateReservationMutation() {
       );
       queryClient.invalidateQueries({ queryKey: driverQueryKeys.reservations.all });
       queryClient.invalidateQueries({ queryKey: driverQueryKeys.availability });
+      queryClient.invalidateQueries({ queryKey: driverQueryKeys.vehicles });
     },
   });
 }

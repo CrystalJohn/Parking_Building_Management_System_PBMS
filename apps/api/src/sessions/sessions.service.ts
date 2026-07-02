@@ -5,6 +5,7 @@ import {
   NotFoundException,
   Logger,
 } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Prisma, VehicleType, PaymentMethod } from '@prisma/client';
 import * as QRCode from 'qrcode';
 import { PrismaService } from '../prisma/prisma.service';
@@ -13,6 +14,10 @@ import { FeesService, FeeBreakdown } from '../fees/fees.service';
 import { VehicleIdentificationService } from '../vehicle-identification/vehicle-identification.service';
 import type { VehicleIdentityResult } from '../vehicle-identification/vehicle-identity.types';
 import { normalizePlateNumber } from '../vehicles/vehicles.service';
+import {
+  RESERVATION_CHECKIN_TOKEN_TYPE,
+  type ReservationCheckInTokenPayload,
+} from '../reservations/reservation-checkin-qr';
 import { CheckInDto, CheckOutDto, ConfirmPaymentDto, LostTicketDto } from './dto';
 
 @Injectable()
@@ -24,6 +29,7 @@ export class SessionsService {
     private readonly allocationService: AllocationService,
     private readonly feesService: FeesService,
     private readonly vehicleIdentificationService: VehicleIdentificationService,
+    private readonly jwtService: JwtService,
   ) {}
 
   /**
@@ -366,8 +372,311 @@ export class SessionsService {
     };
   }
 
+  async scanReservation(token: string) {
+    const payload = await this.verifyReservationCheckInToken(token);
+    const reservation = await this.prisma.reservation.findUnique({
+      where: { id: payload.reservationId },
+      include: {
+        driver: { select: { id: true, fullName: true, phone: true } },
+        slot: { include: { floor: true } },
+        vehicle: {
+          select: {
+            id: true,
+            plateNumber: true,
+            vehicleType: true,
+            subscriptions: {
+              where: {
+                validFrom: { lte: new Date() },
+                validTo: { gte: new Date() },
+              },
+              orderBy: { validTo: 'desc' },
+              take: 1,
+            },
+          },
+        },
+        session: {
+          include: {
+            payment: {
+              select: {
+                status: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!reservation) {
+      throw new NotFoundException(
+        'Khong tim thay reservation. Vui long chuyen sang OCR / walk-in flow.',
+      );
+    }
+
+    if (!reservation.vehicleId || !reservation.vehicle) {
+      throw new ConflictException(
+        'Reservation nay chua lien ket xe. Vui long dung OCR / walk-in flow.',
+      );
+    }
+
+    if (reservation.vehicleId !== payload.vehicleId) {
+      throw new ConflictException(
+        'QR khong khop voi xe da lien ket. Vui long dung OCR / walk-in flow.',
+      );
+    }
+
+    if (reservation.status !== 'active') {
+      throw new ConflictException(
+        this.getReservationCheckInFailureMessage(reservation.status),
+      );
+    }
+
+    if (reservation.expiresAt.getTime() <= Date.now()) {
+      throw new ConflictException(
+        'QR dat cho da het han. Vui long dung OCR / walk-in flow.',
+      );
+    }
+
+    if (reservation.slot.status !== 'reserved') {
+      throw new ConflictException(
+        'Cho do da khong con o trang thai RESERVED. Vui long dung OCR / walk-in flow.',
+      );
+    }
+
+    return {
+      reservationId: reservation.id,
+      vehicleId: reservation.vehicle.id,
+      plateNumber: reservation.vehicle.plateNumber,
+      vehicleType: reservation.vehicle.vehicleType,
+      slotId: reservation.slot.id,
+      slotCode: reservation.slot.code,
+      slotLabel: `${reservation.slot.code} - ${reservation.slot.floor.name}`,
+      driverName: reservation.driver.fullName ?? reservation.driver.phone ?? 'Unknown driver',
+      paymentBadge: this.getReservationPaymentBadge({
+        subscriptionCount: reservation.vehicle.subscriptions.length,
+        paymentStatus: reservation.session?.payment?.status ?? null,
+      }),
+      expiresAt: reservation.expiresAt,
+      fallbackAction: 'USE_OCR_WALKIN',
+    };
+  }
+
+  async confirmReservationCheckIn(reservationId: string, staffId: string) {
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+        const existingSession = await tx.parkingSession.findUnique({
+          where: { reservationId },
+          include: {
+            slot: { include: { floor: true } },
+          },
+        });
+
+        if (existingSession) {
+          return {
+            alreadyCheckedIn: true,
+            message: 'Da check-in roi',
+            session: this.mapReservationSessionSummary(existingSession),
+            slot: this.mapSessionSlot(existingSession.slot),
+          };
+        }
+
+        const lockedReservation = await tx.$queryRaw<
+          Array<{
+            id: string;
+          }>
+        >`
+          SELECT id
+          FROM reservations
+          WHERE id = ${reservationId}
+          FOR UPDATE
+        `;
+
+        if (lockedReservation.length === 0) {
+          throw new NotFoundException(`Reservation not found: ${reservationId}`);
+        }
+
+        const reservation = await tx.reservation.findUnique({
+          where: { id: reservationId },
+          include: {
+            driver: { select: { id: true, fullName: true, phone: true } },
+            slot: { include: { floor: true } },
+            vehicle: { select: { id: true, plateNumber: true, vehicleType: true } },
+            session: {
+              include: {
+                slot: { include: { floor: true } },
+              },
+            },
+          },
+        });
+
+        if (!reservation) {
+          throw new NotFoundException(`Reservation not found: ${reservationId}`);
+        }
+
+        if (reservation.session) {
+          return {
+            alreadyCheckedIn: true,
+            message: 'Da check-in roi',
+            session: this.mapReservationSessionSummary(reservation.session),
+            slot: this.mapSessionSlot(reservation.session.slot),
+          };
+        }
+
+        this.assertReservationCanConfirmCheckIn(reservation);
+
+        const lockedSlot = await tx.$queryRaw<{ id: number; status: string }[]>`
+          SELECT id, status
+          FROM slots
+          WHERE id = ${reservation.slotId} AND status = ${'reserved'}::"SlotStatus"
+          FOR UPDATE
+        `;
+
+        if (lockedSlot.length === 0) {
+          throw new ConflictException(
+            'Cho do khong con o trang thai RESERVED. Vui long dung OCR / walk-in flow.',
+          );
+        }
+
+        const conflictingSession = await tx.parkingSession.findFirst({
+          where: {
+            vehicleId: reservation.vehicleId,
+            status: {
+              in: ['active', 'checkout_pending', 'exit_authorized'],
+            },
+          },
+          select: {
+            id: true,
+            checkInTime: true,
+          },
+        });
+
+        if (conflictingSession) {
+          throw new ConflictException(
+            `Xe da co phien gui xe dang hoat dong tu ${this.formatCheckInTime(conflictingSession.checkInTime)}`,
+          );
+        }
+
+        const sessionId = crypto.randomUUID();
+        const sessionCode = this.buildSessionCode(sessionId);
+        const qrCode = await QRCode.toDataURL(sessionCode, {
+          width: 400,
+          margin: 2,
+          errorCorrectionLevel: 'H',
+          color: { dark: '#000000', light: '#ffffff' },
+        });
+
+        await tx.reservation.update({
+          where: { id: reservationId },
+          data: { status: 'fulfilled' },
+        });
+
+        await tx.slot.update({
+          where: { id: reservation.slotId },
+          data: { status: 'occupied' },
+        });
+
+        const session = await tx.parkingSession.create({
+          data: {
+            id: sessionId,
+            driverId: reservation.driverId,
+            vehicleId: reservation.vehicleId,
+            slotId: reservation.slotId,
+            reservationId: reservation.id,
+            licensePlate: reservation.vehicle!.plateNumber,
+            plateNumberOcr: null,
+            plateNumberConfirmed: reservation.vehicle!.plateNumber,
+            vehicleType: reservation.vehicle!.vehicleType,
+            checkedInById: staffId,
+            qrCode,
+            sessionCode,
+            ticketGeneratedAt: new Date(),
+            allocationStrategy: 'reservation_qr_checkin',
+            allocationTimeMs: 0,
+            floorId: reservation.slot.floorId,
+            zone: reservation.slot.zone,
+          } as any,
+          include: {
+            slot: { include: { floor: true } },
+          },
+        });
+
+        this.logger.log(
+          `Reservation QR check-in success | reservationId=${reservation.id} sessionId=${session.id} vehicleId=${reservation.vehicleId} slotId=${reservation.slotId} staffId=${staffId}`,
+        );
+
+        return {
+          alreadyCheckedIn: false,
+          message: 'Check-in thanh cong',
+          session: this.mapReservationSessionSummary(session),
+          slot: this.mapSessionSlot(session.slot),
+        };
+      });
+
+      return result;
+    } catch (error) {
+      if (this.isPrismaUniqueConstraintError(error)) {
+        const existingSession = await this.prisma.parkingSession.findUnique({
+          where: { reservationId },
+          include: {
+            slot: { include: { floor: true } },
+          },
+        });
+
+        if (existingSession) {
+          return {
+            alreadyCheckedIn: true,
+            message: 'Da check-in roi',
+            session: this.mapReservationSessionSummary(existingSession),
+            slot: this.mapSessionSlot(existingSession.slot),
+          };
+        }
+      }
+
+      throw error;
+    }
+  }
+
   private buildSessionCode(sessionId: string): string {
     return `PBMS-${sessionId.replace(/-/g, '').slice(0, 10).toUpperCase()}`;
+  }
+
+  private async verifyReservationCheckInToken(
+    token: string,
+  ): Promise<ReservationCheckInTokenPayload> {
+    try {
+      const payload = await this.jwtService.verifyAsync<ReservationCheckInTokenPayload>(token);
+
+      if (
+        payload.typ !== RESERVATION_CHECKIN_TOKEN_TYPE ||
+        !payload.reservationId ||
+        !payload.vehicleId ||
+        !payload.driverId
+      ) {
+        throw new BadRequestException(
+          'QR reservation khong hop le. Vui long dung OCR / walk-in flow.',
+        );
+      }
+
+      return payload;
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'name' in error &&
+        (error as { name?: string }).name === 'TokenExpiredError'
+      ) {
+        throw new ConflictException(
+          'QR reservation da het han. Vui long quet lai QR moi hoac dung OCR / walk-in flow.',
+        );
+      }
+
+      throw new BadRequestException(
+        'QR reservation khong hop le. Vui long dung OCR / walk-in flow.',
+      );
+    }
   }
 
   async issueTicket(sessionId: string, staffId: string) {
@@ -514,6 +823,116 @@ export class SessionsService {
         `Reserved slot for reservation ${reservation.id} is ${reservation.slot.status}`,
       );
     }
+  }
+
+  private assertReservationCanConfirmCheckIn(
+    reservation: {
+      id: string;
+      vehicleId: string | null;
+      vehicle: { id: string; plateNumber: string; vehicleType: VehicleType } | null;
+      slot: { status: string | null } | null;
+      status: string;
+      expiresAt: Date | null;
+    },
+  ): void {
+    if (reservation.status !== 'active') {
+      throw new ConflictException(
+        this.getReservationCheckInFailureMessage(reservation.status),
+      );
+    }
+
+    if (reservation.expiresAt && reservation.expiresAt.getTime() <= Date.now()) {
+      throw new ConflictException(
+        'Reservation da het han. Vui long dung OCR / walk-in flow.',
+      );
+    }
+
+    if (!reservation.vehicleId || !reservation.vehicle) {
+      throw new ConflictException(
+        'Reservation nay chua lien ket xe. Vui long dung OCR / walk-in flow.',
+      );
+    }
+
+    if (!reservation.slot || reservation.slot.status !== 'reserved') {
+      throw new ConflictException(
+        'Cho do khong con o trang thai RESERVED. Vui long dung OCR / walk-in flow.',
+      );
+    }
+  }
+
+  private getReservationCheckInFailureMessage(status: string): string {
+    if (status === 'fulfilled') {
+      return 'Reservation nay da duoc check-in roi.';
+    }
+
+    if (status === 'expired') {
+      return 'Reservation da het han. Vui long dung OCR / walk-in flow.';
+    }
+
+    if (status === 'cancelled') {
+      return 'Reservation da bi huy. Vui long dung OCR / walk-in flow.';
+    }
+
+    return `Reservation khong hop le o trang thai ${status}. Vui long dung OCR / walk-in flow.`;
+  }
+
+  private getReservationPaymentBadge(input: {
+    subscriptionCount: number;
+    paymentStatus: string | null;
+  }): 'Đã thanh toán' | 'Auto-pay' | 'Thanh toán khi ra' {
+    if (input.paymentStatus === 'paid') {
+      return 'Đã thanh toán';
+    }
+
+    if (input.subscriptionCount > 0) {
+      return 'Auto-pay';
+    }
+
+    return 'Thanh toán khi ra';
+  }
+
+  private mapReservationSessionSummary(session: {
+    id: string;
+    reservationId: string | null;
+    vehicleId: string | null;
+    licensePlate: string;
+    vehicleType: VehicleType;
+    checkInTime: Date;
+    status: string;
+    sessionCode: string;
+  }) {
+    return {
+      id: session.id,
+      reservationId: session.reservationId,
+      vehicleId: session.vehicleId,
+      licensePlate: session.licensePlate,
+      vehicleType: session.vehicleType,
+      checkInTime: session.checkInTime,
+      status: session.status,
+      sessionCode: session.sessionCode,
+    };
+  }
+
+  private mapSessionSlot(slot: {
+    id: number;
+    code: string;
+    zone: string;
+    floor: {
+      id: number;
+      floorNumber: number;
+      name: string;
+    };
+  }) {
+    return {
+      id: slot.id,
+      code: slot.code,
+      zone: slot.zone,
+      floor: {
+        id: slot.floor.id,
+        floorNumber: slot.floor.floorNumber,
+        name: slot.floor.name,
+      },
+    };
   }
 
   /**

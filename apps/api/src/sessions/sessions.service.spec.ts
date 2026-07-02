@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, ConflictException, Logger, NotFoundException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { VehicleType, Zone, SlotStatus, SessionStatus, PaymentMethod } from '@prisma/client';
 import { SessionsService } from './sessions.service';
 import { AllocationService } from '../slots/allocation.service';
@@ -85,6 +86,52 @@ const makeSession = (overrides: Partial<{
   ...overrides,
 });
 
+const makeReservationRecord = (overrides: Partial<{
+  id: string;
+  driverId: string;
+  slotId: number;
+  vehicleId: string | null;
+  vehicleType: VehicleType;
+  status: 'active' | 'fulfilled' | 'expired' | 'cancelled';
+  expiresAt: Date;
+  slot: ReturnType<typeof makeSlot>;
+  vehicle: {
+    id: string;
+    plateNumber: string;
+    vehicleType: VehicleType;
+    subscriptions?: Array<{ id: string }>;
+  } | null;
+  driver: { id: string; fullName: string | null; phone: string } | null;
+  session: any;
+}> = {}) => ({
+  id: 'reservation-uuid-1',
+  driverId: 'driver-uuid',
+  slotId: 1,
+  vehicleId: 'vehicle-uuid-1',
+  vehicleType: VehicleType.car,
+  plannedArrivalAt: new Date('2026-07-02T09:00:00.000Z'),
+  createdAt: new Date('2026-07-02T08:00:00.000Z'),
+  status: 'active' as const,
+  expiresAt: new Date('2099-07-02T10:00:00.000Z'),
+  slot: {
+    ...makeSlot({ status: SlotStatus.reserved }),
+    floor: makeFloor(),
+  },
+  vehicle: {
+    id: 'vehicle-uuid-1',
+    plateNumber: '59A12345',
+    vehicleType: VehicleType.car,
+    subscriptions: [],
+  },
+  driver: {
+    id: 'driver-uuid',
+    fullName: 'Driver One',
+    phone: '0900000000',
+  },
+  session: null,
+  ...overrides,
+});
+
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe('SessionsService', () => {
@@ -102,6 +149,7 @@ describe('SessionsService', () => {
   let allocationService: { allocate: jest.Mock };
   let feesService: { calculate: jest.Mock; preview: jest.Mock };
   let vehicleIdentificationService: { identifyForCheckIn: jest.Mock; identifyForCheckout: jest.Mock };
+  let jwtService: { verifyAsync: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
@@ -127,6 +175,9 @@ describe('SessionsService', () => {
       identifyForCheckIn: jest.fn(),
       identifyForCheckout: jest.fn(),
     };
+    jwtService = {
+      verifyAsync: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -135,6 +186,7 @@ describe('SessionsService', () => {
         { provide: AllocationService, useValue: allocationService },
         { provide: FeesService, useValue: feesService },
         { provide: VehicleIdentificationService, useValue: vehicleIdentificationService },
+        { provide: JwtService, useValue: jwtService },
       ],
     }).compile();
 
@@ -847,6 +899,177 @@ describe('SessionsService', () => {
         reservationId: undefined,
         driverPhone: undefined,
         identificationConfidence: undefined,
+      });
+    });
+  });
+
+  describe('reservation QR flow', () => {
+    const staffId = 'staff-uuid';
+
+    it('scans reservation QR without calling OCR/identification services', async () => {
+      jwtService.verifyAsync.mockResolvedValue({
+        typ: 'reservation_checkin',
+        reservationId: 'reservation-uuid-1',
+        vehicleId: 'vehicle-uuid-1',
+        driverId: 'driver-uuid',
+      });
+      prisma.reservation.findUnique.mockResolvedValue(
+        makeReservationRecord({
+          vehicle: {
+            id: 'vehicle-uuid-1',
+            plateNumber: '59A12345',
+            vehicleType: VehicleType.car,
+            subscriptions: [{ id: 'subscription-1' }],
+          },
+        }),
+      );
+
+      const result = await service.scanReservation('signed-token');
+
+      expect(result).toMatchObject({
+        reservationId: 'reservation-uuid-1',
+        vehicleId: 'vehicle-uuid-1',
+        plateNumber: '59A12345',
+        paymentBadge: 'Auto-pay',
+      });
+      expect(vehicleIdentificationService.identifyForCheckIn).not.toHaveBeenCalled();
+      expect(jwtService.verifyAsync).toHaveBeenCalledWith('signed-token');
+    });
+
+    it('rejects expired reservation QR tokens with fallback guidance', async () => {
+      jwtService.verifyAsync.mockRejectedValue({ name: 'TokenExpiredError' });
+
+      await expect(service.scanReservation('expired-token')).rejects.toThrow(
+        'QR reservation da het han',
+      );
+    });
+
+    it('confirms reservation check-in and creates a session with vehicleId + reservationId', async () => {
+      const reservation = makeReservationRecord();
+      let txCalls: { reservationUpdate?: any; slotUpdate?: any; sessionCreate?: any } = {};
+
+      prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          parkingSession: {
+            findUnique: jest.fn().mockResolvedValue(null),
+            findFirst: jest.fn().mockResolvedValue(null),
+            create: jest.fn().mockImplementation((args) => {
+              txCalls.sessionCreate = args;
+              return Promise.resolve(
+                makeSession({
+                  id: args.data.id,
+                  reservationId: reservation.id,
+                  driverId: reservation.driverId,
+                  vehicleId: reservation.vehicleId,
+                  licensePlate: reservation.vehicle!.plateNumber,
+                  vehicleType: reservation.vehicle!.vehicleType,
+                  sessionCode: args.data.sessionCode,
+                  qrCode: args.data.qrCode,
+                  slot: reservation.slot,
+                } as any),
+              );
+            }),
+          },
+          reservation: {
+            findUnique: jest.fn().mockResolvedValue(reservation),
+            update: jest.fn().mockImplementation((args) => {
+              txCalls.reservationUpdate = args;
+              return Promise.resolve({});
+            }),
+          },
+          slot: {
+            update: jest.fn().mockImplementation((args) => {
+              txCalls.slotUpdate = args;
+              return Promise.resolve({});
+            }),
+          },
+          $queryRaw: jest
+            .fn()
+            .mockResolvedValueOnce([{ id: reservation.id }])
+            .mockResolvedValueOnce([{ id: reservation.slotId, status: 'reserved' }]),
+        };
+        return fn(tx);
+      });
+
+      const result = await service.confirmReservationCheckIn(reservation.id, staffId);
+
+      expect(result.alreadyCheckedIn).toBe(false);
+      expect(txCalls.reservationUpdate).toEqual({
+        where: { id: reservation.id },
+        data: { status: 'fulfilled' },
+      });
+      expect(txCalls.slotUpdate).toEqual({
+        where: { id: reservation.slotId },
+        data: { status: 'occupied' },
+      });
+      expect(txCalls.sessionCreate.data).toEqual(
+        expect.objectContaining({
+          reservationId: reservation.id,
+          vehicleId: reservation.vehicleId,
+          licensePlate: reservation.vehicle!.plateNumber,
+        }),
+      );
+    });
+
+    it('blocks confirm when the same vehicle already has another active parking session', async () => {
+      const reservation = makeReservationRecord();
+
+      prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          parkingSession: {
+            findUnique: jest.fn().mockResolvedValue(null),
+            findFirst: jest.fn().mockResolvedValue({
+              id: 'active-session-2',
+              checkInTime: new Date('2026-07-02T08:30:00.000Z'),
+            }),
+          },
+          reservation: {
+            findUnique: jest.fn().mockResolvedValue(reservation),
+          },
+          slot: {
+            update: jest.fn(),
+          },
+          $queryRaw: jest
+            .fn()
+            .mockResolvedValueOnce([{ id: reservation.id }])
+            .mockResolvedValueOnce([{ id: reservation.slotId, status: 'reserved' }]),
+        };
+        return fn(tx);
+      });
+
+      await expect(
+        service.confirmReservationCheckIn(reservation.id, staffId),
+      ).rejects.toThrow('Xe da co phien gui xe dang hoat dong');
+    });
+
+    it('returns an idempotent already-checked-in response on double confirm', async () => {
+      const existingSession = makeSession({
+        reservationId: 'reservation-uuid-1',
+        vehicleId: 'vehicle-uuid-1',
+        slot: {
+          ...makeSlot({ status: SlotStatus.occupied }),
+          floor: makeFloor(),
+        },
+      } as any);
+
+      prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          parkingSession: {
+            findUnique: jest.fn().mockResolvedValue(existingSession),
+          },
+        };
+        return fn(tx);
+      });
+
+      const result = await service.confirmReservationCheckIn('reservation-uuid-1', staffId);
+
+      expect(result).toMatchObject({
+        alreadyCheckedIn: true,
+        message: 'Da check-in roi',
+        session: {
+          reservationId: 'reservation-uuid-1',
+          vehicleId: 'vehicle-uuid-1',
+        },
       });
     });
   });

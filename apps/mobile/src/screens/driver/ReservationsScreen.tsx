@@ -2,7 +2,7 @@ import { useFocusEffect, type CompositeScreenProps } from '@react-navigation/nat
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { getErrorMessage } from '../../api/client';
@@ -13,17 +13,17 @@ import { Screen } from '../../components/Screen';
 import {
   useCancelReservationMutation,
   useCreateReservationMutation,
+  useMyVehiclesQuery,
   useReservationAvailabilityQuery,
   useReservationsQuery,
 } from '../../hooks/useDriverQueries';
 import { colors } from '../../theme/colors';
 import type { DriverTabParamList, RootStackParamList } from '../../navigation/types';
-import type { Reservation, VehicleType } from '../../types/api';
+import type { DriverVehicle, Reservation, VehicleType } from '../../types/api';
 import { formatDateTimeVN } from '../../utils/dateTime';
 import { formatSlotLabel, formatVehicleType } from '../../utils/dashboard';
 import { canCancelReservation, getReservationStatusLabel } from '../../utils/reservationStatus';
 
-const vehicleTypes: VehicleType[] = ['car', 'motorbike'];
 const arrivalTimes = ['08:00', '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00'];
 
 type Props = CompositeScreenProps<
@@ -33,7 +33,8 @@ type Props = CompositeScreenProps<
 
 export function ReservationsScreen({ navigation }: Props) {
   const initialBooking = useMemo(() => getInitialBooking(), []);
-  const [vehicleType, setVehicleType] = useState<VehicleType>('car');
+  const vehiclesQuery = useMyVehiclesQuery();
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
   const [selectedDateKey, setSelectedDateKey] = useState(initialBooking.dateKey);
   const [selectedTime, setSelectedTime] = useState(initialBooking.time);
   const [showReservationHistory, setShowReservationHistory] = useState(false);
@@ -42,14 +43,21 @@ export function ReservationsScreen({ navigation }: Props) {
   const cancelReservation = useCancelReservationMutation();
   const dateOptions = useMemo(() => buildDateOptions(), []);
   const selectedDate = dateOptions.find((option) => option.key === selectedDateKey) ?? dateOptions[0];
+  const vehicles = vehiclesQuery.data ?? [];
+  const selectedVehicle =
+    vehicles.find((vehicle) => vehicle.id === selectedVehicleId) ?? vehicles[0] ?? null;
   const plannedArrivalAt = useMemo(
     () => combineDateAndTime(selectedDate.date, selectedTime),
     [selectedDate.date, selectedTime],
   );
   const plannedArrivalIso = plannedArrivalAt.toISOString();
-  const availabilityQuery = useReservationAvailabilityQuery(vehicleType, plannedArrivalIso);
+  const availabilityQuery = useReservationAvailabilityQuery(
+    selectedVehicle?.vehicleType ?? 'car',
+    plannedArrivalIso,
+  );
   const availability = availabilityQuery.data;
   const isReservationUnavailable =
+    !selectedVehicle ||
     availabilityQuery.isLoading ||
     availabilityQuery.isFetching ||
     !availability?.isAvailable ||
@@ -70,13 +78,28 @@ export function ReservationsScreen({ navigation }: Props) {
 
   useFocusEffect(
     useCallback(() => {
+      void vehiclesQuery.refetch();
       void reservationsQuery.refetch();
-    }, [reservationsQuery.refetch])
+    }, [reservationsQuery.refetch, vehiclesQuery.refetch])
   );
+
+  useEffect(() => {
+    if (!selectedVehicleId && vehicles[0]?.id) {
+      setSelectedVehicleId(vehicles[0].id);
+    }
+  }, [selectedVehicleId, vehicles]);
 
   async function handleCreateReservation() {
     if (plannedArrivalAt.getTime() <= Date.now()) {
       Alert.alert('Invalid arrival time', 'Please choose a future arrival time.');
+      return;
+    }
+
+    if (!selectedVehicle) {
+      Alert.alert(
+        'Linked vehicle required',
+        'Please link a vehicle to your account before creating a reservation.',
+      );
       return;
     }
 
@@ -90,7 +113,7 @@ export function ReservationsScreen({ navigation }: Props) {
 
     try {
       const reservation = await createReservation.mutateAsync({
-        vehicleType,
+        vehicleId: selectedVehicle.id,
         plannedArrivalAt: plannedArrivalIso,
       });
       if (reservation.id) {
@@ -136,20 +159,30 @@ export function ReservationsScreen({ navigation }: Props) {
       <View style={styles.header}>
         <Text style={styles.eyebrow}>Driver Reservation</Text>
         <Text style={styles.title}>Make Reservation</Text>
-        <Text style={styles.subtitle}>Reserve your parking space before arriving.</Text>
+        <Text style={styles.subtitle}>Reserve your parking space with a linked vehicle before arriving.</Text>
       </View>
 
-      <InfoCard title="Select Vehicle Type" subtitle="PBMS will allocate the slot after you reserve.">
-        <View style={styles.vehicleGrid}>
-          {vehicleTypes.map((type) => (
-            <VehicleOption
-              key={type}
-              selected={vehicleType === type}
-              type={type}
-              onPress={() => setVehicleType(type)}
-            />
-          ))}
-        </View>
+      <InfoCard title="Select Linked Vehicle" subtitle="Reservation check-in QR is issued for the vehicle linked to your account.">
+        <QueryState
+          loading={vehiclesQuery.isLoading}
+          error={vehiclesQuery.error}
+          empty={!vehicles.length}
+          emptyMessage="No linked vehicles found. Link a vehicle before reserving a slot."
+          loadingMessage="Loading linked vehicles..."
+          onRetry={() => vehiclesQuery.refetch()}
+        />
+        {vehicles.length > 0 ? (
+          <View style={styles.vehicleGrid}>
+            {vehicles.map((vehicle) => (
+              <VehicleOption
+                key={vehicle.id}
+                selected={selectedVehicle?.id === vehicle.id}
+                vehicle={vehicle}
+                onPress={() => setSelectedVehicleId(vehicle.id)}
+              />
+            ))}
+          </View>
+        ) : null}
       </InfoCard>
 
       <InfoCard title="Select Arrival Date" subtitle="Choose a planned arrival day within the next 7 days.">
@@ -189,7 +222,7 @@ export function ReservationsScreen({ navigation }: Props) {
 
       <InfoCard
         title={`Available at ${selectedTime}`}
-        subtitle={`${formatVehicleType(vehicleType)} availability for your selected arrival time.`}
+        subtitle={`${formatVehicleType(selectedVehicle?.vehicleType ?? 'car')} availability for your selected arrival time.`}
       >
         <QueryState
           loading={availabilityQuery.isLoading || availabilityQuery.isFetching}
@@ -202,8 +235,8 @@ export function ReservationsScreen({ navigation }: Props) {
         {availability ? (
           <View style={styles.availabilityGrid}>
             <AvailabilityItem
-              icon={vehicleType === 'car' ? 'car-outline' : 'bicycle-outline'}
-              label={formatVehicleType(vehicleType)}
+              icon={(selectedVehicle?.vehicleType ?? 'car') === 'car' ? 'car-outline' : 'bicycle-outline'}
+              label={formatVehicleType(selectedVehicle?.vehicleType ?? 'car')}
               value={`${availability.availableCount} slots available`}
             />
             <View style={styles.availabilityMeta}>
@@ -233,7 +266,7 @@ export function ReservationsScreen({ navigation }: Props) {
         <View style={styles.smartCopy}>
           <Text style={styles.smartTitle}>Smart slot allocation</Text>
           <Text style={styles.smartText}>
-            PBMS will automatically assign the most suitable slot based on availability and vehicle type.
+            PBMS will automatically assign the most suitable slot based on your linked vehicle and availability.
           </Text>
           <Text style={styles.smartText}>You do not need to choose a slot manually.</Text>
         </View>
@@ -241,7 +274,8 @@ export function ReservationsScreen({ navigation }: Props) {
 
       <InfoCard title="Reservation Summary" subtitle="Review the request before submitting.">
         <View style={styles.summaryRows}>
-          <SummaryRow label="Vehicle type" value={formatVehicleType(vehicleType)} />
+          <SummaryRow label="Vehicle plate" value={selectedVehicle?.plateNumber ?? 'Link vehicle required'} />
+          <SummaryRow label="Vehicle type" value={formatVehicleType(selectedVehicle?.vehicleType ?? 'car')} />
           <SummaryRow
             label="Planned arrival"
             value={formatDateTimeVN(plannedArrivalAt)}
@@ -414,11 +448,11 @@ function TimeChip({
 
 function VehicleOption({
   selected,
-  type,
+  vehicle,
   onPress,
 }: {
   selected: boolean;
-  type: VehicleType;
+  vehicle: DriverVehicle;
   onPress: () => void;
 }) {
   return (
@@ -434,16 +468,16 @@ function VehicleOption({
     >
       <View style={[styles.vehicleIcon, selected && styles.vehicleIconActive]}>
         <Ionicons
-          name={type === 'car' ? 'car-sport-outline' : 'bicycle-outline'}
+          name={vehicle.vehicleType === 'car' ? 'car-sport-outline' : 'bicycle-outline'}
           size={26}
           color={selected ? '#ffffff' : '#0b5ed7'}
         />
       </View>
       <Text style={[styles.vehicleLabel, selected && styles.vehicleLabelActive]}>
-        {formatVehicleType(type)}
+        {vehicle.plateNumber}
       </Text>
       <Text style={[styles.vehicleHint, selected && styles.vehicleHintActive]}>
-        {type === 'car' ? 'Standard car parking' : 'Fast motorbike parking'}
+        {formatVehicleType(vehicle.vehicleType)}
       </Text>
     </Pressable>
   );
@@ -509,7 +543,7 @@ function ReservationRow({
             />
           </View>
           <View style={styles.rowText}>
-            <Text style={styles.rowTitle}>{formatVehicleType(reservation.vehicleType)}</Text>
+            <Text style={styles.rowTitle}>{reservation.licensePlate ?? reservation.vehicle?.plateNumber ?? formatVehicleType(reservation.vehicleType)}</Text>
             <Text style={styles.muted}>Expires {formatDate(reservation.expiresAt)}</Text>
           </View>
           <View style={[styles.statusBadge, isActive && styles.statusBadgeActive]}>
@@ -520,6 +554,9 @@ function ReservationRow({
         </View>
 
         <View style={styles.rowMeta}>
+          <Text style={styles.metaText}>
+            {formatVehicleType(reservation.vehicleType)}
+          </Text>
           {reservation.plannedArrivalAt ? (
             <Text style={styles.metaText}>
               Arrival {formatDate(reservation.plannedArrivalAt)}

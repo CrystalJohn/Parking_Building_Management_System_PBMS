@@ -13,6 +13,7 @@ import {
   VehicleType,
   Zone,
 } from '@prisma/client';
+import { JwtService } from '@nestjs/jwt';
 import { ReservationsService } from './reservations.service';
 import { AllocationService } from '../slots/allocation.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -51,6 +52,7 @@ const makeReservation = (overrides: Partial<{
   id: string;
   driverId: string;
   slotId: number;
+  vehicleId: string | null;
   vehicleType: VehicleType;
   plannedArrivalAt: Date | null;
   status: ReservationStatus;
@@ -58,10 +60,12 @@ const makeReservation = (overrides: Partial<{
   expiresAt: Date;
   slot: ReturnType<typeof makeSlot>;
   driver: { fullName: string | null; phone: string | null };
+  vehicle: { id: string; plateNumber: string; vehicleType: VehicleType } | null;
 }> = {}) => ({
   id: 'reservation-uuid-1',
   driverId: 'driver-uuid',
   slotId: 1,
+  vehicleId: 'vehicle-uuid-1',
   vehicleType: VehicleType.car,
   plannedArrivalAt: new Date('2026-06-29T03:00:00.000Z'),
   status: ReservationStatus.active,
@@ -69,16 +73,21 @@ const makeReservation = (overrides: Partial<{
   expiresAt: new Date('2026-06-29T04:00:00.000Z'),
   slot: makeSlot(),
   driver: { fullName: 'Driver One', phone: '0900000000' },
+  vehicle: {
+    id: 'vehicle-uuid-1',
+    plateNumber: '59A12345',
+    vehicleType: VehicleType.car,
+  },
   ...overrides,
 });
 
 const makeCreateDto = (
   overrides: Partial<{
-    vehicleType: VehicleType;
+    vehicleId: string;
     plannedArrivalAt: string;
   }> = {},
 ) => ({
-  vehicleType: VehicleType.car,
+  vehicleId: 'vehicle-uuid-1',
   plannedArrivalAt: '2026-06-29T03:00:00.000Z',
   ...overrides,
 });
@@ -87,6 +96,7 @@ describe('ReservationsService', () => {
   let service: ReservationsService;
   let prisma: {
     user: { findUnique: jest.Mock };
+    vehicle: { findFirst: jest.Mock };
     reservation: {
       findUnique: jest.Mock;
       findMany: jest.Mock;
@@ -98,6 +108,7 @@ describe('ReservationsService', () => {
     $transaction: jest.Mock;
   };
   let allocationService: { allocate: jest.Mock };
+  let jwtService: { signAsync: jest.Mock };
 
   function makeTx(overrides: Record<string, unknown> = {}) {
     return {
@@ -110,6 +121,7 @@ describe('ReservationsService', () => {
               plannedArrivalAt: args.data.plannedArrivalAt,
               expiresAt: args.data.expiresAt,
               slotId: args.data.slotId,
+              vehicleId: args.data.vehicleId,
             }),
           ),
         ),
@@ -133,6 +145,7 @@ describe('ReservationsService', () => {
   beforeEach(async () => {
     prisma = {
       user: { findUnique: jest.fn() },
+      vehicle: { findFirst: jest.fn() },
       reservation: {
         findUnique: jest.fn(),
         findMany: jest.fn(),
@@ -145,12 +158,14 @@ describe('ReservationsService', () => {
     };
 
     allocationService = { allocate: jest.fn() };
+    jwtService = { signAsync: jest.fn().mockResolvedValue('signed-token') };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ReservationsService,
         { provide: PrismaService, useValue: prisma },
         { provide: AllocationService, useValue: allocationService },
+        { provide: JwtService, useValue: jwtService },
       ],
     }).compile();
 
@@ -159,6 +174,11 @@ describe('ReservationsService', () => {
       id: 'driver-uuid',
       role: 'driver',
       isActive: true,
+    });
+    prisma.vehicle.findFirst.mockResolvedValue({
+      id: 'vehicle-uuid-1',
+      plateNumber: '59A12345',
+      vehicleType: VehicleType.car,
     });
     allocationService.allocate.mockResolvedValue({
       slot: makeSlot(),
@@ -359,7 +379,15 @@ describe('ReservationsService', () => {
 
       const result = await service.findMyReservations('driver-uuid');
 
-      expect(result).toEqual(reservations);
+      expect(result).toEqual(
+        reservations.map((reservation) =>
+          expect.objectContaining({
+            id: reservation.id,
+            vehicleId: reservation.vehicleId,
+            licensePlate: reservation.vehicle?.plateNumber ?? null,
+          }),
+        ),
+      );
       expect(prisma.reservation.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { driverId: 'driver-uuid' },
@@ -376,7 +404,13 @@ describe('ReservationsService', () => {
 
       const result = await service.findOne('reservation-uuid-1', 'driver-uuid');
 
-      expect(result).toEqual(reservation);
+      expect(result).toEqual(
+        expect.objectContaining({
+          id: reservation.id,
+          vehicleId: reservation.vehicleId,
+          licensePlate: reservation.vehicle?.plateNumber ?? null,
+        }),
+      );
     });
 
     it('throws NotFoundException when reservation does not exist', async () => {

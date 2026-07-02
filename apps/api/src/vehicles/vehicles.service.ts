@@ -89,6 +89,59 @@ export interface LookupPlateResult {
 export class VehiclesService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async findMyVehicles(driverId: string) {
+    const now = new Date();
+
+    const vehicles = await this.prisma.vehicle.findMany({
+      where: {
+        isActive: true,
+        vehicleUsers: {
+          some: {
+            userId: driverId,
+          },
+        },
+      },
+      include: {
+        vehicleUsers: {
+          where: {
+            userId: driverId,
+          },
+          select: {
+            role: true,
+            createdAt: true,
+          },
+          orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
+        },
+        subscriptions: {
+          where: {
+            validFrom: { lte: now },
+            validTo: { gte: now },
+          },
+          orderBy: { validTo: 'desc' },
+          take: 1,
+        },
+      },
+      orderBy: [{ vehicleType: 'asc' }, { plateNumber: 'asc' }],
+    });
+
+    return vehicles.map((vehicle) => ({
+      id: vehicle.id,
+      plateNumber: vehicle.plateNumber,
+      vehicleType: vehicle.vehicleType,
+      isActive: vehicle.isActive,
+      registeredAt: vehicle.registeredAt,
+      linkedRole: vehicle.vehicleUsers[0]?.role ?? VehicleUserRole.driver,
+      activeSubscription: vehicle.subscriptions[0]
+        ? {
+            id: vehicle.subscriptions[0].id,
+            planType: vehicle.subscriptions[0].planType,
+            validFrom: vehicle.subscriptions[0].validFrom,
+            validTo: vehicle.subscriptions[0].validTo,
+          }
+        : null,
+    }));
+  }
+
   async linkUser(vehicleId: string, dto: LinkVehicleUserDto) {
     const role = dto.role ?? VehicleUserRole.driver;
 

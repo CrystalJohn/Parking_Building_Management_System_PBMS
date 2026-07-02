@@ -11,7 +11,6 @@ import {
   Keyboard,
   Loader2,
   Printer,
-  QrCode,
   RotateCcw,
   ScanLine,
   ShieldCheck,
@@ -19,7 +18,6 @@ import {
   UserRound,
   Users,
 } from 'lucide-react'
-import { QRScanner } from '../../components/qr-scanner/QRScanner'
 
 import { formatDateTimeVN } from '../../lib/date-time'
 import { useToasts } from '../../lib/use-toasts'
@@ -79,7 +77,6 @@ type GateStatus =
   | 'TICKET_ISSUED'
   | 'ERROR'
 
-type CheckInServiceMode = 'walk-in' | 'reservation'
 type PlateLookupStatus = 'idle' | 'loading' | 'success' | 'error'
 type TicketStage = 'idle' | 'confirmed' | 'printed' | 'issued'
 
@@ -104,44 +101,35 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
   const [plateLookup, setPlateLookup] = useState<VehicleLookupResponse | null>(null)
   const [plateLookupStatus, setPlateLookupStatus] = useState<PlateLookupStatus>('idle')
   const [plateLookupError, setPlateLookupError] = useState<string | null>(null)
-  const [serviceMode, setServiceMode] = useState<CheckInServiceMode>('walk-in')
-  const [reservationId, setReservationId] = useState('')
   const [licensePlate, setLicensePlate] = useState('')
   const [vehicleType, setVehicleType] = useState<VehicleType>('car')
   const [vehicleTypeOverride, setVehicleTypeOverride] = useState(false)
   const [ticket, setTicket] = useState<SessionTicket | null>(null)
   const [ticketStage, setTicketStage] = useState<TicketStage>('idle')
   const [issuedAt, setIssuedAt] = useState<string | null>(null)
-  const [showReservationField, setShowReservationField] = useState(false)
   const [resetDialogOpen, setResetDialogOpen] = useState(false)
-  const [showReservationScanner, setShowReservationScanner] = useState(false)
   const [now, setNow] = useState(new Date())
   const [checkInCount, setCheckInCount] = useState(0)
 
 
-  const reservationCode = reservationId.trim()
   const accessMode = plateLookup?.mode ?? 'WALK_IN'
   const hasLookupResult = plateLookupStatus === 'success' && Boolean(plateLookup)
   const canShowConfirm = hasLookupResult && Boolean(licensePlate.trim())
   const hasDraftData =
     Boolean(licensePlate.trim()) ||
-    Boolean(reservationCode) ||
     Boolean(capturedImageUrl) ||
     Boolean(ocrResult) ||
     Boolean(plateLookup) ||
     Boolean(ticket)
   const checkInMode =
-    serviceMode === 'reservation'
-      ? 'Reservation check-in'
-      : accessMode === 'SUBSCRIBER'
-        ? 'Subscriber vehicle'
-        : accessMode === 'REGISTERED'
-          ? 'Registered vehicle'
-          : 'Walk-in / no reservation'
+    accessMode === 'SUBSCRIBER'
+      ? 'Subscriber vehicle'
+      : accessMode === 'REGISTERED'
+        ? 'Registered vehicle'
+        : 'Walk-in / no reservation'
   const canConfirm =
     Boolean(licensePlate.trim()) &&
     hasLookupResult &&
-    (serviceMode === 'walk-in' || Boolean(reservationCode)) &&
     status !== 'OCR_PROCESSING' &&
     status !== 'CHECKING_IN'
   const canPrint = Boolean(ticket) && (status === 'TICKET_READY' || status === 'PRINT_DIALOG_OPENED')
@@ -203,17 +191,13 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
     setPlateLookup(null)
     setPlateLookupStatus('idle')
     setPlateLookupError(null)
-    setServiceMode('walk-in')
-    setReservationId('')
     setLicensePlate('')
     setVehicleType('car')
     setVehicleTypeOverride(false)
     setTicket(null)
     setTicketStage('idle')
     setIssuedAt(null)
-    setShowReservationField(false)
     setResetDialogOpen(false)
-    setShowReservationScanner(false)
   }, [])
 
   const requestReset = useCallback(() => {
@@ -224,11 +208,6 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
 
     reset()
   }, [hasDraftData, reset])
-
-  const handleReservationIdChange = useCallback((value: string) => {
-    setReservationId(value)
-    setServiceMode(value.trim() ? 'reservation' : 'walk-in')
-  }, [])
 
   const handleLicensePlateChange = useCallback((value: string) => {
     setLicensePlate(value)
@@ -267,20 +246,6 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
       setVehicleTypeOverride(true)
     }
   }, [])
-
-  const handleReservationQrScanned = useCallback((decodedText: string) => {
-    const code = decodedText.trim()
-    setShowReservationScanner(false)
-    if (!code) {
-      toasts.showError('Invalid reservation QR')
-      return
-    }
-
-    setShowReservationField(true)
-    setServiceMode('reservation')
-    setReservationId(code)
-    toasts.showSuccess('Reservation QR received')
-  }, [toasts])
 
   const captureAndRecognize = useCallback(async () => {
     if (status === 'OCR_PROCESSING' || status === 'CHECKING_IN') return
@@ -326,7 +291,6 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
         cameraId: CAMERA_ID,
         buildingName: BUILDING_NAME,
         gateName: GATE_NAME,
-        reservationId: serviceMode === 'reservation' ? reservationCode || undefined : undefined,
       })
       if (requestId !== ocrRequestIdRef.current) return
 
@@ -350,15 +314,9 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
       setStatus('OCR_FAILED')
       toasts.showError(extractErrorMessage(error))
     }
-  }, [lookupConfirmedPlate, reservationCode, serviceMode, status, toasts])
+  }, [lookupConfirmedPlate, status, toasts])
 
   const confirmCheckIn = useCallback(async () => {
-    if (serviceMode === 'reservation' && !reservationCode) {
-      setStatus('REVIEW_REQUIRED')
-      toasts.showError('Please scan or enter the Reservation QR before reservation check-in')
-      return
-    }
-
     if (!licensePlate.trim()) {
       setStatus('REVIEW_REQUIRED')
       toasts.showError('Please confirm or enter a license plate before check-in')
@@ -376,20 +334,11 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
       const response = await checkIn({
         licensePlate: licensePlate.trim().toUpperCase(),
         vehicleType,
-        reservationId: serviceMode === 'reservation' ? reservationCode : undefined,
         ocrEvidenceId: ocrResult?.ocrEvidenceId,
-        identificationMethod: serviceMode === 'reservation'
-          ? 'RESERVATION_QR'
-          : ocrResult?.ocrEvidenceId
-            ? 'OCR'
-            : 'MANUAL_PLATE',
+        identificationMethod: ocrResult?.ocrEvidenceId ? 'OCR' : 'MANUAL_PLATE',
         identificationConfidence: ocrResult?.confidence ?? undefined,
       })
-      toasts.showSuccess(
-        serviceMode === 'reservation'
-          ? `Check-in successful. Reservation fulfilled. Slot ${response.slot.code} assigned.`
-          : `Check-in successful. Slot ${response.slot.code} assigned. Ticket generated.`,
-      )
+      toasts.showSuccess(`Check-in successful. Slot ${response.slot.code} assigned. Ticket generated.`)
 
       if (response.ticket) {
         setTicket(normalizeSessionTicket(response.ticket, response.slot))
@@ -404,7 +353,7 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
       setStatus('ERROR')
       toasts.showError(extractErrorMessage(error))
     }
-  }, [hasLookupResult, licensePlate, ocrResult, reservationCode, serviceMode, toasts, vehicleType])
+  }, [hasLookupResult, licensePlate, ocrResult, toasts, vehicleType])
 
   const printTicket = useCallback(() => {
     if (!ticket) return
@@ -499,7 +448,7 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
                     <span className="size-2 rounded-full bg-emerald-500" />
                     <span>Live</span>
                     <span className="text-slate-500 dark:text-slate-400">/</span>
-                    <span>{serviceMode === 'reservation' ? 'Reservation' : formatLookupMode(accessMode)}</span>
+                    <span>{formatLookupMode(accessMode)}</span>
                   </div>
                   <div className="flex min-w-0 items-center gap-2">
                     <Badge variant="secondary" className="border border-white/80 bg-white/95 text-slate-950 shadow-lg backdrop-blur-md dark:border-white/15 dark:bg-slate-950/90 dark:text-slate-50">
@@ -646,40 +595,6 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
                   </div>
                 </Field>
 
-                {!showReservationField ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => setShowReservationField(true)}
-                    className="h-11 px-2 text-muted-foreground"
-                  >
-                    <QrCode className="size-4" />
-                    Have reservation code?
-                  </Button>
-                ) : (
-                  <div className="animate-in fade-in-0 slide-in-from-top-1 duration-200">
-                    <Field label="Reservation ID / QR" hint="Optional">
-                      <div className="flex gap-2">
-                        <Input
-                          className="h-11 font-mono text-sm"
-                          value={reservationId}
-                          onChange={(event) => handleReservationIdChange(event.target.value)}
-                          placeholder="Scan or paste UUID/code"
-                        />
-                        <Button
-                          type="button"
-                          onClick={() => setShowReservationScanner(true)}
-                          variant="outline"
-                          className="h-11 shrink-0"
-                        >
-                          <QrCode className="size-4" />
-                          Scan
-                        </Button>
-                      </div>
-                    </Field>
-                  </div>
-                )}
-
                 {plateLookupStatus === 'error' && (
                   <p className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs font-medium text-destructive">
                     {plateLookupError ?? 'Unable to lookup this plate.'}
@@ -694,11 +609,6 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
                       <div className="min-w-0 space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <LookupModeBadge mode={accessMode} loading={false} />
-                          {serviceMode === 'reservation' && (
-                            <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
-                              Reservation QR
-                            </Badge>
-                          )}
                         </div>
                         <p className="text-sm font-medium text-foreground">
                           {getLookupSummary(plateLookup, plateLookupStatus)}
@@ -785,11 +695,7 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
                     ) : (
                       <CheckCircle2 className="size-4" />
                     )}
-                    {status === 'CHECKING_IN'
-                      ? 'Checking in...'
-                      : serviceMode === 'reservation'
-                        ? 'Confirm Reservation Check-in'
-                        : 'Confirm Walk-in Check-in'}
+                    {status === 'CHECKING_IN' ? 'Checking in...' : 'Confirm Walk-in Check-in'}
                   </Button>
                 </div>
               )}
@@ -825,19 +731,6 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {showReservationScanner && (
-        <QRScanner
-          title="Scan Reservation QR"
-          instructions="Scan the Reservation QR on the driver's mobile. QR payload is the reservation ID."
-          manualToggleLabel="Cannot scan? Enter Reservation ID manually"
-          manualInputLabel="Reservation ID / Code"
-          manualInputPlaceholder="Reservation UUID/code"
-          onScan={handleReservationQrScanned}
-          onClose={() => setShowReservationScanner(false)}
-          onManualInput={handleReservationQrScanned}
-        />
-      )}
     </div>
   )
 }

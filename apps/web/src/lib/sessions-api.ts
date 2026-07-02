@@ -51,6 +51,36 @@ export interface CheckInResponse {
   ticket?: SessionTicket
 }
 
+export interface ReservationScanResponse {
+  reservationId: string
+  vehicleId: string
+  plateNumber: string
+  vehicleType: VehicleType
+  slotId: number
+  slotCode: string
+  slotLabel: string
+  driverName: string
+  paymentBadge: 'Đã thanh toán' | 'Auto-pay' | 'Thanh toán khi ra'
+  expiresAt: string
+  fallbackAction: 'USE_OCR_WALKIN'
+}
+
+export interface ConfirmReservationCheckInResponse {
+  alreadyCheckedIn: boolean
+  message: string
+  session: {
+    id: string
+    reservationId: string | null
+    vehicleId: string | null
+    licensePlate: string
+    vehicleType: VehicleType
+    checkInTime: string
+    status: SessionStatus
+    sessionCode: string
+  }
+  slot: AssignedSlot
+}
+
 export interface SessionTicket {
   sessionId: string
   sessionCode: string
@@ -389,6 +419,21 @@ function mapBackendCheckout(data: BackendCheckOutResponse): CheckoutWorkflowResp
 
 export async function checkIn(request: CheckInRequest): Promise<CheckInResponse> {
   const { data } = await api.post<CheckInResponse>('/checkin/confirm', request)
+  return data
+}
+
+export async function scanReservationCheckIn(token: string): Promise<ReservationScanResponse> {
+  const { data } = await api.post<ReservationScanResponse>('/checkin/scan-reservation', { token })
+  return data
+}
+
+export async function confirmReservationCheckIn(
+  reservationId: string,
+): Promise<ConfirmReservationCheckInResponse> {
+  const { data } = await api.post<ConfirmReservationCheckInResponse>(
+    '/checkin/confirm-reservation',
+    { reservationId },
+  )
   return data
 }
 

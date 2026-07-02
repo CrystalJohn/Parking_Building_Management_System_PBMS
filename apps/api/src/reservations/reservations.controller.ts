@@ -60,6 +60,16 @@ export class ReservationsController {
     return this.reservationsService.findOne(id, driverId);
   }
 
+  @Get(':id/checkin-qr')
+  @UseGuards(RolesGuard)
+  @Roles(Role.driver)
+  getCheckInQr(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') driverId: string,
+  ) {
+    return this.reservationsService.getCheckInQr(id, driverId);
+  }
+
   /**
    * DELETE /reservations/:id
    * 18.4: Driver only — cancel a reservation.

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { SlotsModule } from '../slots/slots.module';
 import { FeesModule } from '../fees/fees.module';
@@ -10,6 +11,7 @@ import { SessionsService } from './sessions.service';
 
 @Module({
   imports: [
+    AuthModule,
     PrismaModule,
     SlotsModule,    // provides AllocationService
     FeesModule,     // provides FeesService for check-out fee calculation

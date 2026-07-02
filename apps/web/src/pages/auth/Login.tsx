@@ -10,7 +10,6 @@ import {
 } from 'lucide-react'
 import api from '../../lib/api'
 import { getToken, getUser, saveAuth, type AuthUser } from '../../lib/auth'
-import { ToastContainer } from '../../components/ui/Toast'
 import { useToasts } from '../../lib/use-toasts'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -258,8 +257,6 @@ export default function Login() {
           </div>
         </div>
       </div>
-
-      <ToastContainer toasts={toasts.toasts} onDismiss={toasts.dismiss} />
     </div>
   )
 }

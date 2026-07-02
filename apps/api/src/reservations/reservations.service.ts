@@ -6,10 +6,17 @@ import {
   NotFoundException,
   Logger,
 } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Prisma, VehicleType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AllocationService } from '../slots/allocation.service';
+import {
+  RESERVATION_CHECKIN_TOKEN_REFRESH_MS,
+  RESERVATION_CHECKIN_TOKEN_TTL_SECONDS,
+  RESERVATION_CHECKIN_TOKEN_TYPE,
+  type ReservationCheckInTokenPayload,
+} from './reservation-checkin-qr';
 import { CreateReservationDto } from './dto';
 
 type PrismaLike = PrismaService | Prisma.TransactionClient;
@@ -25,6 +32,7 @@ export class ReservationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly allocationService: AllocationService,
+    private readonly jwtService: JwtService,
   ) {}
 
   /**
@@ -49,22 +57,49 @@ export class ReservationsService {
       );
     }
 
-    const reservation = await this.mapReservationConflict(dto.vehicleType, async () =>
+    const vehicle = await this.prisma.vehicle.findFirst({
+      where: {
+        id: dto.vehicleId,
+        isActive: true,
+        vehicleUsers: {
+          some: {
+            userId: driverId,
+          },
+        },
+      },
+      select: {
+        id: true,
+        plateNumber: true,
+        vehicleType: true,
+      },
+    });
+
+    if (!vehicle) {
+      throw new ForbiddenException(
+        'Selected vehicle is not linked to your account or is inactive.',
+      );
+    }
+
+    const reservation = await this.mapReservationConflict(vehicle.vehicleType, async () =>
       this.runWithSerializableRetry(async () =>
         this.prisma.$transaction(
           async (tx) => {
             const existingActive = await tx.reservation.findFirst({
               where: {
-                driverId,
-                vehicleType: dto.vehicleType,
                 status: 'active',
+                OR: [
+                  { driverId },
+                  { vehicleId: vehicle.id },
+                ],
               },
-              select: { id: true },
+              select: { id: true, driverId: true, vehicleId: true },
             });
 
             if (existingActive) {
               throw new ConflictException(
-                `You already have an active ${dto.vehicleType} reservation. Cancel it before creating a new one.`,
+                existingActive.vehicleId === vehicle.id
+                  ? `Vehicle ${vehicle.plateNumber} already has an active reservation.`
+                  : 'You already have an active reservation. Cancel it before creating a new one.',
               );
             }
 
@@ -77,7 +112,7 @@ export class ReservationsService {
               attempt++
             ) {
               const { slot } = await this.allocationService.allocate(
-                dto.vehicleType,
+                vehicle.vehicleType,
                 undefined,
                 tx,
                 excludedSlotIds,
@@ -102,13 +137,15 @@ export class ReservationsService {
                 data: {
                   driverId,
                   slotId: slot.id,
-                  vehicleType: dto.vehicleType,
+                  vehicleId: vehicle.id,
+                  vehicleType: vehicle.vehicleType,
                   plannedArrivalAt,
                   expiresAt,
                 },
                 include: {
                   driver: { select: { fullName: true, phone: true } },
                   slot: { include: { floor: true } },
+                  vehicle: { select: { id: true, plateNumber: true, vehicleType: true } },
                 },
               });
             }
@@ -121,18 +158,27 @@ export class ReservationsService {
     );
 
     this.logger.log(
-      `Reservation created | reservationId=${reservation.id} driverId=${driverId} vehicleType=${reservation.vehicleType} slotId=${reservation.slotId} slotCode=${reservation.slot.code} expiresAt=${reservation.expiresAt.toISOString()}`,
+      `Reservation created | reservationId=${reservation.id} driverId=${driverId} vehicleId=${reservation.vehicleId ?? 'unknown'} plate=${reservation.vehicle?.plateNumber ?? 'unknown'} vehicleType=${reservation.vehicleType} slotId=${reservation.slotId} slotCode=${reservation.slot.code} expiresAt=${reservation.expiresAt.toISOString()}`,
     );
 
     return {
       reservation: {
         id: reservation.id,
+        vehicleId: reservation.vehicleId,
         vehicleType: reservation.vehicleType,
+        licensePlate: reservation.vehicle?.plateNumber ?? null,
         plannedArrivalAt: reservation.plannedArrivalAt,
         status: reservation.status,
         createdAt: reservation.createdAt,
         expiresAt: reservation.expiresAt,
         driver: reservation.driver,
+        vehicle: reservation.vehicle
+          ? {
+              id: reservation.vehicle.id,
+              plateNumber: reservation.vehicle.plateNumber,
+              vehicleType: reservation.vehicle.vehicleType,
+            }
+          : null,
       },
       slot: {
         id: reservation.slot.id,
@@ -148,14 +194,17 @@ export class ReservationsService {
   }
 
   async findMyReservations(driverId: string) {
-    return this.prisma.reservation.findMany({
+    const reservations = await this.prisma.reservation.findMany({
       where: { driverId },
       include: {
         driver: { select: { fullName: true, phone: true } },
         slot: { include: { floor: true } },
+        vehicle: { select: { id: true, plateNumber: true, vehicleType: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    return reservations.map((reservation) => this.mapReservationDetail(reservation));
   }
 
   async findOne(reservationId: string, driverId: string) {
@@ -164,6 +213,7 @@ export class ReservationsService {
       include: {
         driver: { select: { fullName: true, phone: true } },
         slot: { include: { floor: true } },
+        vehicle: { select: { id: true, plateNumber: true, vehicleType: true } },
       },
     });
 
@@ -175,7 +225,78 @@ export class ReservationsService {
       throw new ForbiddenException('You can only view your own reservations');
     }
 
-    return reservation;
+    return this.mapReservationDetail(reservation);
+  }
+
+  async getCheckInQr(reservationId: string, driverId: string) {
+    const reservation = await this.prisma.reservation.findUnique({
+      where: { id: reservationId },
+      include: {
+        slot: { include: { floor: true } },
+        vehicle: { select: { id: true, plateNumber: true, vehicleType: true } },
+      },
+    });
+
+    if (!reservation) {
+      throw new NotFoundException(`Reservation not found: ${reservationId}`);
+    }
+
+    if (reservation.driverId !== driverId) {
+      throw new ForbiddenException('You can only access your own reservation QR.');
+    }
+
+    if (reservation.status !== 'active') {
+      throw new ConflictException(
+        `Reservation is ${reservation.status}. QR is only available while active.`,
+      );
+    }
+
+    if (reservation.expiresAt.getTime() <= Date.now()) {
+      throw new ConflictException('Reservation has expired. QR is no longer valid.');
+    }
+
+    if (!reservation.vehicleId || !reservation.vehicle) {
+      throw new ConflictException(
+        'This reservation is missing a linked vehicle. Please use OCR / walk-in fallback.',
+      );
+    }
+
+    const tokenPayload: ReservationCheckInTokenPayload = {
+      typ: RESERVATION_CHECKIN_TOKEN_TYPE,
+      reservationId: reservation.id,
+      vehicleId: reservation.vehicleId,
+      driverId,
+    };
+    const issuedAt = new Date();
+    const expiresAt = new Date(
+      issuedAt.getTime() + RESERVATION_CHECKIN_TOKEN_TTL_SECONDS * 1000,
+    );
+    const token = await this.jwtService.signAsync(tokenPayload, {
+      expiresIn: `${RESERVATION_CHECKIN_TOKEN_TTL_SECONDS}s`,
+    });
+
+    return {
+      reservationId: reservation.id,
+      token,
+      issuedAt,
+      expiresAt,
+      refreshAfterMs: RESERVATION_CHECKIN_TOKEN_REFRESH_MS,
+      vehicle: {
+        id: reservation.vehicle.id,
+        plateNumber: reservation.vehicle.plateNumber,
+        vehicleType: reservation.vehicle.vehicleType,
+      },
+      slot: {
+        id: reservation.slot.id,
+        code: reservation.slot.code,
+        zone: reservation.slot.zone,
+        floor: {
+          id: reservation.slot.floor.id,
+          floorNumber: reservation.slot.floor.floorNumber,
+          name: reservation.slot.floor.name,
+        },
+      },
+    };
   }
 
   async cancel(reservationId: string, driverId: string) {
@@ -342,6 +463,39 @@ export class ReservationsService {
     }
 
     return plannedArrivalAt;
+  }
+
+  private mapReservationDetail(reservation: {
+    id: string;
+    driverId: string;
+    slotId: number;
+    vehicleId: string | null;
+    vehicleType: VehicleType;
+    plannedArrivalAt: Date | null;
+    status: string;
+    createdAt: Date;
+    expiresAt: Date;
+    driver?: { fullName: string | null; phone: string | null } | null;
+    slot?: {
+      id: number;
+      code: string;
+      zone: string;
+      floorId?: number;
+      floor?: { id: number; floorNumber: number; name: string } | null;
+    } | null;
+    vehicle?: { id: string; plateNumber: string; vehicleType: VehicleType } | null;
+  }) {
+    return {
+      ...reservation,
+      licensePlate: reservation.vehicle?.plateNumber ?? null,
+      vehicle: reservation.vehicle
+        ? {
+            id: reservation.vehicle.id,
+            plateNumber: reservation.vehicle.plateNumber,
+            vehicleType: reservation.vehicle.vehicleType,
+          }
+        : null,
+    };
   }
 }
 

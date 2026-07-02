@@ -18,7 +18,6 @@ import {
   type AdminSummary,
 } from '../../lib/admin-api'
 import { AdminPageHeader, EmptyState, LoadingRows, StatCard, StatusBadge } from './admin-ui'
-import { ToastContainer } from '../../components/ui/Toast'
 import { useToasts } from '../../lib/use-toasts'
 
 export default function AdminDashboard() {
@@ -302,7 +301,6 @@ export default function AdminDashboard() {
           </section>
         </>
       ) : null}
-      <ToastContainer toasts={toasts.toasts} onDismiss={toasts.dismiss} />
     </div>
   )
 }

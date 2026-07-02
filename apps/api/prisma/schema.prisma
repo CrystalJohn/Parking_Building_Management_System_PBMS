@@ -115,6 +115,7 @@ model Vehicle {
   vehicleUsers  VehicleUser[]
   subscriptions Subscription[]
   sessions      ParkingSession[]
+  reservations  Reservation[]
 
   @@index([vehicleType, isActive], map: "idx_vehicle_type_active")
   @@map("vehicles")
@@ -241,6 +242,7 @@ model Reservation {
   id          String            @id @default(uuid())
   driverId    String            @map("driver_id")
   slotId      Int               @map("slot_id")
+  vehicleId   String?           @map("vehicle_id")
   vehicleType VehicleType       @map("vehicle_type")
   plannedArrivalAt DateTime?    @map("planned_arrival_at") @db.Timestamptz(3)
   createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -250,10 +252,12 @@ model Reservation {
   // Relations
   driver  User            @relation(fields: [driverId], references: [id])
   slot    Slot            @relation(fields: [slotId], references: [id])
+  vehicle Vehicle?        @relation(fields: [vehicleId], references: [id])
   session ParkingSession?
   ocrEvidences OcrEvidence[]
 
   @@index([status, expiresAt], map: "idx_reservation_active")
+  @@index([vehicleId], map: "idx_reservation_vehicle")
   @@map("reservations")
 }
 

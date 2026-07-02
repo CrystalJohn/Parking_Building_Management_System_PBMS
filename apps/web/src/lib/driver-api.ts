@@ -43,20 +43,44 @@ export interface PricingInfo {
 
 export interface Reservation {
   id: string
+  vehicleId?: string | null
   vehicleType: VehicleType
   status: ReservationStatus
   createdAt: string
   expiresAt: string
+  licensePlate?: string | null
+  vehicle?: {
+    id: string
+    plateNumber: string
+    vehicleType: VehicleType
+  } | null
   slot: SlotInfo | null
+}
+
+export interface DriverVehicle {
+  id: string
+  plateNumber: string
+  vehicleType: VehicleType
+  isActive: boolean
+  registeredAt: string
+  linkedRole: 'owner' | 'driver'
+  activeSubscription: {
+    id: string
+    planType: 'casual' | 'monthly' | 'yearly'
+    validFrom: string
+    validTo: string
+  } | null
 }
 
 export interface CreateReservationResponse {
   reservation: {
     id: string
+    vehicleId?: string | null
     vehicleType: VehicleType
     status: ReservationStatus
     createdAt: string
     expiresAt: string
+    licensePlate?: string | null
   }
   slot: SlotInfo
 }
@@ -106,9 +130,14 @@ export async function getMyReservations(): Promise<Reservation[]> {
   return data
 }
 
+export async function getMyVehicles(): Promise<DriverVehicle[]> {
+  const { data } = await api.get('/vehicles/my')
+  return data
+}
+
 /** 23.2: Create a reservation */
-export async function createReservation(vehicleType: VehicleType): Promise<CreateReservationResponse> {
-  const { data } = await api.post('/reservations', { vehicleType })
+export async function createReservation(vehicleId: string): Promise<CreateReservationResponse> {
+  const { data } = await api.post('/reservations', { vehicleId })
   return data
 }
 

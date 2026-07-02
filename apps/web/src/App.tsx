@@ -3,6 +3,7 @@ import { BrowserRouter } from 'react-router-dom'
 import './App.css'
 import AppRoutes from './routes/AppRoutes'
 import { ThemeProvider } from './lib/ThemeContext'
+import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
 // Error boundary to catch runtime errors and show a readable message
@@ -40,6 +41,7 @@ export default function App() {
   return (
     <ThemeProvider>
       <TooltipProvider>
+        <Toaster position="top-right" richColors closeButton />
         <ErrorBoundary>
           <BrowserRouter>
             <AppRoutes />

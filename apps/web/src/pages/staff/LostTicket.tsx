@@ -12,7 +12,6 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 import api from '../../lib/api'
-import { ToastContainer } from '../../components/ui/Toast'
 import { useToasts } from '../../lib/use-toasts'
 import { formatDateTimeVN } from '../../lib/date-time'
 import {
@@ -255,8 +254,6 @@ export default function LostTicket() {
               </aside>
             </div>
           )}
-
-          <ToastContainer toasts={toasts.toasts} onDismiss={toasts.dismiss} />
         </section>
       </div>
     </div>

@@ -18,7 +18,6 @@ import {
   TicketCheck,
   WalletCards,
 } from 'lucide-react'
-import { ToastContainer } from '../../components/ui/Toast'
 import { useToasts } from '../../lib/use-toasts'
 import {
   checkIn,
@@ -47,7 +46,7 @@ import { QRScanner } from '../../components/qr-scanner/QRScanner'
 import { RecentSessionsCard } from '../../components/ui/RecentSessionsCard'
 import { LicensePlateScanner } from '../../components/plate-scanner/LicensePlateScanner'
 import { formatDateTimeVN } from '../../lib/date-time'
-import { StaffOcrCheckInPanel } from './StaffOcrCheckInPanel'
+import { StaffCheckInPanel } from './StaffCheckInPanel'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -201,14 +200,12 @@ export default function Gate() {
           )}
         >
           {tab === 'check-in' ? (
-            <StaffOcrCheckInPanel toasts={toasts} />
+            <StaffCheckInPanel toasts={toasts} />
           ) : (
             <CheckOutPanel toasts={toasts} />
           )}
         </div>
       </div>
-
-      <ToastContainer toasts={toasts.toasts} onDismiss={toasts.dismiss} />
     </div>
   )
 }

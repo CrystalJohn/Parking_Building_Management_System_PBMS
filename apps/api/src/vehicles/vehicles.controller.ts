@@ -11,8 +11,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
+import { CurrentUser, Roles } from '../auth/decorators';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
-import { Roles } from '../auth/decorators';
 import { VehiclesService } from './vehicles.service';
 import { LinkVehicleUserDto, LookupPlateDto } from './dto';
 
@@ -20,6 +20,13 @@ import { LinkVehicleUserDto, LookupPlateDto } from './dto';
 @UseGuards(JwtAuthGuard)
 export class VehiclesController {
   constructor(private readonly vehiclesService: VehiclesService) {}
+
+  @Get('my')
+  @UseGuards(RolesGuard)
+  @Roles(Role.driver)
+  findMyVehicles(@CurrentUser('id') driverId: string) {
+    return this.vehiclesService.findMyVehicles(driverId);
+  }
 
   @Get('match-plate')
   @UseGuards(RolesGuard)

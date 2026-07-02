@@ -3,10 +3,11 @@ import { useSearchParams } from 'react-router-dom'
 import { isAxiosError } from 'axios'
 import {
   getMyReservations,
+  getMyVehicles,
   createReservation,
   cancelReservation,
+  type DriverVehicle,
   type Reservation,
-  type VehicleType,
 } from '../../lib/driver-api'
 import { formatDateTimeVN } from '../../lib/date-time'
 
@@ -19,47 +20,61 @@ const STATUS_LABELS: Record<string, { text: string; color: string }> = {
   cancelled: { text: 'Cancelled', color: 'bg-red-100 text-red-700' },
 }
 
-/**
- * 23.2: Driver Reservations — create/cancel/list reservations.
- * Req 8.5
- */
 export default function Reservations() {
   const [searchParams] = useSearchParams()
   const [reservations, setReservations] = useState<Reservation[]>([])
+  const [vehicles, setVehicles] = useState<DriverVehicle[]>([])
+  const [selectedVehicleId, setSelectedVehicleId] = useState('')
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Pre-fill vehicle type from query params (e.g. from landing page redirect)
-  const paramVehicle = searchParams.get('vehicleType')
-
-  const [vehicleType, setVehicleType] = useState<VehicleType>(
-    paramVehicle === 'car' || paramVehicle === 'motorbike' ? paramVehicle : 'car'
-  )
+  const paramVehicle = searchParams.get('vehicleId')
 
   useEffect(() => {
-    loadReservations()
+    void loadPage()
   }, [])
 
-  const loadReservations = async () => {
+  const selectedVehicle =
+    vehicles.find((vehicle) => vehicle.id === selectedVehicleId) ??
+    vehicles.find((vehicle) => vehicle.id === paramVehicle) ??
+    vehicles[0] ??
+    null
+
+  useEffect(() => {
+    if (!selectedVehicleId && selectedVehicle?.id) {
+      setSelectedVehicleId(selectedVehicle.id)
+    }
+  }, [selectedVehicle?.id, selectedVehicleId])
+
+  const loadPage = async () => {
     setLoading(true)
     setError(null)
     try {
-      const data = await getMyReservations()
-      setReservations(data)
+      const [vehicleData, reservationData] = await Promise.all([
+        getMyVehicles(),
+        getMyReservations(),
+      ])
+      setVehicles(vehicleData)
+      setReservations(reservationData)
     } catch {
-      setError('Unable to load reservations')
+      setError('Unable to load reservation data')
     } finally {
       setLoading(false)
     }
   }
 
   const handleCreate = async () => {
+    if (!selectedVehicle) {
+      setError('A linked vehicle is required before creating a reservation')
+      return
+    }
+
     setCreating(true)
     setError(null)
     try {
-      await createReservation(vehicleType)
-      await loadReservations()
+      await createReservation(selectedVehicle.id)
+      await loadPage()
     } catch (err) {
       if (isAxiosError(err)) {
         const msg = err.response?.data?.message
@@ -76,7 +91,7 @@ export default function Reservations() {
     if (!confirm('Are you sure you want to cancel this reservation?')) return
     try {
       await cancelReservation(id)
-      await loadReservations()
+      await loadPage()
     } catch (err) {
       if (isAxiosError(err)) {
         const msg = err.response?.data?.message
@@ -90,83 +105,80 @@ export default function Reservations() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-2xl mx-auto space-y-6">
+      <div className="mx-auto max-w-2xl space-y-6">
         <header>
           <h1 className="text-2xl font-bold">Reserve a slot</h1>
           <p className="text-sm text-gray-500">
-            Hold slot for 30 minutes. Arrive at the gate before it expires.
+            Pick a linked vehicle first. Staff QR check-in uses that vehicle record directly.
           </p>
         </header>
 
         {error && (
-          <p className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-md p-2">
+          <p className="rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-600">
             {error}
           </p>
         )}
 
-        {/* Create reservation */}
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04] sm:p-7">
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-7">
           <div className="mb-6">
-            <p className="text-[11px] font-mono uppercase tracking-[0.16em] text-blue-600 dark:text-blue-300">
-              Smart reservation
+            <p className="text-[11px] font-mono uppercase tracking-[0.16em] text-blue-600">
+              Linked vehicle
             </p>
-            <h2 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-neutral-950 dark:text-white">
+            <h2 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-neutral-950">
               New reservation
             </h2>
-            <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-              Select vehicle type. The system will automatically assign the best slot.
+            <p className="mt-1 text-sm text-neutral-500">
+              The system assigns the best slot based on the linked vehicle you choose.
             </p>
           </div>
 
-          <div className="space-y-6">
-            <div>
-              <div className="mb-3 text-[11px] font-mono uppercase tracking-[0.16em] text-neutral-500 dark:text-neutral-400">
-                Vehicle type
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  disabled={creating}
-                  onClick={() => setVehicleType('car')}
-                  className={`rounded-2xl border p-4 text-left shadow-sm transition focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:pointer-events-none disabled:opacity-50 ${
-                    vehicleType === 'car'
-                      ? 'border-blue-500/40 bg-blue-50 dark:border-blue-300/30 dark:bg-blue-400/10'
-                      : 'border-gray-200 bg-white hover:border-blue-200 hover:bg-blue-50/30 dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/[0.08]'
-                  }`}
-                >
-                  <span className="block text-[15px] font-semibold text-neutral-950 dark:text-white">Car</span>
-                  <span className="mt-1 block text-[12px] text-neutral-500 dark:text-neutral-400">Zone A auto-assign</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={creating}
-                  onClick={() => setVehicleType('motorbike')}
-                  className={`rounded-2xl border p-4 text-left shadow-sm transition focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:pointer-events-none disabled:opacity-50 ${
-                    vehicleType === 'motorbike'
-                      ? 'border-emerald-500/40 bg-emerald-50 dark:border-emerald-300/30 dark:bg-emerald-400/10'
-                      : 'border-gray-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/30 dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/[0.08]'
-                  }`}
-                >
-                  <span className="block text-[15px] font-semibold text-neutral-950 dark:text-white">Motorbike</span>
-                  <span className="mt-1 block text-[12px] text-neutral-500 dark:text-neutral-400">Zone B auto-assign</span>
-                </button>
-              </div>
+          {!loading && vehicles.length === 0 ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              No linked vehicles found. Link a vehicle to your driver account before reserving.
             </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {vehicles.map((vehicle) => {
+                const isSelected = selectedVehicle?.id === vehicle.id
+                return (
+                  <button
+                    key={vehicle.id}
+                    type="button"
+                    disabled={creating}
+                    onClick={() => setSelectedVehicleId(vehicle.id)}
+                    className={`rounded-2xl border p-4 text-left shadow-sm transition focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:pointer-events-none disabled:opacity-50 ${
+                      isSelected
+                        ? 'border-blue-500/40 bg-blue-50'
+                        : 'border-gray-200 bg-white hover:border-blue-200 hover:bg-blue-50/30'
+                    }`}
+                  >
+                    <span className="block font-mono text-[15px] font-semibold text-neutral-950">
+                      {vehicle.plateNumber}
+                    </span>
+                    <span className="mt-1 block text-[12px] text-neutral-500">
+                      {vehicle.vehicleType === 'car' ? 'Car' : 'Motorbike'}
+                    </span>
+                    <span className="mt-2 inline-block rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-600">
+                      {vehicle.linkedRole}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
 
-            <button
-              type="button"
-              onClick={handleCreate}
-              disabled={creating}
-              className="flex h-12 w-full items-center justify-center rounded-2xl bg-blue-600 px-5 text-[15px] font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:pointer-events-none disabled:opacity-60"
-            >
-              {creating ? 'Finding slot...' : 'Find available slot'}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleCreate}
+            disabled={creating || !selectedVehicle}
+            className="mt-6 flex h-12 w-full items-center justify-center rounded-2xl bg-blue-600 px-5 text-[15px] font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:pointer-events-none disabled:opacity-60"
+          >
+            {creating ? 'Finding slot...' : 'Reserve linked vehicle'}
+          </button>
         </div>
 
         {loading && <p className="text-gray-500">Loading...</p>}
 
-        {/* Active reservations */}
         {activeReservations.length > 0 && (
           <div className="space-y-3">
             <h2 className="text-lg font-semibold">Active reservation</h2>
@@ -176,7 +188,6 @@ export default function Reservations() {
           </div>
         )}
 
-        {/* Past reservations */}
         {pastReservations.length > 0 && (
           <div className="space-y-3">
             <h2 className="text-lg font-semibold text-gray-600">Reservation history</h2>
@@ -187,7 +198,7 @@ export default function Reservations() {
         )}
 
         {!loading && reservations.length === 0 && (
-          <p className="text-gray-500 text-sm text-center py-8">
+          <p className="py-8 text-center text-sm text-gray-500">
             No reservation history yet.
           </p>
         )}
@@ -213,28 +224,27 @@ function ReservationCard({
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <span className="font-mono text-lg font-bold">
-              {slot?.code ?? '—'}
+              {reservation.licensePlate ?? reservation.vehicle?.plateNumber ?? 'UNKNOWN'}
             </span>
-            <span className={`text-xs px-2 py-0.5 rounded-full ${status.color}`}>
+            <span className={`rounded-full px-2 py-0.5 text-xs ${status.color}`}>
               {status.text}
             </span>
           </div>
           <p className="text-sm text-gray-600">
             {reservation.vehicleType === 'car' ? 'Car' : 'Motorbike'}
-            {slot?.floor ? ` — ${slot.floor.name}` : ''}
+            {slot?.code ? ` • Slot ${slot.code}` : ''}
+            {slot?.floor ? ` • ${slot.floor.name}` : ''}
           </p>
           <p className="text-xs text-gray-500">
             Reserved at: {formatDateTime(reservation.createdAt)}
           </p>
-          {isActive && (
-            <Countdown expiresAt={reservation.expiresAt} />
-          )}
+          {isActive && <Countdown expiresAt={reservation.expiresAt} />}
         </div>
 
         {isActive && onCancel && (
           <button
             onClick={() => onCancel(reservation.id)}
-            className="text-sm text-red-600 hover:text-red-800 font-medium"
+            className="text-sm font-medium text-red-600 hover:text-red-800"
           >
             Cancel
           </button>
@@ -244,11 +254,6 @@ function ReservationCard({
   )
 }
 
-/**
- * Live countdown timer that updates every second.
- * Shows remaining time in mm:ss format.
- * Turns red when < 5 minutes remaining.
- */
 function Countdown({ expiresAt }: { expiresAt: string }) {
   const [remaining, setRemaining] = useState(() => calcRemaining(expiresAt))
 
@@ -260,11 +265,7 @@ function Countdown({ expiresAt }: { expiresAt: string }) {
   }, [expiresAt])
 
   if (remaining <= 0) {
-    return (
-      <p className="text-xs text-red-600 font-bold">
-        ⏰ Expired
-      </p>
-    )
+    return <p className="text-xs font-bold text-red-600">Expired</p>
   }
 
   const minutes = Math.floor(remaining / 60)
@@ -273,7 +274,7 @@ function Countdown({ expiresAt }: { expiresAt: string }) {
 
   return (
     <div className={`flex items-center gap-2 ${isUrgent ? 'text-red-600' : 'text-gray-700'}`}>
-      <span className="text-xs">⏱ Remaining:</span>
+      <span className="text-xs">Remaining:</span>
       <span className={`font-mono text-sm font-bold ${isUrgent ? 'animate-pulse' : ''}`}>
         {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
       </span>

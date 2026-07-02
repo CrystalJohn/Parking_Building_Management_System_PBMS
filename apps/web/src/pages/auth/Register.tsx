@@ -4,7 +4,6 @@ import { isAxiosError } from 'axios'
 import { ArrowLeft } from 'lucide-react'
 import api from '../../lib/api'
 import { getToken, getUser, saveAuth, type AuthUser } from '../../lib/auth'
-import { ToastContainer } from '../../components/ui/Toast'
 import { useToasts } from '../../lib/use-toasts'
 
 interface RegisterResponse {
@@ -356,8 +355,6 @@ export default function Register() {
           </div>
         </div>
       </div>
-
-      <ToastContainer toasts={toasts.toasts} onDismiss={toasts.dismiss} />
     </div>
   )
 }
