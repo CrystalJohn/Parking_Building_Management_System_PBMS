@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { isAxiosError } from 'axios'
+import { ArrowDownToLine, ArrowUpFromLine } from 'lucide-react'
 import { ToastContainer } from '../../components/ui/Toast'
 import { useToasts } from '../../lib/use-toasts'
 import {
@@ -30,6 +31,9 @@ import { RecentSessionsCard } from '../../components/ui/RecentSessionsCard'
 import { LicensePlateScanner } from '../../components/plate-scanner/LicensePlateScanner'
 import { formatDateTimeVN } from '../../lib/date-time'
 import { StaffOcrCheckInPanel } from './StaffOcrCheckInPanel'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 type Tab = 'check-in' | 'check-out'
 
@@ -38,18 +42,21 @@ const GATE_TABS: Array<{
   title: string
   subtitle: string
   activeHint: string
+  icon: typeof ArrowDownToLine
 }> = [
   {
     id: 'check-in',
     title: 'Check-in',
     subtitle: 'Vehicle entry',
     activeHint: 'OCR, reserve, issue ticket',
+    icon: ArrowDownToLine,
   },
   {
     id: 'check-out',
     title: 'Check-out',
     subtitle: 'Vehicle exit',
     activeHint: 'QR, plate, collect fee',
+    icon: ArrowUpFromLine,
   },
 ]
 
@@ -101,39 +108,58 @@ export default function Gate() {
   const toasts = useToasts()
 
   return (
-    <div className="bg-slate-100 dark:bg-slate-950">
-      <div className="mx-auto max-w-7xl px-4 pb-4 sm:px-6 print:hidden">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-            <nav
-              className="grid grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm sm:min-w-[240px]"
-              role="tablist"
-              aria-label="Gate actions"
-            >
-              {GATE_TABS.map((item) => {
-                const isActive = tab === item.id
-                return (
-                  <button
-                    key={item.id}
-                    role="tab"
-                    aria-selected={isActive}
-                    aria-controls={`gate-panel-${item.id}`}
-                    onClick={() => setTab(item.id)}
-                    className={`group rounded-lg px-3 py-1.5 flex items-center justify-center gap-2 transition-all focus:outline-none ${
-                      isActive
-                        ? 'bg-primary-600 text-white shadow-sm shadow-primary-600/20'
-                        : 'bg-white text-slate-700 hover:bg-primary-50 hover:text-primary-700'
-                    }`}
-                  >
-                    <span className="text-xs font-bold">{item.title}</span>
+    <div className="min-h-[calc(100svh-5rem)] bg-muted/40">
+      <div className="mx-auto max-w-7xl px-4 pb-4 pt-4 sm:px-6 print:hidden">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                Gate operations
+              </h1>
+              <Badge variant="outline" className="bg-background">
+                Staff console
+              </Badge>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Run entry OCR, ticket issue, payment checkout, and vehicle exit from one station.
+            </p>
+          </div>
+
+          <nav
+            className="grid grid-cols-2 gap-1 rounded-lg border bg-background p-1 shadow-sm lg:min-w-[360px]"
+            role="tablist"
+            aria-label="Gate actions"
+          >
+            {GATE_TABS.map((item) => {
+              const isActive = tab === item.id
+              const Icon = item.icon
+              return (
+                <Button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  aria-controls={`gate-panel-${item.id}`}
+                  variant={isActive ? 'default' : 'ghost'}
+                  onClick={() => setTab(item.id)}
+                  className={cn('h-10 justify-start gap-2 px-3', !isActive && 'text-muted-foreground')}
+                >
+                  <Icon className="size-4" />
+                  <span className="flex min-w-0 flex-col items-start leading-tight">
+                    <span className="text-sm font-semibold">{item.title}</span>
                     <span
-                      className={`h-1.5 w-1.5 rounded-full ${
-                        isActive ? 'bg-emerald-400' : 'bg-slate-300 group-hover:bg-slate-400'
-                      }`}
-                    />
-                  </button>
-                )
-              })}
-            </nav>
+                      className={cn(
+                        'hidden text-[11px] font-medium lg:block',
+                        isActive ? 'text-primary-foreground/75' : 'text-muted-foreground',
+                      )}
+                    >
+                      {item.subtitle}
+                    </span>
+                  </span>
+                </Button>
+              )
+            })}
+          </nav>
         </div>
       </div>
 
@@ -141,7 +167,12 @@ export default function Gate() {
         <div
           id={`gate-panel-${tab}`}
           role="tabpanel"
-          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm print:rounded-none print:border-0 print:p-0 print:shadow-none sm:p-5"
+          className={cn(
+            "print:rounded-none print:border-0 print:p-0 print:shadow-none",
+            tab === 'check-in'
+              ? ''
+              : 'rounded-xl border bg-card p-4 shadow-sm sm:p-5',
+          )}
         >
           {tab === 'check-in' ? (
             <StaffOcrCheckInPanel toasts={toasts} />

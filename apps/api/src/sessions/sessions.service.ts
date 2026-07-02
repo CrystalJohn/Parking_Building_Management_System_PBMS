@@ -12,6 +12,7 @@ import { AllocationService } from '../slots/allocation.service';
 import { FeesService, FeeBreakdown } from '../fees/fees.service';
 import { VehicleIdentificationService } from '../vehicle-identification/vehicle-identification.service';
 import type { VehicleIdentityResult } from '../vehicle-identification/vehicle-identity.types';
+import { normalizePlateNumber } from '../vehicles/vehicles.service';
 import { CheckInDto, CheckOutDto, ConfirmPaymentDto, LostTicketDto } from './dto';
 
 @Injectable()
@@ -105,6 +106,11 @@ export class SessionsService {
 
     // Use the normalized plate from the identity result
     const licensePlate = identity.licensePlate ?? dto.licensePlate;
+    const plateNumberConfirmed = normalizePlateNumber(licensePlate);
+    const plateNumberOcr =
+      identity.source === 'OCR'
+        ? normalizePlateNumber(identity.licensePlate)
+        : null;
 
     // Check for duplicate active session with same license plate
     const existingSession = await this.prisma.parkingSession.findFirst({
@@ -131,6 +137,37 @@ export class SessionsService {
       if (driver?.isActive) {
         driverId = driver.id;
       }
+    }
+
+    const matchedVehicle = plateNumberConfirmed
+      ? await this.prisma.vehicle.findFirst({
+          where: {
+            plateNumber: plateNumberConfirmed,
+            isActive: true,
+          },
+          include: {
+            vehicleUsers: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    isActive: true,
+                  },
+                },
+              },
+              orderBy: [{ role: 'asc' as const }, { createdAt: 'asc' as const }],
+            },
+          },
+        })
+      : null;
+
+    const vehicleOwner =
+      matchedVehicle?.vehicleUsers.find((link) => link.role === 'owner' && link.user.isActive) ??
+      matchedVehicle?.vehicleUsers.find((link) => link.user.isActive) ??
+      null;
+
+    if (!driverId && vehicleOwner) {
+      driverId = vehicleOwner.user.id;
     }
 
     // ─── Reservation resolution (business logic) ──────────────────────────
@@ -239,6 +276,9 @@ export class SessionsService {
           data: {
             id: sessionId,
             licensePlate,
+            plateNumberOcr,
+            plateNumberConfirmed,
+            vehicleId: matchedVehicle?.id ?? null,
             vehicleType: dto.vehicleType,
             slotId: slot.id,
             driverId,

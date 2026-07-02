@@ -17,6 +17,7 @@ import { PlateRecognitionModule } from './plate-recognition/plate-recognition.mo
 import { OcrModule } from './ocr';
 import { PaymentsModule } from './payments/payments.module';
 import { AdminModule } from './admin/admin.module';
+import { VehiclesModule } from './vehicles/vehicles.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { AdminModule } from './admin/admin.module';
     OcrModule,
     PaymentsModule,
     AdminModule,
+    VehiclesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

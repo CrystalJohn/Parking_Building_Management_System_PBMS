@@ -64,11 +64,23 @@ enum PaymentStatus {
   expired
 }
 
+enum VehicleUserRole {
+  owner
+  driver
+}
+
+enum SubscriptionPlanType {
+  casual
+  monthly
+  yearly
+}
+
 // ─── Models ──────────────────────────────────────────────────────────────────
 
 model User {
   id           String   @id @default(uuid())
   phone        String   @unique
+  email        String?  @unique
   username     String?  @unique
   passwordHash String   @map("password_hash")
   role         Role
@@ -86,8 +98,58 @@ model User {
   reservations        Reservation[]
   paymentsReceived    Payment[]        @relation("ReceivedBy")
   pricingUpdates      PricingConfig[]  @relation("PricingUpdatedBy")
+  vehicleUsers        VehicleUser[]
 
   @@map("users")
+}
+
+model Vehicle {
+  id           String      @id @default(uuid())
+  plateNumber  String      @unique @map("plate_number")
+  vehicleType  VehicleType @map("vehicle_type")
+  isActive     Boolean     @default(true) @map("is_active")
+  registeredAt DateTime    @default(now()) @map("registered_at") @db.Timestamptz(3)
+  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  vehicleUsers  VehicleUser[]
+  subscriptions Subscription[]
+  sessions      ParkingSession[]
+
+  @@index([vehicleType, isActive], map: "idx_vehicle_type_active")
+  @@map("vehicles")
+}
+
+model VehicleUser {
+  vehicleId String          @map("vehicle_id")
+  userId    String          @map("user_id")
+  role      VehicleUserRole @default(driver)
+  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // DB invariant: one owner per vehicle via partial unique index
+  // vehicle_users_single_owner_idx (Prisma schema cannot model partial indexes).
+  @@id([vehicleId, userId])
+  @@index([userId], map: "idx_vehicle_users_user")
+  @@index([vehicleId, role], map: "idx_vehicle_users_vehicle_role")
+  @@map("vehicle_users")
+}
+
+model Subscription {
+  id        String               @id @default(uuid())
+  vehicleId String               @map("vehicle_id")
+  planType  SubscriptionPlanType @map("plan_type")
+  validFrom DateTime             @map("valid_from") @db.Timestamptz(3)
+  validTo   DateTime             @map("valid_to") @db.Timestamptz(3)
+  createdAt DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId, validFrom, validTo], map: "idx_subscriptions_vehicle_window")
+  @@map("subscriptions")
 }
 
 model Floor {
@@ -123,9 +185,12 @@ model Slot {
 model ParkingSession {
   id                 String        @id @default(uuid())
   driverId           String?       @map("driver_id")
+  vehicleId          String?       @map("vehicle_id")
   slotId             Int           @map("slot_id")
   reservationId      String?       @unique @map("reservation_id")
   licensePlate       String        @map("license_plate")
+  plateNumberOcr       String?     @map("plate_number_ocr")
+  plateNumberConfirmed String?     @map("plate_number_confirmed")
   vehicleType        VehicleType   @map("vehicle_type")
   checkInTime        DateTime      @default(now()) @map("check_in_time") @db.Timestamptz(3)
   checkOutTime       DateTime?     @map("check_out_time") @db.Timestamptz(3)
@@ -153,6 +218,7 @@ model ParkingSession {
 
   // Relations
   driver       User?        @relation("DriverSessions", fields: [driverId], references: [id])
+  vehicle      Vehicle?     @relation(fields: [vehicleId], references: [id])
   slot         Slot         @relation(fields: [slotId], references: [id])
   reservation  Reservation? @relation(fields: [reservationId], references: [id])
   checkedInBy  User?        @relation("CheckedInBy", fields: [checkedInById], references: [id])
@@ -162,6 +228,8 @@ model ParkingSession {
   ocrEvidences OcrEvidence[]
 
   @@index([licensePlate, status], map: "idx_session_plate_status")
+  @@index([vehicleId], map: "idx_session_vehicle")
+  @@index([plateNumberConfirmed, status], map: "idx_session_confirmed_plate_status")
   @@index([checkOutTime], map: "idx_session_checkout_time")
   @@index([driverId], map: "idx_active_sessions_by_driver")
   @@index([reservationId], map: "idx_session_reservation")

@@ -1,6 +1,19 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { Bike, Car, Clock3, RefreshCw, WalletCards } from 'lucide-react'
 import { getRecentSessions, type RecentSession, type SessionStatus } from '../../lib/sessions-api'
 import { formatDateTimeVN } from '../../lib/date-time'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+import { cn } from '@/lib/utils'
 
 interface Props {
   type: 'checkin' | 'checkout'
@@ -11,15 +24,55 @@ interface Props {
 const VND = (n: number) =>
   `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(Math.round(n))} VND`
 
-function statusLabel(status: SessionStatus): { text: string; cls: string } {
-  const map: Record<SessionStatus, { text: string; cls: string }> = {
-    active:           { text: 'Parked',       cls: 'bg-blue-50 text-blue-700 ring-blue-200' },
-    checkout_pending: { text: 'Awaiting',     cls: 'bg-amber-50 text-amber-700 ring-amber-200' },
-    exit_authorized:  { text: 'Exit Auth',    cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
-    completed:        { text: 'Completed',    cls: 'bg-slate-100 text-slate-600 ring-slate-200' },
-    cancelled:        { text: 'Cancelled',    cls: 'bg-rose-50 text-rose-600 ring-rose-200' },
+function statusLabel(status: SessionStatus): { text: string; className: string } {
+  const map: Record<SessionStatus, { text: string; className: string }> = {
+    active: {
+      text: 'Parked',
+      className: 'border-blue-200 bg-blue-50 text-blue-700',
+    },
+    checkout_pending: {
+      text: 'Awaiting',
+      className: 'border-amber-200 bg-amber-50 text-amber-700',
+    },
+    exit_authorized: {
+      text: 'Exit Auth',
+      className: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    },
+    completed: {
+      text: 'Completed',
+      className: 'border-slate-200 bg-slate-100 text-slate-700',
+    },
+    cancelled: {
+      text: 'Cancelled',
+      className: 'border-rose-200 bg-rose-50 text-rose-700',
+    },
   }
-  return map[status] ?? { text: status, cls: 'bg-slate-100 text-slate-600 ring-slate-200' }
+
+  return map[status] ?? {
+    text: status,
+    className: 'border-slate-200 bg-slate-100 text-slate-700',
+  }
+}
+
+function HistorySkeleton() {
+  return (
+    <div className="divide-y">
+      {Array.from({ length: 3 }).map((_, index) => (
+        <div key={index} className="px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-5 w-16 rounded-full" />
+              </div>
+              <Skeleton className="h-3 w-44" />
+            </div>
+            <Skeleton className="h-8 w-24" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 export function RecentSessionsCard({ type, refreshTrigger = 0 }: Props) {
@@ -27,11 +80,12 @@ export function RecentSessionsCard({ type, refreshTrigger = 0 }: Props) {
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
+    setLoading(true)
     try {
       const data = await getRecentSessions(type, 20)
       setSessions(data)
     } catch {
-      // Silent — history is non-critical
+      // History is non-critical. Keep the gate workflow usable if this request fails.
     } finally {
       setLoading(false)
     }
@@ -41,80 +95,120 @@ export function RecentSessionsCard({ type, refreshTrigger = 0 }: Props) {
     void load()
   }, [load, refreshTrigger])
 
-  const title = type === 'checkin' ? 'Check-in History' : 'Check-out History'
+  const title = type === 'checkin' ? 'Check-in history' : 'Check-out history'
+  const description = type === 'checkin' ? 'Latest vehicle entries' : 'Latest vehicle exits'
   const emptyText = type === 'checkin' ? 'No check-in history yet' : 'No check-out history yet'
   const timeLabel = type === 'checkin' ? 'Check-in time' : 'Check-out time'
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 bg-slate-50/60">
-        <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
-          {title}
-        </p>
-        <button
-          onClick={() => void load()}
-          className="text-[11px] font-bold text-slate-400 hover:text-slate-700 transition-colors"
-          aria-label="Refresh"
-        >
-          ↻ Refresh
-        </button>
-      </div>
-
-      {loading ? (
-        <div className="p-6 text-center text-sm text-slate-400 font-semibold">
-          Loading...
+    <Card className="overflow-hidden">
+      <CardHeader className="grid-cols-[1fr_auto] border-b bg-muted/30 p-4">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <Clock3 className="size-4 text-primary" />
+            {title}
+          </CardTitle>
+          <CardDescription className="text-xs">{description}</CardDescription>
         </div>
-      ) : sessions.length === 0 ? (
-        <div className="p-6 text-center text-sm text-slate-400 font-semibold">
-          {emptyText}
-        </div>
-      ) : (
-        <ul className="divide-y divide-slate-100 max-h-[180px] overflow-y-auto">
-          {sessions.map((s) => {
-            const { text, cls } = statusLabel(s.status)
-            const time = type === 'checkin' ? s.checkInTime : (s.checkOutTime ?? s.checkInTime)
-            const fee = s.feeAmount + s.penaltyAmount
+        <CardAction>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => void load()}
+            disabled={loading}
+            aria-label="Refresh recent sessions"
+          >
+            <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
+            Refresh
+          </Button>
+        </CardAction>
+      </CardHeader>
 
-            return (
-              <li key={s.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 transition-colors">
-                {/* Main info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="font-mono font-black text-xs text-slate-950">
-                      {s.licensePlate}
-                    </span>
-                    <span className={`rounded-full px-1.5 py-0.25 text-[9px] font-black uppercase tracking-wide ring-1 ${cls}`}>
-                      {text}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-slate-500 font-medium flex-wrap">
-                    <span className="font-mono">{s.slot.code}</span>
-                    <span>·</span>
-                    <span className="capitalize">{s.vehicleType}</span>
-                    <span>·</span>
-                    <span>{s.slot.floor} / Z{s.slot.zone}</span>
-                    {fee > 0 && (
-                      <>
-                        <span>·</span>
-                        <span className="font-semibold text-slate-700">{VND(fee)}</span>
-                      </>
-                    )}
-                  </div>
-                </div>
+      <CardContent className="p-0">
+        {loading ? (
+          <HistorySkeleton />
+        ) : sessions.length === 0 ? (
+          <div className="grid min-h-32 place-items-center px-4 py-8 text-center">
+            <div className="space-y-2">
+              <div className="mx-auto grid size-10 place-items-center rounded-lg border bg-background text-muted-foreground">
+                <WalletCards className="size-5" />
+              </div>
+              <p className="text-sm font-medium text-foreground">{emptyText}</p>
+              <p className="text-xs text-muted-foreground">
+                Completed gate actions will appear here.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <ul className="max-h-[260px] divide-y overflow-y-auto">
+            {sessions.map((session) => {
+              const { text, className } = statusLabel(session.status)
+              const isCheckoutHistory = type === 'checkout'
+              const time =
+                type === 'checkin'
+                  ? session.checkInTime
+                  : (session.checkOutTime ?? session.checkInTime)
+              const fee = session.feeAmount + session.penaltyAmount
+              const VehicleIcon = session.vehicleType === 'car' ? Car : Bike
 
-                {/* Time */}
-                <div className="text-right shrink-0">
-                  <p className="text-[9px] text-slate-400 font-medium">{timeLabel}</p>
-                  <p className="text-[10px] font-bold text-slate-600 mt-0.5">
-                    {formatDateTimeVN(time)}
-                  </p>
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-      )}
-    </section>
+              return (
+                <li
+                  key={session.id}
+                  className="px-4 py-3 transition-colors hover:bg-muted/40"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-sm font-semibold tracking-tight text-foreground">
+                          {session.licensePlate}
+                        </span>
+                        {isCheckoutHistory ? (
+                          <Badge variant="outline" className={cn('h-5', className)}>
+                            {text}
+                          </Badge>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                        <span className="font-mono font-medium text-foreground">
+                          {session.slot.code}
+                        </span>
+                        <span>/</span>
+                        <span className="inline-flex items-center gap-1 capitalize">
+                          <VehicleIcon className="size-3.5" />
+                          {session.vehicleType}
+                        </span>
+                        {isCheckoutHistory ? (
+                          <>
+                            <span>/</span>
+                            <span>
+                              {session.slot.floor} / Z{session.slot.zone}
+                            </span>
+                          </>
+                        ) : null}
+                        {isCheckoutHistory && fee > 0 ? (
+                          <>
+                            <span>/</span>
+                            <span className="font-medium text-foreground">{VND(fee)}</span>
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="shrink-0 text-right">
+                      <p className="text-[11px] font-medium text-muted-foreground">{timeLabel}</p>
+                      <p className="mt-1 text-xs font-semibold tabular-nums text-foreground">
+                        {formatDateTimeVN(time)}
+                      </p>
+                    </div>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   )
 }

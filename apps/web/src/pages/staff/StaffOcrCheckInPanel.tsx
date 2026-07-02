@@ -1,10 +1,36 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { isAxiosError } from 'axios'
+import {
+  Bike,
+  Camera,
+  Car,
+  CheckCircle2,
+  Clock3,
+  Keyboard,
+  Loader2,
+  QrCode,
+  RotateCcw,
+  ScanLine,
+  Ticket,
+} from 'lucide-react'
 import { QRScanner } from '../../components/qr-scanner/QRScanner'
 
 import { formatDateTimeVN } from '../../lib/date-time'
 import { useToasts } from '../../lib/use-toasts'
 import { RecentSessionsCard } from '../../components/ui/RecentSessionsCard'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Separator } from '@/components/ui/separator'
 import {
   checkIn,
   issueSessionTicket,
@@ -225,7 +251,7 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
         toasts.showSuccess(`Plate detected: ${response.detectedPlate}`)
       } else {
         setStatus('OCR_FAILED')
-        toasts.showError(response.error ?? 'OCR failed, please enter plate manually')
+        toasts.showError(response.error ?? 'No plate detected. Enter the plate manually.')
       }
     } catch (error) {
       if (requestId !== ocrRequestIdRef.current) return
@@ -335,153 +361,158 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [canPrint, captureAndRecognize, confirmCheckIn, printTicket, reset])
 
-  const statusLabel = useMemo(() => {
-    switch (status) {
-      case 'CAPTURING':
-        return 'Capturing...'
-      case 'OCR_PROCESSING':
-        return 'Recognizing plate...'
-      case 'OCR_SUCCESS':
-        return 'Plate detected'
-      case 'OCR_FAILED':
-        return 'OCR failed, please enter plate manually'
-      case 'REVIEW_REQUIRED':
-        return 'Review required'
-      case 'CHECKING_IN':
-        return 'Creating parking session...'
-      case 'CHECKIN_SUCCESS':
-        return 'Check-in successful'
-      case 'GENERATING_TICKET':
-        return 'Generating session ticket...'
-      case 'TICKET_READY':
-        return 'Ticket ready for printing'
-      case 'PRINT_DIALOG_OPENED':
-        return 'Print dialog opened'
-      case 'TICKET_ISSUED':
-        return 'Ticket issued to driver'
-      case 'ERROR':
-        return cameraError ?? 'Error'
-      default:
-        return 'Camera Ready - Press Space to capture plate'
-    }
-  }, [cameraError, status])
-
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between print:hidden">
-        <div>
-          <h2 className="text-lg font-bold text-gray-900">Staff Check-in Service</h2>
-          <p className="text-xs text-gray-500">
-            Select the correct service mode before OCR. Space to capture, Enter to confirm, Esc to reset.
-          </p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-xs">
-          <span className="font-semibold">{formatDateTimeVN(now)}</span>
-        </div>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(380px,0.75fr)]">
-        <section className="self-start rounded-2xl border border-primary-100 bg-primary-50 p-4 text-slate-900 shadow-sm print:hidden">
-          <div className="mb-3 flex items-center justify-between gap-3">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.85fr)_minmax(320px,0.5fr)]">
+        <Card className="self-start border-primary/20 shadow-sm print:hidden">
+          <CardHeader className="grid-cols-[1fr_auto] border-b bg-muted/30">
             <div>
-              <h3 className="text-sm font-bold">Real-time Camera + OCR Evidence</h3>
-              <p className="text-[10px] font-semibold text-primary-700">{statusLabel}</p>
+              <CardTitle className="flex items-center gap-2">
+                <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
+                  <Camera className="size-4" />
+                </span>
+                Camera and OCR evidence
+              </CardTitle>
+              <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="inline-flex items-center gap-1">
+                  <Keyboard className="size-3.5" />
+                  Space capture
+                </span>
+                <span>Enter confirm</span>
+                <span>Esc reset</span>
+              </CardDescription>
             </div>
-            <button
-              type="button"
-              onClick={captureAndRecognize}
-              disabled={status === 'OCR_PROCESSING' || status === 'CHECKING_IN'}
-              className="rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm shadow-primary-600/20 transition hover:bg-primary-700 disabled:opacity-50"
-            >
-              Capture OCR
-            </button>
-          </div>
-
-          <div className="relative aspect-video overflow-hidden rounded-xl border border-primary-100 bg-white">
-            <video
-              ref={videoRef}
-              className="h-full w-full object-cover"
-              muted
-              playsInline
-              autoPlay
-            />
-            {cameraError && (
-              <div className="absolute inset-0 grid place-items-center bg-white/90 p-6 text-center text-sm font-semibold text-red-600">
-                {cameraError}
-              </div>
-            )}
-          </div>
-
-          <div className="mt-4 grid gap-3 lg:grid-cols-2">
-            <EvidencePreview title="Captured OCR evidence" imageUrl={capturedImageUrl} />
-            {ticket ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3 text-slate-900 print:mt-0 print:border-0 print:bg-white print:p-0">
-                <div className="flex items-center justify-between gap-2 mb-2 print:hidden">
-                  <span className="text-[10px] font-bold text-amber-950">
-                    {status === 'GENERATING_TICKET' ? 'Generating ticket...' : 'Session Ticket Preview'}
-                  </span>
-                </div>
-                <SessionTicketPreview ticket={ticket} issuedAt={issuedAt} />
-                <div className="mt-3 flex flex-col gap-1.5 print:hidden">
-                  <button type="button" onClick={printTicket} className="btn-primary py-1.5 px-3 text-xs">
-                    Print Ticket
-                  </button>
-                  <div className="flex gap-2">
-                    <button type="button" onClick={markTicketIssued} className="btn-secondary flex-1 py-1 px-2.5 text-xs">
-                      Mark Issued
-                    </button>
-                    <button type="button" onClick={reset} className="btn-secondary flex-1 py-1 px-2.5 text-xs">
-                      Next Vehicle
-                    </button>
+            <CardAction>
+              <Button
+                type="button"
+                onClick={captureAndRecognize}
+                disabled={status === 'OCR_PROCESSING' || status === 'CHECKING_IN'}
+                className="h-10 px-4 shadow-sm"
+              >
+                {status === 'OCR_PROCESSING' ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <ScanLine className="size-4" />
+                )}
+                Capture OCR
+              </Button>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid items-stretch gap-4 lg:grid-cols-[minmax(0,1.75fr)_minmax(15rem,0.65fr)] 2xl:grid-cols-[minmax(0,1.9fr)_minmax(17rem,0.7fr)]">
+              <div className="relative aspect-video overflow-hidden rounded-xl border border-primary/20 bg-muted shadow-inner ring-1 ring-black/5">
+                <video
+                  ref={videoRef}
+                  className="h-full w-full object-cover"
+                  muted
+                  playsInline
+                  autoPlay
+                />
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-black/45 via-black/20 to-transparent" />
+                <div className="pointer-events-none absolute inset-x-3 top-3 flex items-center justify-between gap-2 sm:inset-x-4 sm:top-4">
+                  <div className="flex items-center gap-2 rounded-lg border border-white/80 bg-white/95 px-2.5 py-1.5 text-xs font-semibold text-slate-950 shadow-lg backdrop-blur-md dark:border-white/15 dark:bg-slate-950/90 dark:text-slate-50">
+                    <span className="size-2 rounded-full bg-emerald-500" />
+                    <span>Live</span>
+                    <span className="text-slate-500 dark:text-slate-400">/</span>
+                    <span>{serviceMode === 'reservation' ? 'Reservation' : 'Walk-in'}</span>
+                  </div>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Badge variant="secondary" className="border border-white/80 bg-white/95 text-slate-950 shadow-lg backdrop-blur-md dark:border-white/15 dark:bg-slate-950/90 dark:text-slate-50">
+                      {vehicleType === 'car' ? 'Car' : 'Motorbike'}
+                    </Badge>
+                    <div className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-white/80 bg-white/95 px-2.5 text-xs font-semibold text-slate-700 shadow-lg backdrop-blur-md dark:border-white/15 dark:bg-slate-950/90 dark:text-slate-300">
+                      <Clock3 className="size-3.5" />
+                      <span>{formatDateTimeVN(now)}</span>
+                    </div>
                   </div>
                 </div>
+                {cameraError && (
+                  <div className="absolute inset-0 grid place-items-center bg-background/95 p-6 text-center text-sm font-medium text-destructive">
+                    {cameraError}
+                  </div>
+                )}
               </div>
+              <EvidencePreview title="Captured OCR evidence" imageUrl={capturedImageUrl} />
+            </div>
+
+            {ticket ? (
+              <Card className="border-amber-200 bg-amber-50/40 print:mt-0 print:border-0 print:bg-white print:p-0">
+                <CardHeader className="p-3 pb-0 print:hidden">
+                  <CardTitle className="flex items-center gap-2 text-sm">
+                    <Ticket className="size-4 text-amber-700" />
+                    {status === 'GENERATING_TICKET' ? 'Generating ticket...' : 'Session Ticket Preview'}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-3">
+                  <SessionTicketPreview ticket={ticket} issuedAt={issuedAt} />
+                  <div className="mt-3 flex flex-col gap-2 print:hidden">
+                    <Button type="button" onClick={printTicket} size="sm">
+                      Print Ticket
+                    </Button>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button type="button" onClick={markTicketIssued} variant="outline" size="sm">
+                        Mark Issued
+                      </Button>
+                      <Button type="button" onClick={reset} variant="outline" size="sm">
+                        Next Vehicle
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             ) : (
-              <div className="rounded-xl border border-dashed border-primary-200 bg-white/70 p-4 flex flex-col items-center justify-center text-center text-slate-500 min-h-[160px]">
-                <span className="text-xl mb-1.5">🎫</span>
-                <p className="text-[10px] font-bold text-primary-700">Ticket Preview</p>
-                <p className="text-[9px] text-slate-500 mt-1 max-w-[160px]">
-                  Awaiting check-in confirmation to generate ticket
-                </p>
-              </div>
+              <Card className="border-dashed bg-muted/30">
+                <CardContent className="flex min-h-20 items-center justify-center p-4 text-center">
+                  <div className="flex items-center gap-3">
+                    <div className="grid size-9 shrink-0 place-items-center rounded-lg border bg-background text-primary">
+                      <Ticket className="size-4" />
+                    </div>
+                    <div className="text-left">
+                      <p className="text-sm font-semibold text-foreground">Ticket preview</p>
+                      <p className="text-xs text-muted-foreground">
+                        Confirm check-in to generate ticket and QR code.
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             )}
-          </div>
-        </section>
+          </CardContent>
+          </Card>
 
         <div className="space-y-4 print:hidden">
-          <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm print:border-0 print:p-0 print:shadow-none">
-          <div className="flex items-start justify-between gap-3 print:hidden">
-            <div>
-              <h3 className="text-sm font-bold text-gray-900">Service Mode + Actions</h3>
-              <p className="text-xs text-gray-500">{checkInMode}</p>
-            </div>
-            <span
-              className={`rounded-full px-2.5 py-1 text-xs font-bold ${
-                serviceMode === 'reservation'
-                  ? 'bg-amber-100 text-amber-800'
-                  : 'bg-emerald-100 text-emerald-800'
-              }`}
-            >
-              {activeMode.title}
-            </span>
-          </div>
-
-          <div className="mt-4 space-y-4 print:hidden">
+          <Card>
+            <CardHeader className="grid-cols-[1fr_auto]">
+              <div>
+                <CardTitle>Service and actions</CardTitle>
+                <CardDescription>{checkInMode}</CardDescription>
+              </div>
+              <CardAction>
+                <Badge
+                  variant="outline"
+                  className={
+                    serviceMode === 'reservation'
+                      ? 'border-amber-200 bg-amber-50 text-amber-700'
+                      : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                  }
+                >
+                  {activeMode.title}
+                </Badge>
+              </CardAction>
+            </CardHeader>
+            <CardContent className="space-y-4">
             <Field label="Service mode">
-              <div className="flex gap-3">
+              <div className="grid grid-cols-2 gap-2">
                 {CHECK_IN_MODES.map((mode) => (
-                  <button
+                  <Button
                     key={mode.id}
                     type="button"
+                    variant={serviceMode === mode.id ? 'default' : 'outline'}
                     onClick={() => chooseServiceMode(mode.id)}
-                    className={`flex-1 rounded-lg border px-3 py-1.5 text-xs font-bold transition-all ${
-                      serviceMode === mode.id
-                        ? 'border-primary-600 bg-primary-50 text-primary-700'
-                        : 'border-gray-200 bg-white text-gray-700 hover:bg-slate-50'
-                    }`}
+                    className="h-9 justify-center"
                   >
                     {mode.title}
-                  </button>
+                  </Button>
                 ))}
               </div>
             </Field>
@@ -489,81 +520,86 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
             {serviceMode === 'reservation' && (
               <Field label="Reservation ID / QR">
                 <div className="flex gap-2">
-                  <input
-                    className="input font-mono text-xs"
+                  <Input
+                    className="font-mono"
                     value={reservationId}
                     onChange={(event) => setReservationId(event.target.value)}
-                    placeholder="Scan/paste UUID/code"
+                    placeholder="Scan or paste UUID/code"
                   />
-                  <button
+                  <Button
                     type="button"
                     onClick={() => setShowReservationScanner(true)}
-                    className="btn-primary shrink-0 text-xs py-1.5 px-3"
+                    className="shrink-0"
                   >
-                    Scan QR
-                  </button>
+                    <QrCode className="size-4" />
+                    Scan
+                  </Button>
                 </div>
               </Field>
             )}
 
-            <div>
-              <div className="mb-1 flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-700">Confirmed license plate</span>
-                {ocrResult ? (
-                  <span className="text-[10px] font-mono text-gray-500">
-                    OCR: <span className="font-bold text-gray-900">{ocrResult.detectedPlate || 'no plate detected'}</span>
-                    {ocrResult.confidence != null && ` (${Math.round(ocrResult.confidence * 100)}%)`}
-                  </span>
-                ) : (
-                  <span className="text-[10px] text-gray-400 font-medium">OCR: not run yet</span>
-                )}
-              </div>
-              <input
-                className="input uppercase font-mono text-sm font-bold"
+            <Field
+              label="Confirmed license plate"
+              hint={
+                ocrResult
+                  ? `OCR: ${ocrResult.detectedPlate || 'no plate detected'}${
+                      ocrResult.confidence != null ? ` (${Math.round(ocrResult.confidence * 100)}%)` : ''
+                    }`
+                  : 'OCR: not run yet'
+              }
+            >
+              <Input
+                className="h-10 font-mono text-sm font-semibold uppercase tracking-wide"
                 value={licensePlate}
                 onChange={(event) => setLicensePlate(event.target.value)}
                 placeholder="VD: 59A-12345"
               />
-            </div>
+            </Field>
 
             <Field label="Vehicle type">
-              <div className="flex gap-3">
+              <div className="grid grid-cols-2 gap-2">
                 {(['car', 'motorbike'] as VehicleType[]).map((type) => (
-                  <button
+                  <Button
                     key={type}
                     type="button"
+                    variant={vehicleType === type ? 'default' : 'outline'}
                     onClick={() => setVehicleType(type)}
-                    className={`flex-1 rounded-lg border px-3 py-1.5 text-xs font-bold capitalize transition-all ${
-                      vehicleType === type
-                        ? 'border-primary-600 bg-primary-50 text-primary-700'
-                        : 'border-gray-200 bg-white text-gray-700 hover:bg-slate-50'
-                    }`}
+                    className="h-9 justify-center capitalize"
                   >
+                    {type === 'car' ? <Car className="size-4" /> : <Bike className="size-4" />}
                     {type}
-                  </button>
+                  </Button>
                 ))}
               </div>
             </Field>
 
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <button
+            <Separator />
+
+            <div className="grid gap-2 sm:grid-cols-[1fr_auto] xl:grid-cols-1">
+              <Button
                 type="button"
                 onClick={confirmCheckIn}
                 disabled={!canConfirm}
-                className="btn-primary flex-1 py-1.5 text-xs disabled:opacity-50"
+                className="h-10"
               >
+                {status === 'CHECKING_IN' ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="size-4" />
+                )}
                 {status === 'CHECKING_IN'
                   ? 'Checking in...'
                   : serviceMode === 'reservation'
                     ? 'Confirm Reservation Check-in'
                     : 'Confirm Walk-in Check-in'}
-              </button>
-              <button type="button" onClick={reset} className="btn-secondary py-1.5 text-xs">
+              </Button>
+              <Button type="button" onClick={reset} variant="outline" className="h-10">
+                <RotateCcw className="size-4" />
                 Reset
-              </button>
+              </Button>
             </div>
-          </div>
-        </section>
+            </CardContent>
+        </Card>
         <RecentSessionsCard type="checkin" refreshTrigger={checkInCount} />
       </div>
     </div>
@@ -586,23 +622,46 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
 
 function EvidencePreview({ title, imageUrl }: { title: string; imageUrl: string | null }) {
   return (
-    <div className="rounded-xl border border-slate-700 bg-slate-900 p-3">
-      <p className="mb-2 text-xs font-bold text-slate-100">{title}</p>
+    <div className="flex h-full min-h-[160px] flex-col rounded-xl border bg-card p-2.5 shadow-sm">
+      <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-foreground">
+        <ScanLine className="size-3.5 text-primary" />
+        <span className="truncate">{title}</span>
+      </div>
       {imageUrl ? (
-        <img src={imageUrl} alt="Captured OCR evidence" className="aspect-video w-full rounded-lg object-cover" />
+        <img
+          src={imageUrl}
+          alt="Captured OCR evidence"
+          className="min-h-0 w-full flex-1 rounded-lg border object-cover"
+        />
       ) : (
-        <div className="grid aspect-video place-items-center rounded-lg border border-dashed border-primary-200 bg-white/70 text-xs text-slate-500">
-          Press Space to capture plate
+        <div className="grid min-h-[120px] flex-1 place-items-center rounded-lg border border-dashed bg-muted/40 p-3 text-center text-xs text-muted-foreground">
+          <div className="space-y-1">
+            <ScanLine className="mx-auto size-5 text-primary/70" />
+            <p>Press Space to capture plate</p>
+          </div>
         </div>
       )}
     </div>
   )
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string
+  hint?: string
+  children: ReactNode
+}) {
   return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-bold text-gray-700">{label}</span>
+    <label className="block space-y-2">
+      <span className="flex items-center justify-between gap-3">
+        <Label className="text-xs font-semibold text-foreground">{label}</Label>
+        {hint ? (
+          <span className="truncate text-[11px] font-medium text-muted-foreground">{hint}</span>
+        ) : null}
+      </span>
       {children}
     </label>
   )

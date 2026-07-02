@@ -91,6 +91,7 @@ describe('SessionsService', () => {
   let service: SessionsService;
   let prisma: {
     user: { findUnique: jest.Mock };
+    vehicle: { findFirst: jest.Mock };
     parkingSession: { create: jest.Mock; findUnique: jest.Mock; findMany: jest.Mock; findFirst: jest.Mock; update: jest.Mock };
     reservation: { findFirst: jest.Mock; findUnique: jest.Mock };
     ocrEvidence: { update: jest.Mock };
@@ -105,6 +106,7 @@ describe('SessionsService', () => {
   beforeEach(async () => {
     prisma = {
       user: { findUnique: jest.fn() },
+      vehicle: { findFirst: jest.fn() },
       parkingSession: {
         create: jest.fn(),
         findUnique: jest.fn(),
@@ -155,6 +157,9 @@ describe('SessionsService', () => {
 
       // Default: no active reservation (findFirst path)
       prisma.reservation.findFirst.mockResolvedValue(null);
+
+      // Default: no registered vehicle matched for this plate
+      prisma.vehicle.findFirst.mockResolvedValue(null);
 
       // Default: no direct reservation (findUnique path for dto.reservationId)
       prisma.reservation.findUnique.mockResolvedValue(null);
