@@ -4,15 +4,19 @@ import {
   AlertCircle,
   ArrowRightLeft,
   BadgeCheck,
-  CheckCircle2,
+  ChevronDown,
   Loader2,
   QrCode,
   RotateCcw,
   ScanLine,
-  ShieldAlert,
 } from 'lucide-react'
 import { QRScanner } from '../../components/qr-scanner/QRScanner'
-import { type ConfirmReservationCheckInResponse, type ReservationScanResponse, confirmReservationCheckIn, scanReservationCheckIn } from '../../lib/sessions-api'
+import {
+  type ConfirmReservationCheckInResponse,
+  type ReservationScanResponse,
+  confirmReservationCheckIn,
+  scanReservationCheckIn,
+} from '../../lib/sessions-api'
 import { type useToasts } from '../../lib/use-toasts'
 import { formatDateTimeVN } from '../../lib/date-time'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -20,6 +24,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Separator } from '@/components/ui/separator'
 
 type Props = {
   onSwitchToOcr: () => void
@@ -33,6 +38,8 @@ export function StaffReservationQrCheckInPanel({ onSwitchToOcr, toasts }: Props)
   const [confirmData, setConfirmData] = useState<ConfirmReservationCheckInResponse | null>(null)
   const [loadingScan, setLoadingScan] = useState(false)
   const [loadingConfirm, setLoadingConfirm] = useState(false)
+  const [manualFallbackOpen, setManualFallbackOpen] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const badgeTone = useMemo(() => {
     if (!scanData) return 'bg-muted text-muted-foreground'
@@ -41,6 +48,10 @@ export function StaffReservationQrCheckInPanel({ onSwitchToOcr, toasts }: Props)
     return 'bg-amber-100 text-amber-800'
   }, [scanData])
 
+  const summaryTone = confirmData?.alreadyCheckedIn
+    ? 'border-amber-200 bg-amber-50 text-amber-900'
+    : 'border-emerald-200 bg-emerald-50 text-emerald-900'
+
   const reset = () => {
     setManualToken('')
     setScanData(null)
@@ -48,6 +59,8 @@ export function StaffReservationQrCheckInPanel({ onSwitchToOcr, toasts }: Props)
     setLoadingScan(false)
     setLoadingConfirm(false)
     setScannerOpen(false)
+    setManualFallbackOpen(false)
+    setErrorMessage(null)
   }
 
   const submitToken = async (token: string) => {
@@ -57,14 +70,18 @@ export function StaffReservationQrCheckInPanel({ onSwitchToOcr, toasts }: Props)
       return
     }
 
+    setErrorMessage(null)
     setLoadingScan(true)
     try {
       const data = await scanReservationCheckIn(trimmed)
       setScanData(data)
       setConfirmData(null)
+      setManualToken(trimmed)
       toasts.showSuccess(`Reservation ${data.reservationId} loaded`)
     } catch (error) {
-      toasts.showError(readableError(error))
+      const message = readableError(error)
+      setErrorMessage(message)
+      toasts.showError(message)
     } finally {
       setLoadingScan(false)
     }
@@ -73,162 +90,221 @@ export function StaffReservationQrCheckInPanel({ onSwitchToOcr, toasts }: Props)
   const handleConfirm = async () => {
     if (!scanData) return
 
+    setErrorMessage(null)
     setLoadingConfirm(true)
     try {
       const data = await confirmReservationCheckIn(scanData.reservationId)
       setConfirmData(data)
       toasts.showSuccess(data.alreadyCheckedIn ? data.message : 'Reservation check-in confirmed')
     } catch (error) {
-      toasts.showError(readableError(error))
+      const message = readableError(error)
+      setErrorMessage(message)
+      toasts.showError(message)
     } finally {
       setLoadingConfirm(false)
     }
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.75fr)]">
+    <div className="space-y-4">
       <Card className="border-primary/20 shadow-sm">
         <CardHeader className="border-b bg-muted/30">
-          <CardTitle className="flex items-center gap-2">
-            <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
-              <QrCode className="size-4" />
-            </span>
-            Scan reservation QR
-          </CardTitle>
-          <CardDescription>
-            Default gate flow for drivers with an active reservation. OCR stays available as fallback only.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4 pt-6">
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <Button type="button" onClick={() => setScannerOpen(true)} className="h-11">
-              <ScanLine className="size-4" />
-              Open QR scanner
-            </Button>
-            <Button type="button" variant="outline" onClick={onSwitchToOcr} className="h-11">
-              <ArrowRightLeft className="size-4" />
-              Use OCR / Walk-in flow
-            </Button>
-          </div>
-
-          <div className="rounded-xl border bg-muted/20 p-4">
-            <p className="mb-2 text-sm font-semibold text-foreground">Manual fallback</p>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Input
-                value={manualToken}
-                onChange={(event) => setManualToken(event.target.value)}
-                placeholder="Paste reservation QR token"
-                className="h-11 font-mono text-xs"
-              />
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={loadingScan}
-                onClick={() => void submitToken(manualToken)}
-                className="h-11 sm:min-w-[140px]"
-              >
-                {loadingScan ? <Loader2 className="size-4 animate-spin" /> : <QrCode className="size-4" />}
-                Load reservation
-              </Button>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
+                  <QrCode className="size-4" />
+                </span>
+                Reservation QR check-in
+              </CardTitle>
+              <CardDescription>Scan, review the plate, then confirm manually.</CardDescription>
             </div>
+            <Badge variant="outline" className="w-fit bg-background whitespace-nowrap">
+              QR-first mode
+            </Badge>
           </div>
+        </CardHeader>
+        <CardContent className="pt-6">
+          {confirmData ? (
+            <div className="space-y-5">
+              <div className={`rounded-xl border px-4 py-3 ${summaryTone}`}>
+                <p className="text-sm font-semibold">
+                  {confirmData.alreadyCheckedIn ? 'Already checked in' : 'Check-in confirmed'}
+                </p>
+                <p className="mt-1 text-sm opacity-90">
+                  {confirmData.alreadyCheckedIn
+                    ? 'An active session already exists for this reservation.'
+                    : 'Reservation is now linked to the active parking session.'}
+                </p>
+              </div>
 
-          {scanData ? (
-            <div className="space-y-4">
-              <div className="rounded-2xl border bg-card p-5 shadow-sm">
-                <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="space-y-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                      Plate from DB
+                      Session code
                     </p>
-                    <p className="font-mono text-3xl font-black tracking-[0.18em] text-foreground">
-                      {scanData.plateNumber}
+                    <p className="font-mono text-2xl font-black tracking-[0.08em] text-foreground sm:text-3xl">
+                      {confirmData.session.sessionCode}
                     </p>
                   </div>
-                  <Badge className={badgeTone}>{scanData.paymentBadge}</Badge>
+                  <Badge
+                    variant="outline"
+                    className={
+                      confirmData.alreadyCheckedIn
+                        ? 'border-amber-300 bg-amber-50 text-amber-800'
+                        : 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                    }
+                  >
+                    {confirmData.alreadyCheckedIn ? 'Already checked in' : 'Ready for next vehicle'}
+                  </Badge>
                 </div>
 
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <Metric label="Vehicle type" value={scanData.vehicleType} />
-                  <Metric label="Driver" value={scanData.driverName} />
-                  <Metric label="Reserved slot" value={scanData.slotLabel} />
-                  <Metric label="QR expires" value={formatDateTimeVN(scanData.expiresAt)} />
+                <Separator />
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Metric label="Plate" value={confirmData.session.licensePlate} mono strong />
+                  <Metric label="Slot" value={confirmData.slot.code} />
+                  <Metric label="Vehicle type" value={confirmData.session.vehicleType} />
+                  <Metric label="Check-in time" value={formatDateTimeVN(confirmData.session.checkInTime)} />
                 </div>
               </div>
 
-              <Alert className="border-amber-200 bg-amber-50 text-amber-950">
-                <ShieldAlert className="size-4" />
-                <AlertTitle>Manual staff verification required</AlertTitle>
-                <AlertDescription className="text-amber-900">
-                  Compare the real vehicle plate with the DB plate above before confirming. Barrier stays manual.
-                </AlertDescription>
-              </Alert>
-
               <div className="flex flex-col gap-3 sm:flex-row">
-                <Button type="button" onClick={() => void handleConfirm()} disabled={loadingConfirm} className="h-11">
+                <Button type="button" onClick={reset} className="h-11 whitespace-nowrap">
+                  <RotateCcw className="size-4" />
+                  Next vehicle
+                </Button>
+              </div>
+            </div>
+          ) : scanData ? (
+            <div className="space-y-5">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    Plate from DB
+                  </p>
+                  <p className="font-mono text-3xl font-black tracking-[0.16em] text-foreground sm:text-4xl">
+                    {scanData.plateNumber}
+                  </p>
+                </div>
+                <Badge className={`w-fit whitespace-nowrap ${badgeTone}`}>{scanData.paymentBadge}</Badge>
+              </div>
+
+              <Separator />
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <Metric label="Driver name" value={scanData.driverName} />
+                <Metric label="Vehicle type" value={scanData.vehicleType} />
+                <Metric label="Reserved slot" value={scanData.slotLabel} />
+                <Metric label="QR expiry" value={formatDateTimeVN(scanData.expiresAt)} />
+              </div>
+
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-950">
+                Compare real plate before confirming. Barrier remains manual.
+              </div>
+
+              {errorMessage ? (
+                <Alert variant="destructive">
+                  <AlertCircle className="size-4" />
+                  <AlertTitle>Unable to continue</AlertTitle>
+                  <AlertDescription>{errorMessage}</AlertDescription>
+                </Alert>
+              ) : null}
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                <Button
+                  type="button"
+                  onClick={() => void handleConfirm()}
+                  disabled={loadingConfirm}
+                  className="h-11 whitespace-nowrap"
+                >
                   {loadingConfirm ? <Loader2 className="size-4 animate-spin" /> : <BadgeCheck className="size-4" />}
                   Confirm Check-in
                 </Button>
-                <Button type="button" variant="outline" onClick={onSwitchToOcr} className="h-11">
+                <Button type="button" variant="outline" onClick={onSwitchToOcr} className="h-11 whitespace-nowrap">
                   <ArrowRightLeft className="size-4" />
                   Use OCR / Walk-in flow
                 </Button>
-                <Button type="button" variant="ghost" onClick={reset} className="h-11">
+                <Button type="button" variant="ghost" onClick={reset} className="h-11 whitespace-nowrap">
                   <RotateCcw className="size-4" />
                   Reset
                 </Button>
               </div>
             </div>
           ) : (
-            <Alert className="border-dashed bg-muted/30">
-              <AlertCircle className="size-4" />
-              <AlertTitle>Waiting for reservation QR</AlertTitle>
-              <AlertDescription>
-                Use the scanner first. If QR is invalid, expired, mismatched, or unreadable, switch to OCR / walk-in flow.
-              </AlertDescription>
-            </Alert>
-          )}
-        </CardContent>
-      </Card>
+            <div className="space-y-5 py-2">
+              <div className="space-y-2">
+                <p className="text-lg font-semibold text-foreground">Ready to scan reservation QR</p>
+                <p className="text-sm text-muted-foreground">
+                  Start with the driver&apos;s live reservation QR. Use OCR only when QR cannot continue.
+                </p>
+              </div>
 
-      <Card className="border-primary/15 shadow-sm">
-        <CardHeader className="border-b bg-muted/30">
-          <CardTitle>Reservation status</CardTitle>
-          <CardDescription>Staff keeps full control. Nothing opens automatically.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4 pt-6">
-          {confirmData ? (
-            <Alert className="border-emerald-200 bg-emerald-50 text-emerald-950">
-              <CheckCircle2 className="size-4" />
-              <AlertTitle>{confirmData.alreadyCheckedIn ? 'Already checked in' : 'Reservation fulfilled'}</AlertTitle>
-              <AlertDescription className="text-emerald-900">
-                Session {confirmData.session.sessionCode} is linked to slot {confirmData.slot.code}.
-              </AlertDescription>
-            </Alert>
-          ) : (
-            <Alert className="border-sky-200 bg-sky-50 text-sky-950">
-              <QrCode className="size-4" />
-              <AlertTitle>QR-first gate mode</AlertTitle>
-              <AlertDescription className="text-sky-900">
-                Reservation flow skips OCR provider calls and reads trusted DB vehicle data instead.
-              </AlertDescription>
-            </Alert>
-          )}
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button
+                  type="button"
+                  onClick={() => setScannerOpen(true)}
+                  className="h-11 whitespace-nowrap"
+                  disabled={loadingScan}
+                >
+                  {loadingScan ? <Loader2 className="size-4 animate-spin" /> : <ScanLine className="size-4" />}
+                  Open QR scanner
+                </Button>
+                <Button type="button" variant="outline" onClick={onSwitchToOcr} className="h-11 whitespace-nowrap">
+                  <ArrowRightLeft className="size-4" />
+                  Use OCR / Walk-in flow
+                </Button>
+              </div>
 
-          {confirmData ? (
-            <div className="space-y-3 rounded-xl border bg-muted/20 p-4">
-              <Metric label="Session code" value={confirmData.session.sessionCode} mono />
-              <Metric label="Plate" value={confirmData.session.licensePlate} mono />
-              <Metric label="Slot" value={confirmData.slot.code} />
-              <Metric label="Check-in time" value={formatDateTimeVN(confirmData.session.checkInTime)} />
-              <Button type="button" variant="outline" onClick={reset} className="h-11 w-full">
-                <RotateCcw className="size-4" />
-                Next vehicle
-              </Button>
-            </div>
-          ) : (
-            <div className="rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground">
-              Reservation scan shows the linked plate, vehicle type, slot, driver, and payment badge before any session is created.
+              <details
+                open={manualFallbackOpen}
+                onToggle={(event) =>
+                  setManualFallbackOpen((event.currentTarget as HTMLDetailsElement).open)
+                }
+                className="rounded-xl border bg-muted/15 px-4 py-3 [&_summary::-webkit-details-marker]:hidden"
+              >
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium text-muted-foreground">
+                  <span>Paste reservation token manually</span>
+                  <ChevronDown
+                    className={`size-4 transition-transform ${manualFallbackOpen ? 'rotate-180' : ''}`}
+                  />
+                </summary>
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    value={manualToken}
+                    onChange={(event) => setManualToken(event.target.value)}
+                    placeholder="Signed reservation token"
+                    className="h-11 font-mono text-xs"
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={loadingScan}
+                    onClick={() => void submitToken(manualToken)}
+                    className="h-11 whitespace-nowrap sm:min-w-[156px]"
+                  >
+                    {loadingScan ? <Loader2 className="size-4 animate-spin" /> : <QrCode className="size-4" />}
+                    Load reservation
+                  </Button>
+                </div>
+              </details>
+
+              {loadingScan ? (
+                <div className="rounded-xl border border-dashed bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+                  Reading reservation QR and loading linked vehicle data...
+                </div>
+              ) : null}
+
+              {errorMessage ? (
+                <Alert variant="destructive">
+                  <AlertCircle className="size-4" />
+                  <AlertTitle>QR scan failed</AlertTitle>
+                  <AlertDescription>
+                    {errorMessage} Use OCR / walk-in flow if this reservation cannot continue by QR.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
             </div>
           )}
         </CardContent>
@@ -260,15 +336,21 @@ function Metric({
   label,
   value,
   mono = false,
+  strong = false,
 }: {
   label: string
   value: string
   mono?: boolean
+  strong?: boolean
 }) {
   return (
-    <div className="rounded-xl border bg-muted/30 p-3">
+    <div className="rounded-xl border bg-muted/20 px-4 py-3">
       <p className="text-xs font-semibold uppercase text-muted-foreground">{label}</p>
-      <p className={`mt-1 text-sm font-semibold text-foreground ${mono ? 'font-mono' : ''}`}>
+      <p
+        className={`mt-1 text-sm text-foreground ${mono ? 'font-mono' : ''} ${
+          strong ? 'font-black tracking-[0.08em]' : 'font-semibold'
+        }`}
+      >
         {value}
       </p>
     </div>

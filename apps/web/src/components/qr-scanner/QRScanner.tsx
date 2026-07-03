@@ -1,12 +1,20 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode'
+import { AlertCircle, ChevronDown, Loader2, QrCode, ScanLine } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 interface QRScannerProps {
-  /** Called when a QR code is successfully scanned. */
   onScan: (decodedText: string) => void
-  /** Called when the user closes the scanner. */
   onClose: () => void
-  /** Optional: called when the user submits a QR payload manually. */
   onManualInput?: (value: string) => void
   title?: string
   instructions?: string
@@ -15,10 +23,8 @@ interface QRScannerProps {
   manualInputPlaceholder?: string
 }
 
-/**
- * Extract a human-readable message from any error value.
- * html5-qrcode sometimes throws strings or empty errors.
- */
+type ScannerStatus = 'starting' | 'scanning' | 'error'
+
 function describeError(err: unknown): string {
   if (typeof err === 'string') return err
   if (err instanceof Error && err.message) return err.message
@@ -29,205 +35,262 @@ function describeError(err: unknown): string {
   return 'Cannot access camera. Please grant camera permission in your browser.'
 }
 
-/**
- * Task 22: QR Scanner modal component.
- * Uses html5-qrcode to access the device camera and decode QR codes.
- * Returns the decoded session UUID to the parent via onScan callback.
- *
- * Req 2.1, Design ref: QR scanning
- */
+function waitForMount() {
+  return new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  })
+}
+
 export function QRScanner({
   onScan,
   onClose,
   onManualInput,
   title = 'Scan QR code',
-  instructions = 'Hold QR code 15-25cm from camera, keep it straight and well-lit.',
-  manualToggleLabel = 'Cannot scan? Enter code manually',
-  manualInputLabel = 'Enter session ID (UUID from QR)',
-  manualInputPlaceholder = 'e.g. 5f3a9c1e-...',
+  instructions = 'Place the QR inside the frame.',
+  manualToggleLabel = 'Paste token manually',
+  manualInputLabel = 'QR token',
+  manualInputPlaceholder = 'Paste the QR payload',
 }: QRScannerProps) {
   const scannerRef = useRef<Html5Qrcode | null>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const stopPromiseRef = useRef<Promise<void> | null>(null)
   const scannedRef = useRef(false)
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const readerId = `qr-reader-${useId().replace(/:/g, '')}`
+
+  const [status, setStatus] = useState<ScannerStatus>('starting')
   const [error, setError] = useState<string | null>(null)
-  const [starting, setStarting] = useState(true)
+  const [manualOpen, setManualOpen] = useState(false)
   const [manualInput, setManualInput] = useState('')
 
+  const stopScanner = useCallback(async () => {
+    if (stopPromiseRef.current) {
+      await stopPromiseRef.current
+      return
+    }
+
+    const scanner = scannerRef.current
+    if (!scanner) return
+
+    stopPromiseRef.current = (async () => {
+      try {
+        await scanner.stop()
+      } catch {
+        // Scanner may already be stopped or not fully started.
+      }
+
+      try {
+        scanner.clear()
+      } catch {
+        // Clearing after teardown can throw in html5-qrcode; safe to ignore.
+      }
+
+      if (scannerRef.current === scanner) {
+        scannerRef.current = null
+      }
+      stopPromiseRef.current = null
+    })()
+
+    await stopPromiseRef.current
+  }, [])
+
   useEffect(() => {
-    const readerId = 'qr-reader-container'
-    let mounted = true
+    let cancelled = false
+    scannedRef.current = false
 
     const startScanner = async () => {
+      setStatus('starting')
+      setError(null)
+
       try {
-        // Browsers only allow camera over HTTPS or localhost. Surface a clear
-        // message instead of a cryptic getUserMedia error.
-        if (
-          typeof navigator === 'undefined' ||
-          !navigator.mediaDevices?.getUserMedia
-        ) {
+        if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
           throw new Error(
-            'Browser does not support camera. Please open via HTTPS or localhost.',
+            'Browser does not support camera. Please open this page via HTTPS or localhost.',
           )
         }
 
+        await waitForMount()
+        if (cancelled || !containerRef.current) return
+
         const scanner = new Html5Qrcode(readerId, {
-          // Restrict to QR codes for faster decoding and fewer false positives.
           formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+          experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true,
+          },
           verbose: false,
         })
         scannerRef.current = scanner
 
         await scanner.start(
-          { facingMode: 'environment' },
           {
-            // Keep decode attempts steady without overloading low-end devices.
-            fps: 15,
-            // Use a generous scan box for ticket screens, glare, and angled scans.
+            facingMode: { ideal: 'environment' },
+          },
+          {
+            fps: 20,
             qrbox: (vw, vh) => {
               const min = Math.min(vw, vh)
-              const size = Math.floor(Math.min(Math.max(min * 0.78, 240), 420))
+              const size = Math.floor(Math.min(Math.max(min * 0.7, 220), 320))
               return { width: size, height: size }
             },
-            aspectRatio: 16 / 9,
-            // Allow mirrored decoding as a fallback if the browser picks a mirrored stream.
-            disableFlip: false,
-            // Prefer HD video so small QR codes remain readable.
+            aspectRatio: 1,
+            disableFlip: true,
             videoConstraints: {
-              facingMode: 'environment',
+              facingMode: { ideal: 'environment' },
               width: { ideal: 1280 },
               height: { ideal: 720 },
             },
           },
-          (decodedText) => {
-            // Guard against multiple scans firing before stop() resolves
+          async (decodedText) => {
             if (scannedRef.current) return
             scannedRef.current = true
-            // Stop asynchronously; ignore errors (already handled in cleanup)
-            scanner.stop().catch(() => {})
-            if (mounted) {
-              onScan(decodedText)
-            }
+
+            await stopScanner()
+            if (cancelled) return
+
+            onClose()
+            onScan(decodedText)
           },
           () => {
-            // QR code not detected in this frame — ignore
+            // Ignore per-frame decode misses.
           },
         )
 
-        if (mounted) setStarting(false)
+        if (!cancelled) {
+          setStatus('scanning')
+        }
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error('[QRScanner] start failed', err)
-        if (mounted) {
-          setStarting(false)
+        if (!cancelled) {
+          setStatus('error')
           setError(describeError(err))
         }
       }
     }
 
-    startScanner()
+    void startScanner()
 
     return () => {
-      mounted = false
-      const scanner = scannerRef.current
-      scannerRef.current = null
-      if (!scanner) return
-
-      // stop() must complete before clear(); otherwise html5-qrcode throws.
-      // Errors from stop()/clear() during unmount are non-fatal.
-      void (async () => {
-        try {
-          await scanner.stop()
-        } catch {
-          /* ignore — scanner may already be stopped */
-        }
-        try {
-          scanner.clear()
-        } catch {
-          /* ignore */
-        }
-      })()
+      cancelled = true
+      void stopScanner()
     }
-  }, [onScan])
+  }, [onClose, onScan, readerId, stopScanner])
+
+  const handleManualSubmit = async () => {
+    const trimmed = manualInput.trim()
+    if (!trimmed || !onManualInput) return
+
+    scannedRef.current = true
+    await stopScanner()
+    onClose()
+    onManualInput(trimmed)
+  }
+
+  const statusMeta =
+    status === 'starting'
+      ? {
+          icon: <Loader2 className="size-4 animate-spin" />,
+          label: 'Starting camera...',
+          tone: 'text-muted-foreground',
+        }
+      : status === 'error'
+        ? {
+            icon: <AlertCircle className="size-4" />,
+            label: 'Camera unavailable',
+            tone: 'text-destructive',
+          }
+        : {
+            icon: <ScanLine className="size-4" />,
+            label: 'Scanning',
+            tone: 'text-emerald-700 dark:text-emerald-400',
+          }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-indigo-950/35 p-4 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-    >
-      <div className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-          <div>
-            <h3 className="text-lg font-black text-slate-950">{title}</h3>
-            <p className="text-xs font-semibold text-slate-500">Keep the QR flat, bright, and inside the guide frame.</p>
-          </div>
-          <button
-            onClick={onClose}
-            className="grid h-10 w-10 place-items-center rounded-xl text-2xl leading-none text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-            aria-label="Close"
-          >
-            &times;
-          </button>
-        </div>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="w-[calc(100vw-24px)] max-h-[calc(100dvh-2rem)] max-w-[480px] overflow-hidden p-0 sm:max-w-lg">
+        <DialogHeader className="border-b bg-muted/30 px-5 py-4 pr-12">
+          <DialogTitle className="flex items-center gap-2">
+            <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
+              <QrCode className="size-4" />
+            </span>
+            {title}
+          </DialogTitle>
+          <DialogDescription>{instructions}</DialogDescription>
+        </DialogHeader>
 
-        <div className="p-4">
+        <div className="space-y-4 overflow-y-auto p-5">
+          <div className="mx-auto w-full max-w-[320px] sm:max-w-[380px]">
+            <div
+              id={readerId}
+              ref={containerRef}
+              className="aspect-square w-full overflow-hidden rounded-xl border bg-primary/5 [&_video]:!h-full [&_video]:!w-full [&_video]:!object-cover"
+            />
+          </div>
+
+          <div className="flex flex-col gap-2 rounded-xl border bg-muted/15 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <div className={`inline-flex items-center gap-2 font-medium ${statusMeta.tone}`}>
+              {statusMeta.icon}
+              <span>{statusMeta.label}</span>
+            </div>
+            <span className="text-xs text-muted-foreground">QR only. Keep it centered.</span>
+          </div>
+
           {error ? (
-            <div className="text-center py-8">
-              <p className="text-red-600 text-sm mb-4">{error}</p>
-              <button onClick={onClose} className="btn-secondary">
-                Close
-              </button>
+            <p className="text-sm text-destructive">{error}</p>
+          ) : null}
+
+          {onManualInput ? (
+            <div className="-mx-5 -mb-5 rounded-b-xl border-t bg-muted/10 px-5 py-4">
+              {manualOpen ? (
+                <div className="mb-4 grid gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor={`${readerId}-manual`}>{manualInputLabel}</Label>
+                    <Input
+                      id={`${readerId}-manual`}
+                      value={manualInput}
+                      onChange={(event) => setManualInput(event.target.value)}
+                      placeholder={manualInputPlaceholder}
+                      className="h-11 font-mono text-xs"
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={() => void handleManualSubmit()}
+                    disabled={!manualInput.trim()}
+                    className="h-11 w-full whitespace-nowrap sm:w-auto"
+                  >
+                    Confirm token
+                  </Button>
+                </div>
+              ) : null}
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setManualOpen((value) => !value)}
+                  className="h-10 justify-start px-0 text-sm font-medium text-muted-foreground hover:bg-transparent hover:text-foreground"
+                >
+                  {manualToggleLabel}
+                  <ChevronDown
+                    className={`ml-2 size-4 transition-transform ${manualOpen ? 'rotate-180' : ''}`}
+                  />
+                </Button>
+                <Button type="button" variant="outline" onClick={onClose} className="h-10 whitespace-nowrap">
+                  Cancel
+                </Button>
+              </div>
             </div>
           ) : (
-            <>
-              {starting && (
-                <p className="text-center text-sm text-gray-500 mb-2">
-                  Starting camera...
-                </p>
-              )}
-              <div
-                id="qr-reader-container"
-                ref={containerRef}
-                className="relative aspect-video w-full overflow-hidden rounded-xl bg-primary-50 ring-1 ring-primary-100 [&_video]:!h-full [&_video]:!w-full [&_video]:!object-cover"
-              />
-              <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-center text-xs font-semibold text-slate-500">
-                {instructions}
-              </p>
-              {onManualInput && (
-                <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
-                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                    <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
-                      {manualInputLabel}
-                    </label>
-                    <span className="text-xs font-semibold text-primary-600">{manualToggleLabel}</span>
-                  </div>
-                  <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                    <input
-                      type="text"
-                      className="input h-11 font-mono text-sm font-black uppercase tracking-[0.08em]"
-                      placeholder={manualInputPlaceholder}
-                      value={manualInput}
-                      onChange={(e) => setManualInput(e.target.value)}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const trimmed = manualInput.trim()
-                        if (trimmed) onManualInput(trimmed)
-                      }}
-                      className="btn-primary h-11 rounded-xl px-5 text-sm"
-                      disabled={!manualInput.trim()}
-                    >
-                      Confirm
-                    </button>
-                  </div>
-                </div>
-              )}
-            </>
+            <div className="-mx-5 -mb-5 rounded-b-xl border-t bg-muted/10 px-5 py-4">
+              <div className="flex justify-end">
+                <Button type="button" variant="outline" onClick={onClose} className="h-10 whitespace-nowrap">
+                  Cancel
+                </Button>
+              </div>
+            </div>
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
