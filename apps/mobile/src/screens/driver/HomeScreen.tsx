@@ -148,7 +148,14 @@ export function HomeScreen({ navigation }: Props) {
       ) : null}
 
       {activeSession ? (
-        <InfoCard title="Active Session" subtitle="Your current parking session after staff check-in.">
+        <InfoCard
+          title="Active Session"
+          subtitle={
+            activeSession.status === 'checkout_pending'
+              ? 'Checkout is in progress. You can pay now in the app.'
+              : 'Your current parking session after staff check-in.'
+          }
+        >
           <View style={styles.compactDetails}>
             <Detail label="Plate" value={activeSession.licensePlate} />
             <Detail label="Slot" value={formatSlotLabel(activeSession.slot)} />
@@ -156,7 +163,7 @@ export function HomeScreen({ navigation }: Props) {
             <Detail label="Duration" value={formatDuration(durationMs)} />
           </View>
           <Button onPress={() => navigation.navigate('ActiveSessionTab')}>
-            View Session
+            {activeSession.status === 'checkout_pending' ? 'Thanh toan ngay' : 'View Session'}
           </Button>
         </InfoCard>
       ) : null}

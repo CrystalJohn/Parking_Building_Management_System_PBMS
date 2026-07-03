@@ -2,8 +2,10 @@ import { apiClient } from './client';
 import type {
   CreateReservationRequest,
   CreateReservationResponse,
+  DriverNotification,
   DriverVehicle,
   ParkingSession,
+  PaymentWorkflow,
   Reservation,
   ReservationAvailabilityRequest,
   ReservationCheckInQr,
@@ -59,8 +61,25 @@ export const driverApi = {
     return data;
   },
 
+  async createSessionPayment(sessionId: string) {
+    const { data } = await apiClient.post<PaymentWorkflow>(`/sessions/${sessionId}/pay`, {
+      method: 'bank_qr',
+    });
+    return data;
+  },
+
+  async getSessionPaymentStatus(sessionId: string) {
+    const { data } = await apiClient.get<PaymentWorkflow>(`/sessions/${sessionId}/payment-status`);
+    return data;
+  },
+
   async getParkingHistory() {
     const { data } = await apiClient.get<ParkingSession[]>('/sessions/my-history');
+    return data;
+  },
+
+  async getMyNotifications() {
+    const { data } = await apiClient.get<DriverNotification[]>('/notifications/my');
     return data;
   },
 

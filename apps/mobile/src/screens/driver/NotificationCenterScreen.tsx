@@ -1,36 +1,31 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import { InfoCard } from '../../components/InfoCard';
+import { QueryState } from '../../components/QueryState';
 import { Screen } from '../../components/Screen';
+import { useNotificationsQuery } from '../../hooks/useDriverQueries';
 import { colors } from '../../theme/colors';
-
-const placeholderNotifications = [
-  {
-    title: 'Reservation confirmed',
-    body: 'Your parking reservation has been confirmed.',
-  },
-  {
-    title: 'Reservation expired',
-    body: 'A reservation can expire when the vehicle is not checked in on time.',
-  },
-  {
-    title: 'Vehicle checked in',
-    body: 'Your active parking session appears after staff confirms check-in.',
-  },
-  {
-    title: 'Session completed',
-    body: 'The parking session completes after staff confirms the vehicle exited.',
-  },
-];
+import { formatDateTimeVN } from '../../utils/dateTime';
 
 export function NotificationCenterScreen() {
+  const notificationsQuery = useNotificationsQuery();
+
   return (
     <Screen>
-      <InfoCard title="Notification Center" subtitle="Local demo data until notification APIs are available">
-        {placeholderNotifications.map((notification) => (
-          <View key={notification.title} style={styles.item}>
+      <InfoCard title="Notification Center" subtitle="Recent driver notifications from PBMS">
+        <QueryState
+          loading={notificationsQuery.isLoading}
+          error={notificationsQuery.error}
+          empty={!notificationsQuery.isLoading && !notificationsQuery.data?.length}
+          emptyMessage="No notifications yet."
+          onRetry={() => notificationsQuery.refetch()}
+        />
+
+        {notificationsQuery.data?.map((notification) => (
+          <View key={notification.id} style={styles.item}>
             <Text style={styles.title}>{notification.title}</Text>
-            <Text style={styles.body}>{notification.body}</Text>
+            <Text style={styles.body}>{notification.message}</Text>
+            <Text style={styles.meta}>{formatDateTimeVN(notification.createdAt)}</Text>
           </View>
         ))}
       </InfoCard>
@@ -53,5 +48,10 @@ const styles = StyleSheet.create({
   body: {
     color: colors.muted,
     lineHeight: 20,
+  },
+  meta: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

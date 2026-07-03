@@ -1,5 +1,6 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Alert, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
 import QRCode from 'react-native-qrcode-svg';
 
 import { getErrorMessage } from '../../api/client';
@@ -70,6 +71,9 @@ export function ReservationDetailScreen({ navigation, route }: Props) {
             <Detail label="Zone" value={reservation.slot?.zone ?? 'N/A'} />
             <Detail label="Created time" value={formatDate(reservation.createdAt)} />
             <Detail label="Expires time" value={formatDate(reservation.expiresAt)} />
+            {isActiveReservation ? (
+              <ExpiryCountdown expiresAt={reservation.expiresAt} />
+            ) : null}
 
             {isActiveReservation ? (
               <>
@@ -151,6 +155,31 @@ function Detail({ label, value }: { label: string; value: string }) {
       <Text style={styles.value}>{value}</Text>
     </View>
   );
+}
+
+function ExpiryCountdown({ expiresAt }: { expiresAt: string }) {
+  const [remaining, setRemaining] = useState(() => getRemainingSeconds(expiresAt));
+
+  useEffect(() => {
+    setRemaining(getRemainingSeconds(expiresAt));
+    const id = setInterval(() => {
+      setRemaining(getRemainingSeconds(expiresAt));
+    }, 1000);
+
+    return () => clearInterval(id);
+  }, [expiresAt]);
+
+  const value =
+    remaining > 0
+      ? `${String(Math.floor(remaining / 60)).padStart(2, '0')}:${String(remaining % 60).padStart(2, '0')}`
+      : '00:00';
+
+  return <Detail label="Countdown" value={value} />;
+}
+
+function getRemainingSeconds(expiresAt: string) {
+  const diff = new Date(expiresAt).getTime() - Date.now();
+  return Math.max(0, Math.floor(diff / 1000));
 }
 
 const styles = StyleSheet.create({

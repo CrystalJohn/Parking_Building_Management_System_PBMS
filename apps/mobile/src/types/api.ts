@@ -2,6 +2,9 @@ export type Role = 'admin' | 'manager' | 'staff' | 'driver';
 export type VehicleType = 'car' | 'motorbike';
 export type ReservationStatus = 'active' | 'fulfilled' | 'expired' | 'cancelled';
 export type SessionStatus = 'active' | 'checkout_pending' | 'exit_authorized' | 'completed' | 'cancelled';
+export type PaymentMethod = 'cash' | 'bank_qr';
+export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'cancelled' | 'expired';
+export type NotificationType = 'session_started' | 'reservation_expiring_soon';
 
 export type DriverVehicle = {
   id: string;
@@ -156,6 +159,44 @@ export type ParkingSession = {
       name: string;
     };
   };
+};
+
+export type PaymentWorkflow = {
+  session: ParkingSession;
+  payment: {
+    id: string;
+    sessionId: string;
+    amount: number;
+    method: PaymentMethod;
+    status: PaymentStatus;
+    paidAt?: string | null;
+    receivedBy?: string | null;
+    checkoutUrl?: string | null;
+    qrCode?: string | null;
+    expiredAt?: string | null;
+  } | null;
+  slot: {
+    id: number;
+    code: string;
+    status: string;
+    zone: string;
+    floor?: {
+      id: number;
+      floorNumber: number;
+      name: string;
+    };
+  };
+};
+
+export type DriverNotification = {
+  id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  relatedReservationId?: string | null;
+  relatedSessionId?: string | null;
+  createdAt: string;
+  readAt?: string | null;
 };
 
 

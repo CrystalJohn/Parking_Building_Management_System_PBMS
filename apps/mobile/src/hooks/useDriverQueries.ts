@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { driverApi } from '../api/driver';
 import type {
   CreateReservationRequest,
+  DriverNotification,
+  PaymentWorkflow,
   Reservation,
   ReservationAvailabilityRequest,
 } from '../types/api';
@@ -19,6 +21,8 @@ export const driverQueryKeys = {
     checkInQr: (reservationId: string) => ['driver', 'reservations', 'checkin-qr', reservationId] as const,
   },
   activeSessions: ['driver', 'active-sessions'] as const,
+  sessionPayment: (sessionId: string) => ['driver', 'session-payment', sessionId] as const,
+  notifications: ['driver', 'notifications'] as const,
   history: ['driver', 'history'] as const,
 };
 
@@ -106,6 +110,7 @@ export function useActiveSessionsQuery() {
   return useQuery({
     queryKey: driverQueryKeys.activeSessions,
     queryFn: driverApi.getActiveSessions,
+    refetchInterval: 15_000,
   });
 }
 
@@ -124,6 +129,35 @@ export function useParkingHistoryQuery() {
   return useQuery({
     queryKey: driverQueryKeys.history,
     queryFn: driverApi.getParkingHistory,
+  });
+}
+
+export function useCreateSessionPaymentMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (sessionId: string) => driverApi.createSessionPayment(sessionId),
+    onSuccess: (workflow: PaymentWorkflow) => {
+      queryClient.setQueryData(driverQueryKeys.sessionPayment(workflow.session.id), workflow);
+      queryClient.invalidateQueries({ queryKey: driverQueryKeys.activeSessions });
+      queryClient.invalidateQueries({ queryKey: driverQueryKeys.notifications });
+    },
+  });
+}
+
+export function useSessionPaymentStatusQuery(sessionId?: string, enabled = true) {
+  return useQuery({
+    queryKey: driverQueryKeys.sessionPayment(sessionId ?? 'unknown'),
+    queryFn: () => driverApi.getSessionPaymentStatus(sessionId!),
+    enabled: Boolean(sessionId) && enabled,
+    refetchInterval: enabled ? 4_000 : false,
+  });
+}
+
+export function useNotificationsQuery() {
+  return useQuery({
+    queryKey: driverQueryKeys.notifications,
+    queryFn: (): Promise<DriverNotification[]> => driverApi.getMyNotifications(),
   });
 }
 
