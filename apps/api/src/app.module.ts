@@ -18,6 +18,8 @@ import { OcrModule } from './ocr';
 import { PaymentsModule } from './payments/payments.module';
 import { AdminModule } from './admin/admin.module';
 import { VehiclesModule } from './vehicles/vehicles.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { GateModule } from './gate/gate.module';
 
 @Module({
   imports: [
@@ -41,6 +43,8 @@ import { VehiclesModule } from './vehicles/vehicles.module';
     PaymentsModule,
     AdminModule,
     VehiclesModule,
+    NotificationsModule,
+    GateModule,
   ],
   controllers: [AppController],
   providers: [AppService],

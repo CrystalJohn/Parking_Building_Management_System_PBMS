@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PaymentMethod, SessionStatus, SlotStatus, VehicleType, Zone } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { VnpayService } from './vnpay.service';
@@ -247,6 +247,32 @@ describe('PaymentsService — VNPAY migration', () => {
       expect(result.providerPayload.vnp_Amount).toBe('1000000');
       expect(result.provider).toBe('vnpay');
       expect(result.qrCode).toBeNull();
+    });
+  });
+
+  describe('driver self-pay', () => {
+    it('rejects driver payment for another driver session', async () => {
+      prisma.parkingSession.findUnique.mockResolvedValue(
+        makeSession({ driverId: 'driver-a', payment: null }),
+      );
+
+      await expect(
+        service.createDriverBankQrPayment('session-uuid-1', 'driver-b'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('returns payment status for the owning driver', async () => {
+      prisma.parkingSession.findUnique.mockResolvedValue(
+        makeSession({
+          driverId: 'driver-a',
+          payment: makeVnpayPayment({ status: 'pending' }),
+        }),
+      );
+
+      const result = await service.getPaymentStatusForDriver('session-uuid-1', 'driver-a');
+
+      expect(result.session.id).toBe('session-uuid-1');
+      expect(result.payment?.status).toBe('pending');
     });
   });
 

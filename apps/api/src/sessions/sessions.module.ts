@@ -3,6 +3,7 @@ import { AuthModule } from '../auth/auth.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { SlotsModule } from '../slots/slots.module';
 import { FeesModule } from '../fees/fees.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { VehicleIdentificationModule } from '../vehicle-identification/vehicle-identification.module';
 import { CheckinController } from './checkin.controller';
 import { SessionsController } from './sessions.controller';
@@ -15,6 +16,7 @@ import { SessionsService } from './sessions.service';
     PrismaModule,
     SlotsModule,    // provides AllocationService
     FeesModule,     // provides FeesService for check-out fee calculation
+    NotificationsModule,
     VehicleIdentificationModule, // provides VehicleIdentificationService
   ],
   controllers: [SessionsController, CheckinController, TicketsController],

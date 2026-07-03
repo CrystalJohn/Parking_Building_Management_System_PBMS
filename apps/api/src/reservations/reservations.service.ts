@@ -8,7 +8,8 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { Prisma, VehicleType } from '@prisma/client';
+import { NotificationType, Prisma, VehicleType } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AllocationService } from '../slots/allocation.service';
 import {
@@ -33,6 +34,7 @@ export class ReservationsService {
     private readonly prisma: PrismaService,
     private readonly allocationService: AllocationService,
     private readonly jwtService: JwtService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -377,6 +379,46 @@ export class ReservationsService {
     }
 
     this.logger.log(`Expired ${expiredReservations.length} reservation(s)`);
+  }
+
+  @Cron(CronExpression.EVERY_MINUTE)
+  async warnExpiringReservations() {
+    const soon = new Date(Date.now() + 5 * 60_000);
+    const expiringReservations = await this.prisma.reservation.findMany({
+      where: {
+        status: 'active',
+        expiresAt: { lte: soon, gt: new Date() },
+        remindedAt: null,
+      },
+      include: {
+        vehicle: {
+          select: {
+            plateNumber: true,
+          },
+        },
+      },
+    });
+
+    for (const reservation of expiringReservations) {
+      try {
+        await this.notificationsService.createForUser({
+          userId: reservation.driverId,
+          type: NotificationType.reservation_expiring_soon,
+          title: 'Reservation expiring soon',
+          message: `Reservation for ${reservation.vehicle?.plateNumber ?? reservation.vehicleType} expires at ${reservation.expiresAt.toISOString()}.`,
+          relatedReservationId: reservation.id,
+        });
+
+        await this.prisma.reservation.update({
+          where: { id: reservation.id },
+          data: { remindedAt: new Date() },
+        });
+      } catch (error) {
+        this.logger.error(
+          `Failed to notify expiring reservation ${reservation.id}: ${error}`,
+        );
+      }
+    }
   }
 
   private async getTimeoutMinutes(client: PrismaLike = this.prisma): Promise<number> {

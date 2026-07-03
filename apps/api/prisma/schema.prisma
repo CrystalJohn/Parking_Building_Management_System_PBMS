@@ -75,6 +75,11 @@ enum SubscriptionPlanType {
   yearly
 }
 
+enum NotificationType {
+  session_started
+  reservation_expiring_soon
+}
+
 // ─── Models ──────────────────────────────────────────────────────────────────
 
 model User {
@@ -99,6 +104,7 @@ model User {
   paymentsReceived    Payment[]        @relation("ReceivedBy")
   pricingUpdates      PricingConfig[]  @relation("PricingUpdatedBy")
   vehicleUsers        VehicleUser[]
+  notifications       Notification[]
 
   @@map("users")
 }
@@ -247,6 +253,7 @@ model Reservation {
   plannedArrivalAt DateTime?    @map("planned_arrival_at") @db.Timestamptz(3)
   createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
   expiresAt   DateTime          @map("expires_at") @db.Timestamptz(3)
+  remindedAt  DateTime?         @map("reminded_at") @db.Timestamptz(3)
   status      ReservationStatus @default(active)
 
   // Relations
@@ -259,6 +266,24 @@ model Reservation {
   @@index([status, expiresAt], map: "idx_reservation_active")
   @@index([vehicleId], map: "idx_reservation_vehicle")
   @@map("reservations")
+}
+
+model Notification {
+  id                   String           @id @default(uuid())
+  userId               String           @map("user_id")
+  type                 NotificationType
+  title                String
+  message              String
+  relatedReservationId String?          @map("related_reservation_id")
+  relatedSessionId     String?          @map("related_session_id")
+  createdAt            DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  readAt               DateTime?        @map("read_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt], map: "idx_notifications_user_created")
+  @@index([userId, readAt], map: "idx_notifications_user_read")
+  @@map("notifications")
 }
 
 model Payment {

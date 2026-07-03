@@ -2,12 +2,21 @@ import {
   Injectable,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
   Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { Prisma, VehicleType, PaymentMethod } from '@prisma/client';
+import {
+  NotificationType,
+  PaymentMethod,
+  Prisma,
+  SessionStatus,
+  VehicleType,
+  Zone,
+} from '@prisma/client';
 import * as QRCode from 'qrcode';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AllocationService } from '../slots/allocation.service';
 import { FeesService, FeeBreakdown } from '../fees/fees.service';
@@ -20,6 +29,22 @@ import {
 } from '../reservations/reservation-checkin-qr';
 import { CheckInDto, CheckOutDto, ConfirmPaymentDto, LostTicketDto } from './dto';
 
+interface CreateSessionInput {
+  source: 'WALK_IN' | 'RESERVATION';
+  slotId: number;
+  floorId: number;
+  zone: Zone;
+  vehicleType: VehicleType;
+  plateConfirmed: string;
+  plateOcr?: string | null;
+  driverId?: string | null;
+  vehicleId?: string | null;
+  reservationId?: string | null;
+  staffId: string;
+  allocationStrategy: string;
+  allocationTimeMs: number;
+}
+
 @Injectable()
 export class SessionsService {
   private readonly logger = new Logger(SessionsService.name);
@@ -30,6 +55,7 @@ export class SessionsService {
     private readonly feesService: FeesService,
     private readonly vehicleIdentificationService: VehicleIdentificationService,
     private readonly jwtService: JwtService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -253,40 +279,20 @@ export class SessionsService {
           });
         }
 
-        const sessionId = crypto.randomUUID();
-        const sessionCode = this.buildSessionCode(sessionId);
-
-        const qrCode = await QRCode.toDataURL(sessionCode, {
-          width: 400,
-          margin: 2,
-          errorCorrectionLevel: 'H',
-          color: { dark: '#000000', light: '#ffffff' },
-        });
-
-        const newSession = await tx.parkingSession.create({
-          data: {
-            id: sessionId,
-            licensePlate,
-            plateNumberOcr,
-            plateNumberConfirmed,
-            vehicleId: matchedVehicle?.id ?? null,
-            vehicleType: dto.vehicleType,
-            slotId: slot.id,
-            driverId,
-            reservationId,
-            checkedInById: staffId,
-            qrCode,
-            sessionCode,
-            ticketGeneratedAt: new Date(),
-            allocationStrategy,
-            allocationTimeMs,
-            // 32: Denormalized metrics for research queries
-            floorId: slot.floorId,
-            zone: slot.zone,
-          } as any,
-          include: {
-            slot: { include: { floor: true } },
-          },
+        const newSession = await this.createParkingSession(tx, {
+          source: reservationId ? 'RESERVATION' : 'WALK_IN',
+          slotId: slot.id,
+          floorId: slot.floorId,
+          zone: slot.zone,
+          vehicleType: dto.vehicleType,
+          plateConfirmed: plateNumberConfirmed,
+          plateOcr: plateNumberOcr,
+          driverId,
+          vehicleId: matchedVehicle?.id ?? null,
+          reservationId,
+          staffId,
+          allocationStrategy,
+          allocationTimeMs,
         });
 
         if (dto.ocrEvidenceId) {
@@ -323,6 +329,8 @@ export class SessionsService {
       }
       throw error;
     }
+
+    await this.notifySessionStarted(session);
 
     if (reservationId) {
       this.logger.log(
@@ -408,19 +416,19 @@ export class SessionsService {
 
     if (!reservation) {
       throw new NotFoundException(
-        'Khong tim thay reservation. Vui long chuyen sang OCR / walk-in flow.',
+        'Reservation not found. Use OCR fallback.',
       );
     }
 
     if (!reservation.vehicleId || !reservation.vehicle) {
       throw new ConflictException(
-        'Reservation nay chua lien ket xe. Vui long dung OCR / walk-in flow.',
+        'Reservation has no linked vehicle. Use OCR fallback.',
       );
     }
 
     if (reservation.vehicleId !== payload.vehicleId) {
       throw new ConflictException(
-        'QR khong khop voi xe da lien ket. Vui long dung OCR / walk-in flow.',
+        'Invalid reservation QR. Use OCR fallback or scan again.',
       );
     }
 
@@ -432,13 +440,13 @@ export class SessionsService {
 
     if (reservation.expiresAt.getTime() <= Date.now()) {
       throw new ConflictException(
-        'QR dat cho da het han. Vui long dung OCR / walk-in flow.',
+        'Reservation QR expired. Ask the driver to refresh the QR or use OCR fallback.',
       );
     }
 
     if (reservation.slot.status !== 'reserved') {
       throw new ConflictException(
-        'Cho do da khong con o trang thai RESERVED. Vui long dung OCR / walk-in flow.',
+        'Reserved slot is no longer available. Use OCR fallback.',
       );
     }
 
@@ -473,7 +481,7 @@ export class SessionsService {
         if (existingSession) {
           return {
             alreadyCheckedIn: true,
-            message: 'Da check-in roi',
+            message: 'Already checked in.',
             session: this.mapReservationSessionSummary(existingSession),
             slot: this.mapSessionSlot(existingSession.slot),
           };
@@ -515,7 +523,7 @@ export class SessionsService {
         if (reservation.session) {
           return {
             alreadyCheckedIn: true,
-            message: 'Da check-in roi',
+            message: 'Already checked in.',
             session: this.mapReservationSessionSummary(reservation.session),
             slot: this.mapSessionSlot(reservation.session.slot),
           };
@@ -532,7 +540,7 @@ export class SessionsService {
 
         if (lockedSlot.length === 0) {
           throw new ConflictException(
-            'Cho do khong con o trang thai RESERVED. Vui long dung OCR / walk-in flow.',
+            'Reserved slot is no longer available. Use OCR fallback.',
           );
         }
 
@@ -551,18 +559,9 @@ export class SessionsService {
 
         if (conflictingSession) {
           throw new ConflictException(
-            `Xe da co phien gui xe dang hoat dong tu ${this.formatCheckInTime(conflictingSession.checkInTime)}`,
+            `Vehicle already has an active parking session from ${this.formatCheckInTime(conflictingSession.checkInTime)}.`,
           );
         }
-
-        const sessionId = crypto.randomUUID();
-        const sessionCode = this.buildSessionCode(sessionId);
-        const qrCode = await QRCode.toDataURL(sessionCode, {
-          width: 400,
-          margin: 2,
-          errorCorrectionLevel: 'H',
-          color: { dark: '#000000', light: '#ffffff' },
-        });
 
         await tx.reservation.update({
           where: { id: reservationId },
@@ -574,29 +573,20 @@ export class SessionsService {
           data: { status: 'occupied' },
         });
 
-        const session = await tx.parkingSession.create({
-          data: {
-            id: sessionId,
-            driverId: reservation.driverId,
-            vehicleId: reservation.vehicleId,
-            slotId: reservation.slotId,
-            reservationId: reservation.id,
-            licensePlate: reservation.vehicle!.plateNumber,
-            plateNumberOcr: null,
-            plateNumberConfirmed: reservation.vehicle!.plateNumber,
-            vehicleType: reservation.vehicle!.vehicleType,
-            checkedInById: staffId,
-            qrCode,
-            sessionCode,
-            ticketGeneratedAt: new Date(),
-            allocationStrategy: 'reservation_qr_checkin',
-            allocationTimeMs: 0,
-            floorId: reservation.slot.floorId,
-            zone: reservation.slot.zone,
-          } as any,
-          include: {
-            slot: { include: { floor: true } },
-          },
+        const session = await this.createParkingSession(tx, {
+          source: 'RESERVATION',
+          slotId: reservation.slotId,
+          floorId: reservation.slot.floorId,
+          zone: reservation.slot.zone,
+          vehicleType: reservation.vehicle!.vehicleType,
+          plateConfirmed: reservation.vehicle!.plateNumber,
+          plateOcr: null,
+          driverId: reservation.driverId,
+          vehicleId: reservation.vehicleId,
+          reservationId: reservation.id,
+          staffId,
+          allocationStrategy: 'reservation_qr_checkin',
+          allocationTimeMs: 0,
         });
 
         this.logger.log(
@@ -605,11 +595,31 @@ export class SessionsService {
 
         return {
           alreadyCheckedIn: false,
-          message: 'Check-in thanh cong',
+          message: 'Reservation check-in confirmed.',
           session: this.mapReservationSessionSummary(session),
           slot: this.mapSessionSlot(session.slot),
         };
       });
+
+      if (!result.alreadyCheckedIn) {
+        const createdSession = await this.prisma.parkingSession.findUnique({
+          where: { reservationId },
+          select: {
+            id: true,
+            driverId: true,
+            licensePlate: true,
+            slot: {
+              select: {
+                code: true,
+              },
+            },
+          },
+        });
+
+        if (createdSession) {
+          await this.notifySessionStarted(createdSession);
+        }
+      }
 
       return result;
     } catch (error) {
@@ -624,7 +634,7 @@ export class SessionsService {
         if (existingSession) {
           return {
             alreadyCheckedIn: true,
-            message: 'Da check-in roi',
+            message: 'Already checked in.',
             session: this.mapReservationSessionSummary(existingSession),
             slot: this.mapSessionSlot(existingSession.slot),
           };
@@ -637,6 +647,74 @@ export class SessionsService {
 
   private buildSessionCode(sessionId: string): string {
     return `PBMS-${sessionId.replace(/-/g, '').slice(0, 10).toUpperCase()}`;
+  }
+
+  private async buildSessionQrCode(sessionCode: string): Promise<string> {
+    return QRCode.toDataURL(sessionCode, {
+      width: 400,
+      margin: 2,
+      errorCorrectionLevel: 'H',
+      color: { dark: '#000000', light: '#ffffff' },
+    });
+  }
+
+  private async createParkingSession(
+    tx: Prisma.TransactionClient,
+    input: CreateSessionInput,
+  ) {
+    const sessionId = crypto.randomUUID();
+    const sessionCode = this.buildSessionCode(sessionId);
+    const qrCode = await this.buildSessionQrCode(sessionCode);
+
+    return tx.parkingSession.create({
+      data: {
+        id: sessionId,
+        sessionCode,
+        qrCode,
+        ticketGeneratedAt: new Date(),
+        licensePlate: input.plateConfirmed,
+        plateNumberOcr: input.plateOcr ?? null,
+        plateNumberConfirmed: input.plateConfirmed,
+        vehicleId: input.vehicleId ?? null,
+        vehicleType: input.vehicleType,
+        slotId: input.slotId,
+        driverId: input.driverId ?? null,
+        reservationId: input.reservationId ?? null,
+        checkedInById: input.staffId,
+        allocationStrategy: input.allocationStrategy,
+        allocationTimeMs: input.allocationTimeMs,
+        floorId: input.floorId,
+        zone: input.zone,
+      } as any,
+      include: {
+        slot: { include: { floor: true } },
+      },
+    });
+  }
+
+  private async notifySessionStarted(session: {
+    id: string;
+    driverId?: string | null;
+    licensePlate: string;
+    slot?: { code: string } | null;
+  }) {
+    if (!session.driverId) {
+      return;
+    }
+
+    try {
+      await this.notificationsService.createForUser({
+        userId: session.driverId,
+        type: NotificationType.session_started,
+        title: 'Session started',
+        message: `Xe ${session.licensePlate} da check-in${session.slot?.code ? `, slot ${session.slot.code}` : ''}.`,
+        relatedSessionId: session.id,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to create session-started notification | sessionId=${session.id} driverId=${session.driverId} error=${String(error)}`,
+      );
+    }
   }
 
   private async verifyReservationCheckInToken(
@@ -652,7 +730,7 @@ export class SessionsService {
         !payload.driverId
       ) {
         throw new BadRequestException(
-          'QR reservation khong hop le. Vui long dung OCR / walk-in flow.',
+          'Invalid reservation QR. Use OCR fallback or scan again.',
         );
       }
 
@@ -669,12 +747,12 @@ export class SessionsService {
         (error as { name?: string }).name === 'TokenExpiredError'
       ) {
         throw new ConflictException(
-          'QR reservation da het han. Vui long quet lai QR moi hoac dung OCR / walk-in flow.',
+          'Reservation QR expired. Ask the driver to refresh the QR or use OCR fallback.',
         );
       }
 
       throw new BadRequestException(
-        'QR reservation khong hop le. Vui long dung OCR / walk-in flow.',
+        'Invalid reservation QR. Use OCR fallback or scan again.',
       );
     }
   }
@@ -763,6 +841,93 @@ export class SessionsService {
     };
   }
 
+  private async buildCheckoutLookupPreview(session: {
+    id: string;
+    sessionCode: string;
+    licensePlate: string;
+    vehicleType: VehicleType;
+    checkInTime: Date;
+    checkOutTime: Date | null;
+    status: SessionStatus;
+    isPaid: boolean;
+    feeAmount: number;
+    penaltyAmount: number;
+    isOvertime: boolean;
+    isLostTicket: boolean;
+    slot: {
+      id: number;
+      code: string;
+      status: string;
+      zone: Zone;
+      floor: {
+        id: number;
+        floorNumber: number;
+        name: string;
+      };
+    };
+    payment: {
+      id: string;
+      sessionId: string;
+      amount: number;
+      method: PaymentMethod;
+      status?: string | null;
+      paidAt: Date | null;
+      receivedBy: string | null;
+      checkoutUrl?: string | null;
+      qrCode?: string | null;
+      expiredAt?: Date | null;
+    } | null;
+  }) {
+    const breakdown = await this.feesService.calculate(
+      session,
+      session.isLostTicket,
+      session.checkOutTime ?? new Date(),
+    );
+
+    return {
+      session: {
+        id: session.id,
+        sessionCode: session.sessionCode,
+        licensePlate: session.licensePlate,
+        vehicleType: session.vehicleType,
+        checkInTime: session.checkInTime,
+        checkOutTime: session.checkOutTime,
+        status: session.status,
+        isPaid: session.isPaid,
+        feeAmount: session.feeAmount,
+        penaltyAmount: session.penaltyAmount,
+        isOvertime: session.isOvertime,
+        isLostTicket: session.isLostTicket,
+      },
+      slot: {
+        id: session.slot.id,
+        code: session.slot.code,
+        status: session.slot.status,
+        zone: session.slot.zone,
+        floor: {
+          id: session.slot.floor.id,
+          floorNumber: session.slot.floor.floorNumber,
+          name: session.slot.floor.name,
+        },
+      },
+      fee: this.mapBreakdownToCheckoutFee(breakdown),
+      payment: session.payment
+        ? {
+            id: session.payment.id,
+            sessionId: session.payment.sessionId,
+            amount: session.payment.amount,
+            method: session.payment.method,
+            status: session.payment.status ?? null,
+            paidAt: session.payment.paidAt,
+            receivedBy: session.payment.receivedBy,
+            checkoutUrl: session.payment.checkoutUrl ?? null,
+            qrCode: session.payment.qrCode ?? null,
+            expiredAt: session.payment.expiredAt ?? null,
+          }
+        : null,
+    };
+  }
+
   private assertReservationCanBeFulfilled(
     reservation: {
       id: string;
@@ -843,52 +1008,52 @@ export class SessionsService {
 
     if (reservation.expiresAt && reservation.expiresAt.getTime() <= Date.now()) {
       throw new ConflictException(
-        'Reservation da het han. Vui long dung OCR / walk-in flow.',
+        'Reservation QR expired. Ask the driver to refresh the QR or use OCR fallback.',
       );
     }
 
     if (!reservation.vehicleId || !reservation.vehicle) {
       throw new ConflictException(
-        'Reservation nay chua lien ket xe. Vui long dung OCR / walk-in flow.',
+        'Reservation has no linked vehicle. Use OCR fallback.',
       );
     }
 
     if (!reservation.slot || reservation.slot.status !== 'reserved') {
       throw new ConflictException(
-        'Cho do khong con o trang thai RESERVED. Vui long dung OCR / walk-in flow.',
+        'Reserved slot is no longer available. Use OCR fallback.',
       );
     }
   }
 
   private getReservationCheckInFailureMessage(status: string): string {
     if (status === 'fulfilled') {
-      return 'Reservation nay da duoc check-in roi.';
+      return 'Reservation already checked in. Use OCR fallback.';
     }
 
     if (status === 'expired') {
-      return 'Reservation da het han. Vui long dung OCR / walk-in flow.';
+      return 'Reservation QR expired. Ask the driver to refresh the QR or use OCR fallback.';
     }
 
     if (status === 'cancelled') {
-      return 'Reservation da bi huy. Vui long dung OCR / walk-in flow.';
+      return 'Reservation is not active. Use OCR fallback.';
     }
 
-    return `Reservation khong hop le o trang thai ${status}. Vui long dung OCR / walk-in flow.`;
+    return 'Reservation is not active. Use OCR fallback.';
   }
 
   private getReservationPaymentBadge(input: {
     subscriptionCount: number;
     paymentStatus: string | null;
-  }): 'Đã thanh toán' | 'Auto-pay' | 'Thanh toán khi ra' {
+  }): 'Paid' | 'Auto-pay' | 'Pay on exit' {
     if (input.paymentStatus === 'paid') {
-      return 'Đã thanh toán';
+      return 'Paid';
     }
 
     if (input.subscriptionCount > 0) {
       return 'Auto-pay';
     }
 
-    return 'Thanh toán khi ra';
+    return 'Pay on exit';
   }
 
   private mapReservationSessionSummary(session: {
@@ -1278,7 +1443,7 @@ export class SessionsService {
     licensePlate?: string;
   }) {
     const sessionCode = input.sessionCode?.trim();
-    const licensePlate = input.licensePlate?.trim().toUpperCase();
+    const licensePlate = normalizePlateNumber(input.licensePlate);
 
     if (!sessionCode && !licensePlate) {
       throw new BadRequestException(
@@ -1298,57 +1463,44 @@ export class SessionsService {
     });
 
     if (!session) {
-      throw new NotFoundException('Không tìm thấy session.');
+      throw new NotFoundException('Parking session not found.');
     }
 
-    const breakdown = await this.feesService.calculate(
-      session,
-      session.isLostTicket,
-      session.checkOutTime ?? new Date(),
-    );
+    return this.buildCheckoutLookupPreview(session);
+  }
 
-    return {
-      session: {
-        id: session.id,
-        sessionCode: session.sessionCode,
-        licensePlate: session.licensePlate,
-        vehicleType: session.vehicleType,
-        checkInTime: session.checkInTime,
-        checkOutTime: session.checkOutTime,
-        status: session.status,
-        isPaid: session.isPaid,
-        feeAmount: session.feeAmount,
-        penaltyAmount: session.penaltyAmount,
-        isOvertime: session.isOvertime,
-        isLostTicket: session.isLostTicket,
-      },
-      slot: {
-        id: session.slot.id,
-        code: session.slot.code,
-        status: session.slot.status,
-        zone: session.slot.zone,
-        floor: {
-          id: session.slot.floor.id,
-          floorNumber: session.slot.floor.floorNumber,
-          name: session.slot.floor.name,
+  async lookupOpenForGateByPlate(licensePlate: string) {
+    const normalizedPlate = normalizePlateNumber(licensePlate);
+    if (!normalizedPlate) {
+      throw new BadRequestException('licensePlate is required');
+    }
+
+    const session = await this.prisma.parkingSession.findFirst({
+      where: {
+        status: {
+          in: [
+            SessionStatus.active,
+            SessionStatus.checkout_pending,
+            SessionStatus.exit_authorized,
+          ],
         },
+        OR: [
+          { licensePlate: normalizedPlate },
+          { plateNumberConfirmed: normalizedPlate },
+        ],
       },
-      fee: this.mapBreakdownToCheckoutFee(breakdown),
-      payment: session.payment
-        ? {
-            id: session.payment.id,
-            sessionId: session.payment.sessionId,
-            amount: session.payment.amount,
-            method: session.payment.method,
-            status: (session.payment as any).status,
-            paidAt: session.payment.paidAt,
-            receivedBy: session.payment.receivedBy,
-            checkoutUrl: (session.payment as any).checkoutUrl,
-            qrCode: (session.payment as any).qrCode,
-            expiredAt: (session.payment as any).expiredAt,
-          }
-        : null,
-    };
+      include: {
+        slot: { include: { floor: true } },
+        payment: true,
+      },
+      orderBy: { checkInTime: 'desc' },
+    });
+
+    if (!session) {
+      return null;
+    }
+
+    return this.buildCheckoutLookupPreview(session);
   }
 
   /**
@@ -1356,12 +1508,38 @@ export class SessionsService {
    */
   async findByDriver(driverId: string, status: 'active' | 'completed') {
     return this.prisma.parkingSession.findMany({
-      where: { driverId, status },
+      where: {
+        driverId,
+        status:
+          status === 'active'
+            ? { in: [SessionStatus.active, SessionStatus.checkout_pending, SessionStatus.exit_authorized] }
+            : SessionStatus.completed,
+      },
       include: {
         slot: { include: { floor: true } },
       },
       orderBy: { checkInTime: 'desc' },
     });
+  }
+
+  async assertDriverOwnsSession(sessionId: string, driverId: string) {
+    const session = await this.prisma.parkingSession.findUnique({
+      where: { id: sessionId },
+      select: {
+        id: true,
+        driverId: true,
+      },
+    });
+
+    if (!session) {
+      throw new NotFoundException(`Session not found: ${sessionId}`);
+    }
+
+    if (session.driverId !== driverId) {
+      throw new ForbiddenException('You can only access your own session.');
+    }
+
+    return session;
   }
 
   /**

@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -34,98 +35,22 @@ export class PaymentsService {
     staffUserId: string,
     ipAddr = '127.0.0.1',
   ) {
-    const session = await this.prisma.parkingSession.findUnique({
-      where: { id: sessionId },
-      include: {
-        slot: { include: { floor: true } },
-        payment: true,
-      },
-    });
+    void staffUserId;
+    return this.createBankQrPaymentForSession(sessionId, ipAddr);
+  }
 
-    if (!session) {
-      throw new NotFoundException(`Session not found: ${sessionId}`);
+  async createDriverBankQrPayment(
+    sessionId: string,
+    driverId: string,
+    ipAddr = '127.0.0.1',
+  ) {
+    const session = await this.loadSessionForPayment(sessionId);
+
+    if (session.driverId !== driverId) {
+      throw new ForbiddenException('You can only pay for your own session.');
     }
 
-    if ((session.status as string) === SessionStatus.completed) {
-      throw new ConflictException(
-        'Completed sessions cannot create Bank QR payment',
-      );
-    }
-
-    if ((session.status as string) !== SessionStatus.checkout_pending) {
-      throw new ConflictException(
-        'Bank QR payment can only be created for checkout_pending sessions',
-      );
-    }
-
-    const existingPayment = session.payment as any;
-    if (
-      existingPayment?.status === PaymentStatus.paid ||
-      session.isPaid
-    ) {
-      throw new ConflictException('This session is already paid');
-    }
-
-    // Idempotent reuse of an unexpired pending VNPAY payment
-    if (this.isReusablePendingBankQr(existingPayment)) {
-      this.logger.log(
-        `Reusing existing pending bank_qr payment | sessionId=${sessionId} paymentId=${existingPayment.id}`,
-      );
-      return this.formatPaymentWorkflow(session, existingPayment);
-    }
-
-    const amount =
-      existingPayment?.amount ??
-      Number(session.feeAmount) + Number(session.penaltyAmount);
-
-    const paymentResult = this.vnpayService.createPaymentUrl({
-      sessionId: session.id,
-      sessionCode: session.sessionCode,
-      licensePlate: session.licensePlate,
-      amount,
-      ipAddr,
-    });
-
-    this.logger.log(
-      `VNPAY payment URL created | sessionId=${sessionId} txnRef=${paymentResult.providerOrderCode} amount=${amount}`,
-    );
-
-    const payment = await this.prisma.$transaction(async (tx) => {
-      return (tx as any).payment.upsert({
-        where: { sessionId: session.id },
-        create: {
-          sessionId: session.id,
-          amount,
-          method: PaymentMethod.bank_qr,
-          status: PaymentStatus.pending,
-          paidAt: null,
-          receivedBy: null,
-          provider: paymentResult.provider,
-          providerRef: paymentResult.providerRef,
-          providerOrderCode: paymentResult.providerOrderCode,
-          checkoutUrl: paymentResult.checkoutUrl,
-          qrCode: paymentResult.qrCode,
-          expiredAt: paymentResult.expiredAt,
-          providerPayload: paymentResult.providerPayload,
-        },
-        update: {
-          amount,
-          method: PaymentMethod.bank_qr,
-          status: PaymentStatus.pending,
-          paidAt: null,
-          receivedBy: null,
-          provider: paymentResult.provider,
-          providerRef: paymentResult.providerRef,
-          providerOrderCode: paymentResult.providerOrderCode,
-          checkoutUrl: paymentResult.checkoutUrl,
-          qrCode: paymentResult.qrCode,
-          expiredAt: paymentResult.expiredAt,
-          providerPayload: paymentResult.providerPayload,
-        },
-      });
-    });
-
-    return this.formatPaymentWorkflow(session, payment);
+    return this.createBankQrPaymentForSession(sessionId, ipAddr, session);
   }
 
   /**
@@ -133,16 +58,15 @@ export class PaymentsService {
    * Returns current payment and session/slot state for the checkout polling loop.
    */
   async getPaymentStatus(sessionId: string) {
-    const session = await this.prisma.parkingSession.findUnique({
-      where: { id: sessionId },
-      include: {
-        slot: { include: { floor: true } },
-        payment: true,
-      },
-    });
+    const session = await this.loadSessionForPayment(sessionId);
+    return this.formatPaymentWorkflow(session, (session as any).payment);
+  }
 
-    if (!session) {
-      throw new NotFoundException(`Session not found: ${sessionId}`);
+  async getPaymentStatusForDriver(sessionId: string, driverId: string) {
+    const session = await this.loadSessionForPayment(sessionId);
+
+    if (session.driverId !== driverId) {
+      throw new ForbiddenException('You can only access your own session.');
     }
 
     return this.formatPaymentWorkflow(session, (session as any).payment);
@@ -392,5 +316,106 @@ export class PaymentsService {
           : undefined,
       },
     };
+  }
+
+  private async loadSessionForPayment(sessionId: string) {
+    const session = await this.prisma.parkingSession.findUnique({
+      where: { id: sessionId },
+      include: {
+        slot: { include: { floor: true } },
+        payment: true,
+      },
+    });
+
+    if (!session) {
+      throw new NotFoundException(`Session not found: ${sessionId}`);
+    }
+
+    return session;
+  }
+
+  private async createBankQrPaymentForSession(
+    sessionId: string,
+    ipAddr: string,
+    existingSession?: Awaited<ReturnType<PaymentsService['loadSessionForPayment']>>,
+  ) {
+    const session = existingSession ?? (await this.loadSessionForPayment(sessionId));
+
+    if ((session.status as string) === SessionStatus.completed) {
+      throw new ConflictException(
+        'Completed sessions cannot create Bank QR payment',
+      );
+    }
+
+    if ((session.status as string) !== SessionStatus.checkout_pending) {
+      throw new ConflictException(
+        'Bank QR payment can only be created for checkout_pending sessions',
+      );
+    }
+
+    const existingPayment = session.payment as any;
+    if (existingPayment?.status === PaymentStatus.paid || session.isPaid) {
+      throw new ConflictException('This session is already paid');
+    }
+
+    if (this.isReusablePendingBankQr(existingPayment)) {
+      this.logger.log(
+        `Reusing existing pending bank_qr payment | sessionId=${sessionId} paymentId=${existingPayment.id}`,
+      );
+      return this.formatPaymentWorkflow(session, existingPayment);
+    }
+
+    const amount =
+      existingPayment?.amount ??
+      Number(session.feeAmount) + Number(session.penaltyAmount);
+
+    const paymentResult = this.vnpayService.createPaymentUrl({
+      sessionId: session.id,
+      sessionCode: session.sessionCode,
+      licensePlate: session.licensePlate,
+      amount,
+      ipAddr,
+    });
+
+    this.logger.log(
+      `VNPAY payment URL created | sessionId=${sessionId} txnRef=${paymentResult.providerOrderCode} amount=${amount}`,
+    );
+
+    const payment = await this.prisma.$transaction(async (tx) => {
+      return (tx as any).payment.upsert({
+        where: { sessionId: session.id },
+        create: {
+          sessionId: session.id,
+          amount,
+          method: PaymentMethod.bank_qr,
+          status: PaymentStatus.pending,
+          paidAt: null,
+          receivedBy: null,
+          provider: paymentResult.provider,
+          providerRef: paymentResult.providerRef,
+          providerOrderCode: paymentResult.providerOrderCode,
+          checkoutUrl: paymentResult.checkoutUrl,
+          qrCode: paymentResult.qrCode,
+          expiredAt: paymentResult.expiredAt,
+          providerPayload: paymentResult.providerPayload,
+        },
+        update: {
+          amount,
+          method: PaymentMethod.bank_qr,
+          status: PaymentStatus.pending,
+          paidAt: null,
+          receivedBy: null,
+          provider: paymentResult.provider,
+          providerRef: paymentResult.providerRef,
+          providerOrderCode: paymentResult.providerOrderCode,
+          checkoutUrl: paymentResult.checkoutUrl,
+          qrCode: paymentResult.qrCode,
+          expiredAt: paymentResult.expiredAt,
+          providerPayload: paymentResult.providerPayload,
+        },
+      });
+    });
+
+    return this.formatPaymentWorkflow(session, payment);
   }
 }

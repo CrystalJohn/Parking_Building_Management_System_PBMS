@@ -8,6 +8,7 @@ import { FeesService } from '../fees/fees.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { VehicleIdentificationService } from '../vehicle-identification/vehicle-identification.service';
 import type { VehicleIdentityResult } from '../vehicle-identification/vehicle-identity.types';
+import { NotificationsService } from '../notifications/notifications.service';
 import * as QRCode from 'qrcode';
 
 jest.mock('qrcode', () => ({
@@ -150,6 +151,7 @@ describe('SessionsService', () => {
   let feesService: { calculate: jest.Mock; preview: jest.Mock };
   let vehicleIdentificationService: { identifyForCheckIn: jest.Mock; identifyForCheckout: jest.Mock };
   let jwtService: { verifyAsync: jest.Mock };
+  let notificationsService: { createForUser: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
@@ -178,6 +180,9 @@ describe('SessionsService', () => {
     jwtService = {
       verifyAsync: jest.fn(),
     };
+    notificationsService = {
+      createForUser: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -187,6 +192,7 @@ describe('SessionsService', () => {
         { provide: FeesService, useValue: feesService },
         { provide: VehicleIdentificationService, useValue: vehicleIdentificationService },
         { provide: JwtService, useValue: jwtService },
+        { provide: NotificationsService, useValue: notificationsService },
       ],
     }).compile();
 
@@ -940,7 +946,7 @@ describe('SessionsService', () => {
       jwtService.verifyAsync.mockRejectedValue({ name: 'TokenExpiredError' });
 
       await expect(service.scanReservation('expired-token')).rejects.toThrow(
-        'QR reservation da het han',
+        'Reservation QR expired',
       );
     });
 
@@ -1039,7 +1045,7 @@ describe('SessionsService', () => {
 
       await expect(
         service.confirmReservationCheckIn(reservation.id, staffId),
-      ).rejects.toThrow('Xe da co phien gui xe dang hoat dong');
+      ).rejects.toThrow('Vehicle already has an active parking session');
     });
 
     it('returns an idempotent already-checked-in response on double confirm', async () => {
@@ -1065,7 +1071,7 @@ describe('SessionsService', () => {
 
       expect(result).toMatchObject({
         alreadyCheckedIn: true,
-        message: 'Da check-in roi',
+        message: 'Already checked in.',
         session: {
           reservationId: 'reservation-uuid-1',
           vehicleId: 'vehicle-uuid-1',
@@ -1201,6 +1207,69 @@ describe('SessionsService', () => {
   });
 
   // ── checkOut (15.1–15.3) ──────────────────────────────────────────────────
+
+  describe('lookupOpenForGateByPlate', () => {
+    const sessionWithSlot = {
+      ...makeSession({ plateNumberConfirmed: '59A12345' } as any),
+      slot: {
+        ...makeSlot(),
+        status: SlotStatus.occupied,
+        floor: makeFloor(),
+      },
+      payment: null,
+    };
+
+    const mockBreakdown = {
+      sessionId: 'session-uuid-1',
+      vehicleType: VehicleType.car,
+      checkInTime: new Date('2024-01-01T08:00:00Z'),
+      checkOutTime: new Date('2024-01-01T10:30:00Z'),
+      durationMs: 9000000,
+      durationHours: 2.5,
+      roundedHours: 3,
+      hourlyRate: 20000,
+      baseFee: 60000,
+      isOvertime: false,
+      overtimePenalty: 0,
+      isLostTicket: false,
+      lostTicketPenalty: 0,
+      totalFee: 60000,
+    };
+
+    it('looks up open sessions for gate routing without mutating session or payment state', async () => {
+      prisma.parkingSession.findFirst.mockResolvedValue(sessionWithSlot);
+      feesService.calculate.mockResolvedValue(mockBreakdown);
+
+      const result = await service.lookupOpenForGateByPlate('59A-12345');
+
+      expect(prisma.parkingSession.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            status: {
+              in: [SessionStatus.active, SessionStatus.checkout_pending, SessionStatus.exit_authorized],
+            },
+            OR: [{ licensePlate: '59A12345' }, { plateNumberConfirmed: '59A12345' }],
+          },
+        }),
+      );
+      expect(prisma.parkingSession.update).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(result).toMatchObject({
+        session: {
+          id: 'session-uuid-1',
+          status: SessionStatus.active,
+        },
+        fee: { total: 60000 },
+      });
+    });
+
+    it('returns null when no open session exists for the plate', async () => {
+      prisma.parkingSession.findFirst.mockResolvedValue(null);
+
+      await expect(service.lookupOpenForGateByPlate('59A12345')).resolves.toBeNull();
+      expect(feesService.calculate).not.toHaveBeenCalled();
+    });
+  });
 
   describe('checkOut', () => {
     const staffId = 'staff-uuid';
@@ -1707,6 +1776,25 @@ describe('SessionsService', () => {
         ticketIssuedByStaffId: staffId,
       });
       expect(result.ticketIssuedAt).toBeDefined();
+    });
+  });
+
+  describe('findByDriver', () => {
+    it('treats checkout_pending and exit_authorized as current driver sessions', async () => {
+      prisma.parkingSession.findMany.mockResolvedValue([]);
+
+      await service.findByDriver('driver-uuid', 'active');
+
+      expect(prisma.parkingSession.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            driverId: 'driver-uuid',
+            status: {
+              in: [SessionStatus.active, SessionStatus.checkout_pending, SessionStatus.exit_authorized],
+            },
+          },
+        }),
+      );
     });
   });
 });

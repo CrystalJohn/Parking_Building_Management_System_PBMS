@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { SlotsModule } from '../slots/slots.module';
 import { ReservationsController } from './reservations.controller';
 import { ReservationsService } from './reservations.service';
@@ -9,6 +10,7 @@ import { ReservationsService } from './reservations.service';
   imports: [
     AuthModule,
     PrismaModule,
+    NotificationsModule,
     SlotsModule, // provides AllocationService
   ],
   controllers: [ReservationsController],

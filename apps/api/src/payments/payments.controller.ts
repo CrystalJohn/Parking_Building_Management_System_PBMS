@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   HttpCode,
@@ -15,6 +16,7 @@ import { Request } from 'express';
 import { Role } from '@prisma/client';
 import { CurrentUser, Roles } from '../auth/decorators';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
+import { DriverSessionPaymentDto } from './dto/driver-session-payment.dto';
 import { PaymentsService } from './payments.service';
 
 @Controller()
@@ -42,13 +44,41 @@ export class PaymentsController {
   }
 
   /**
+   * POST /sessions/:id/pay
+   * Driver only — create or reuse a VNPAY Bank QR payment for the driver's own checkout_pending session.
+   */
+  @Post('sessions/:id/pay')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.driver)
+  driverCreateBankQrPayment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') driverId: string,
+    @Body() _dto: DriverSessionPaymentDto,
+    @Req() req: Request,
+  ) {
+    const ipAddr =
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      req.socket.remoteAddress ||
+      '127.0.0.1';
+    return this.paymentsService.createDriverBankQrPayment(id, driverId, ipAddr);
+  }
+
+  /**
    * GET /sessions/:id/payment-status
    * Staff only — poll payment + session state for the checkout UI.
    */
   @Get('sessions/:id/payment-status')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.staff)
-  getPaymentStatus(@Param('id', ParseUUIDPipe) id: string) {
+  @Roles(Role.staff, Role.driver)
+  getPaymentStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') role: Role,
+  ) {
+    if (role === Role.driver) {
+      return this.paymentsService.getPaymentStatusForDriver(id, userId);
+    }
+
     return this.paymentsService.getPaymentStatus(id);
   }
 
