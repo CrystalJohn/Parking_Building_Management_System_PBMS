@@ -60,7 +60,7 @@ export interface ReservationScanResponse {
   slotCode: string
   slotLabel: string
   driverName: string
-  paymentBadge: 'Đã thanh toán' | 'Auto-pay' | 'Thanh toán khi ra'
+  paymentBadge: 'Paid' | 'Auto-pay' | 'Pay on exit'
   expiresAt: string
   fallbackAction: 'USE_OCR_WALKIN'
 }
@@ -171,6 +171,35 @@ export interface VehicleLookupResponse {
     }
   }>
 }
+
+export type GateCheckoutSubMode = 'PAYMENT_REQUIRED' | 'PAYMENT_PENDING' | 'READY_TO_EXIT'
+
+export type GateScanResponse =
+  | {
+      mode: 'CHECK_IN'
+      source: 'OCR' | 'MANUAL'
+      plateOcr?: string | null
+      plateConfirmed: string
+      confidence?: number | null
+      ocrEvidenceId?: string
+      lookup: VehicleLookupResponse
+    }
+  | {
+      mode: 'CHECK_OUT'
+      source: 'OCR' | 'MANUAL'
+      plateOcr?: string | null
+      plateConfirmed: string
+      confidence?: number | null
+      ocrEvidenceId?: string
+      subMode: GateCheckoutSubMode
+      checkout: CheckoutWorkflowResponse
+    }
+  | {
+      mode: 'NEEDS_MANUAL_PLATE'
+      source: 'OCR'
+      ocrEvidenceId?: string
+      error?: string | null
+    }
 
 // ─── Check-out types ─────────────────────────────────────────────────────────
 
@@ -459,6 +488,33 @@ export async function recognizePlateImage(input: {
   if (input.reservationId) formData.append('reservationId', input.reservationId)
 
   const { data } = await api.post<OcrRecognizeResponse>('/ocr/recognize', formData)
+  return data
+}
+
+export async function scanGatePlate(input: {
+  image: Blob
+  cameraId?: string
+  buildingName?: string
+  gateName?: string
+}): Promise<GateScanResponse> {
+  const formData = new FormData()
+  formData.append('image', input.image, 'gate-frame.jpg')
+  if (input.cameraId) formData.append('cameraId', input.cameraId)
+  if (input.buildingName) formData.append('buildingName', input.buildingName)
+  if (input.gateName) formData.append('gateName', input.gateName)
+
+  const { data } = await api.post<GateScanResponse>('/gate/scan-plate', formData)
+  return data
+}
+
+export async function resolveGatePlate(input: {
+  plate: string
+  ocrEvidenceId?: string
+}): Promise<Exclude<GateScanResponse, { mode: 'NEEDS_MANUAL_PLATE' }>> {
+  const { data } = await api.post<Exclude<GateScanResponse, { mode: 'NEEDS_MANUAL_PLATE' }>>(
+    '/gate/resolve-plate',
+    input,
+  )
   return data
 }
 

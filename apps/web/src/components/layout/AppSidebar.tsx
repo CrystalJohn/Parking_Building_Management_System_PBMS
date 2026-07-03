@@ -9,8 +9,8 @@ import {
   LayoutDashboard,
   LogOut,
   Moon,
-  ParkingCircle,
   QrCode,
+  ScanLine,
   Settings,
   ShieldCheck,
   Sun,
@@ -40,6 +40,7 @@ interface NavItem {
   to: string
   label: string
   icon: LucideIcon
+  match?: (pathname: string, search: string) => boolean
 }
 
 const ROLE_LABELS: Record<AuthUser['role'], string> = {
@@ -72,7 +73,12 @@ const NAV_BY_ROLE: Record<AuthUser['role'], NavItem[]> = {
     { to: '/manager/config', label: 'Config', icon: Settings },
   ],
   staff: [
-    { to: '/staff/gate', label: 'Gate', icon: ParkingCircle },
+    {
+      to: '/staff/gate',
+      label: 'Gate',
+      icon: ScanLine,
+      match: (pathname) => pathname === '/staff/gate',
+    },
     { to: '/staff/lost-ticket', label: 'Lost Ticket', icon: Ticket },
   ],
   driver: [
@@ -181,7 +187,9 @@ export default function AppSidebar() {
 
 function AppSidebarItem({ item }: { item: NavItem }) {
   const location = useLocation()
-  const isActive = location.pathname === item.to
+  const isActive = item.match
+    ? item.match(location.pathname, location.search)
+    : location.pathname === item.to
   const Icon = item.icon
 
   return (

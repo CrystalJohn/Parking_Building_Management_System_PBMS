@@ -7,10 +7,12 @@ import {
   CheckCircle2,
   Clock3,
   Edit3,
+  Eye,
   HelpCircle,
   Keyboard,
   Loader2,
   Printer,
+  QrCode,
   RotateCcw,
   ScanLine,
   ShieldCheck,
@@ -20,6 +22,7 @@ import {
 } from 'lucide-react'
 
 import { formatDateTimeVN } from '../../lib/date-time'
+import { formatPlateForDisplay, normalizePlateForApi } from '../../lib/plate-format'
 import { useToasts } from '../../lib/use-toasts'
 import { RecentSessionsCard } from '../../components/ui/RecentSessionsCard'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -43,6 +46,13 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
@@ -50,9 +60,11 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { cn } from '@/lib/utils'
 import {
   checkIn,
+  type CheckoutWorkflowResponse,
+  type GateCheckoutSubMode,
   issueSessionTicket,
-  lookupPlate,
-  recognizePlateImage,
+  resolveGatePlate,
+  scanGatePlate,
   type AssignedSlot,
   type OcrRecognizeResponse,
   type SessionTicket,
@@ -81,6 +93,12 @@ type PlateLookupStatus = 'idle' | 'loading' | 'success' | 'error'
 type TicketStage = 'idle' | 'confirmed' | 'printed' | 'issued'
 
 type Props = {
+  onRouteToCheckout?: (input: {
+    checkout: CheckoutWorkflowResponse
+    plateConfirmed: string
+    subMode: GateCheckoutSubMode
+  }) => void
+  onSwitchToReservationQr?: () => void
   toasts: ReturnType<typeof useToasts>
 }
 
@@ -88,7 +106,11 @@ const BUILDING_NAME = import.meta.env.VITE_PBMS_BUILDING_NAME ?? 'PBMS Building'
 const GATE_NAME = import.meta.env.VITE_PBMS_GATE_NAME ?? 'Main Gate'
 const CAMERA_ID = import.meta.env.VITE_PLATE_RECOGNIZER_CAMERA_ID ?? 'staff-gate-camera'
 
-export function StaffOcrCheckInPanel({ toasts }: Props) {
+export function StaffOcrCheckInPanel({
+  onRouteToCheckout,
+  onSwitchToReservationQr,
+  toasts,
+}: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const ocrRequestIdRef = useRef(0)
@@ -108,6 +130,7 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
   const [ticketStage, setTicketStage] = useState<TicketStage>('idle')
   const [issuedAt, setIssuedAt] = useState<string | null>(null)
   const [resetDialogOpen, setResetDialogOpen] = useState(false)
+  const [ticketDialogOpen, setTicketDialogOpen] = useState(false)
   const [now, setNow] = useState(new Date())
   const [checkInCount, setCheckInCount] = useState(0)
 
@@ -132,9 +155,9 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
     hasLookupResult &&
     status !== 'OCR_PROCESSING' &&
     status !== 'CHECKING_IN'
-  const canPrint = Boolean(ticket) && (status === 'TICKET_READY' || status === 'PRINT_DIALOG_OPENED')
+  const canPrint = Boolean(ticket) && ticketStage === 'confirmed'
   const canMarkIssued = Boolean(ticket) && ticketStage === 'printed'
-  const canNextVehicle = Boolean(ticket) && ticketStage !== 'idle'
+  const canNextVehicle = Boolean(ticket) && ticketStage === 'issued'
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000)
@@ -198,6 +221,7 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
     setTicketStage('idle')
     setIssuedAt(null)
     setResetDialogOpen(false)
+    setTicketDialogOpen(false)
   }, [])
 
   const requestReset = useCallback(() => {
@@ -217,8 +241,22 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
     setVehicleTypeOverride(true)
   }, [])
 
+  const applyCheckInLookup = useCallback((plate: string, lookup: VehicleLookupResponse) => {
+    setLicensePlate(formatPlateForDisplay(plate))
+    setPlateLookup(lookup)
+    setPlateLookupStatus('success')
+    setPlateLookupError(null)
+
+    if (lookup.matched && lookup.vehicleType) {
+      setVehicleType(lookup.vehicleType)
+      setVehicleTypeOverride(false)
+    } else {
+      setVehicleTypeOverride(true)
+    }
+  }, [])
+
   const lookupConfirmedPlate = useCallback(async (plate: string) => {
-    const confirmedPlate = plate.trim().toUpperCase()
+    const confirmedPlate = normalizePlateForApi(plate)
     if (!confirmedPlate) return
 
     const requestId = ++lookupRequestIdRef.current
@@ -226,18 +264,22 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
     setPlateLookupError(null)
 
     try {
-      const result = await lookupPlate(confirmedPlate)
+      const result = await resolveGatePlate({
+        plate: confirmedPlate,
+        ocrEvidenceId: ocrResult?.ocrEvidenceId,
+      })
       if (requestId !== lookupRequestIdRef.current) return
 
-      setPlateLookup(result)
-      setPlateLookupStatus('success')
-
-      if (result.matched && result.vehicleType) {
-        setVehicleType(result.vehicleType)
-        setVehicleTypeOverride(false)
-      } else {
-        setVehicleTypeOverride(true)
+      if (result.mode === 'CHECK_OUT') {
+        onRouteToCheckout?.({
+          checkout: result.checkout,
+          plateConfirmed: formatPlateForDisplay(result.plateConfirmed),
+          subMode: result.subMode,
+        })
+        return
       }
+
+      applyCheckInLookup(result.plateConfirmed, result.lookup)
     } catch (error) {
       if (requestId !== lookupRequestIdRef.current) return
       setPlateLookup(null)
@@ -245,7 +287,7 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
       setPlateLookupError(extractErrorMessage(error))
       setVehicleTypeOverride(true)
     }
-  }, [])
+  }, [applyCheckInLookup, ocrResult?.ocrEvidenceId, onRouteToCheckout])
 
   const captureAndRecognize = useCallback(async () => {
     if (status === 'OCR_PROCESSING' || status === 'CHECKING_IN') return
@@ -286,7 +328,7 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
 
     const requestId = ++ocrRequestIdRef.current
     try {
-      const response = await recognizePlateImage({
+      const response = await scanGatePlate({
         image: blob,
         cameraId: CAMERA_ID,
         buildingName: BUILDING_NAME,
@@ -294,12 +336,43 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
       })
       if (requestId !== ocrRequestIdRef.current) return
 
-      setOcrResult(response)
-      if (response.detectedPlate) {
-        setLicensePlate(response.detectedPlate)
-        void lookupConfirmedPlate(response.detectedPlate)
+      const nextOcrResult: OcrRecognizeResponse = {
+        ocrEvidenceId: response.ocrEvidenceId ?? '',
+        detectedPlate:
+          response.mode === 'NEEDS_MANUAL_PLATE'
+            ? null
+            : formatPlateForDisplay(response.plateOcr ?? response.plateConfirmed),
+        confidence: response.mode === 'NEEDS_MANUAL_PLATE' ? null : response.confidence ?? null,
+        vehicleTypePrediction: null,
+        provider: 'PLATE_RECOGNIZER',
+        providerFilename: null,
+        providerTimestamp: null,
+        cameraId: CAMERA_ID,
+        plateBox: null,
+        buildingName: BUILDING_NAME,
+        gateName: GATE_NAME,
+        error: response.mode === 'NEEDS_MANUAL_PLATE' ? response.error ?? 'No plate detected' : null,
+        durationMs: 0,
+      }
+      setOcrResult(nextOcrResult)
+
+      if (response.mode === 'CHECK_OUT') {
         setStatus('OCR_SUCCESS')
-        toasts.showSuccess(`Plate detected: ${response.detectedPlate}`)
+        toasts.showInfo(
+          `Open session found for ${formatPlateForDisplay(response.plateConfirmed)}. Continue checkout.`,
+        )
+        onRouteToCheckout?.({
+          checkout: response.checkout,
+          plateConfirmed: formatPlateForDisplay(response.plateConfirmed),
+          subMode: response.subMode,
+        })
+        return
+      }
+
+      if (response.mode === 'CHECK_IN') {
+        applyCheckInLookup(response.plateConfirmed, response.lookup)
+        setStatus('OCR_SUCCESS')
+        toasts.showSuccess(`Plate detected: ${formatPlateForDisplay(response.plateConfirmed)}`)
       } else {
         setPlateLookup(null)
         setPlateLookupStatus('idle')
@@ -314,7 +387,7 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
       setStatus('OCR_FAILED')
       toasts.showError(extractErrorMessage(error))
     }
-  }, [lookupConfirmedPlate, status, toasts])
+  }, [applyCheckInLookup, onRouteToCheckout, status, toasts])
 
   const confirmCheckIn = useCallback(async () => {
     if (!licensePlate.trim()) {
@@ -332,7 +405,7 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
     setStatus('CHECKING_IN')
     try {
       const response = await checkIn({
-        licensePlate: licensePlate.trim().toUpperCase(),
+        licensePlate: normalizePlateForApi(licensePlate),
         vehicleType,
         ocrEvidenceId: ocrResult?.ocrEvidenceId,
         identificationMethod: ocrResult?.ocrEvidenceId ? 'OCR' : 'MANUAL_PLATE',
@@ -420,14 +493,14 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
                 <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
                   <Camera className="size-4" />
                 </span>
-                Camera and OCR evidence
+                Scan Plate
               </CardTitle>
               <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="inline-flex items-center gap-1">
                   <Keyboard className="size-3.5" />
                   Space capture
                 </span>
-                <span>Enter confirm</span>
+                <span>System routes to check-in or checkout after OCR</span>
                 <span>Esc reset</span>
               </CardDescription>
             </div>
@@ -469,66 +542,33 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
               <EvidencePreview title="Captured OCR evidence" imageUrl={capturedImageUrl} />
             </div>
 
-            {ticket ? (
-              <Card className="border-l-4 border-l-primary bg-card shadow-sm print:mt-0 print:border-0 print:bg-white print:p-0">
-                <CardHeader className="p-3 pb-0 print:hidden">
-                  <CardTitle className="flex items-center gap-2 text-sm">
-                    <Ticket className="size-4 text-primary" />
-                    {status === 'GENERATING_TICKET' ? 'Generating ticket...' : 'Session Ticket Preview'}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-3">
-                  <SessionTicketPreview ticket={ticket} issuedAt={issuedAt} />
-                  <div className="mt-3 flex flex-col gap-2 print:hidden">
-                    <Button
-                      type="button"
-                      onClick={printTicket}
-                      disabled={ticketStage !== 'confirmed'}
-                      className="h-11"
-                    >
-                      <Printer className="size-4" />
-                      Print Ticket
-                    </Button>
-                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-                      <Button
-                        type="button"
-                        onClick={markTicketIssued}
-                        disabled={!canMarkIssued}
-                        variant="outline"
-                        className="h-11"
-                      >
-                        Mark Issued
-                      </Button>
-                      <Button
-                        type="button"
-                        onClick={reset}
-                        disabled={!canNextVehicle}
-                        variant="outline"
-                        className="h-11"
-                      >
-                        Next Vehicle
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card className="border-dashed bg-muted/30">
-                <CardContent className="flex min-h-20 items-center justify-center p-4 text-center">
-                  <div className="flex items-center gap-3">
-                    <div className="grid size-9 shrink-0 place-items-center rounded-lg border bg-background text-primary">
-                      <Ticket className="size-4" />
-                    </div>
-                    <div className="text-left">
-                      <p className="text-sm font-semibold text-foreground">Ticket preview</p>
-                      <p className="text-xs text-muted-foreground">
-                        Confirm check-in to generate ticket and QR code.
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button
+                type="button"
+                onClick={() => void captureAndRecognize()}
+                disabled={status === 'OCR_PROCESSING' || status === 'CHECKING_IN'}
+                className="h-11 sm:min-w-[180px]"
+              >
+                {status === 'OCR_PROCESSING' ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <ScanLine className="size-4" />
+                )}
+                {status === 'OCR_PROCESSING' ? 'Scanning plate...' : 'Scan Plate'}
+              </Button>
+              {onSwitchToReservationQr ? (
+                <Button
+                  type="button"
+                  onClick={onSwitchToReservationQr}
+                  variant="outline"
+                  className="h-11 sm:min-w-[200px]"
+                >
+                  <QrCode className="size-4" />
+                  Reservation QR check-in
+                </Button>
+              ) : null}
+            </div>
+
           </CardContent>
           </Card>
 
@@ -536,10 +576,11 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
           <Card>
             <CardHeader className="grid-cols-[1fr_auto]">
               <div>
-                <CardTitle>Service and actions</CardTitle>
-                <CardDescription>{checkInMode}</CardDescription>
+                <CardTitle>{ticket ? 'Ticket ready' : 'Gate workflow'}</CardTitle>
+                <CardDescription>{ticket ? ticket.sessionCode : checkInMode}</CardDescription>
               </div>
-              <CardAction>
+              {!ticket ? (
+                <CardAction>
                 <TooltipProvider delayDuration={150}>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -549,14 +590,77 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent align="end" className="max-w-64 text-xs">
-                      Capture OCR or enter a plate, then lookup to auto-fill owner,
-                      subscription, and vehicle type when the vehicle is registered.
+                      Scan once, then PBMS routes the plate to check-in or checkout.
+                      Staff can still correct the confirmed plate before continuing.
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
-              </CardAction>
+                </CardAction>
+              ) : null}
             </CardHeader>
             <CardContent className="space-y-4">
+              {ticket ? (
+                <div className="space-y-4">
+                  <div className="rounded-lg border bg-muted/30 p-3">
+                    <div className="flex items-start gap-3">
+                      <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                        <Ticket className="size-4" />
+                      </span>
+                      <div className="min-w-0 space-y-1">
+                        <p className="truncate font-mono text-sm font-black tracking-wide text-foreground">
+                          {ticket.sessionCode}
+                        </p>
+                        <p className="truncate text-sm font-semibold text-foreground">
+                          {formatPlateForDisplay(ticket.licensePlate)}
+                        </p>
+                        <p className="text-xs font-medium text-muted-foreground">Slot {ticket.slotCode}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setTicketDialogOpen(true)}
+                      className="h-11 w-full"
+                    >
+                      <Eye className="size-4" />
+                      View ticket
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={printTicket}
+                      disabled={!canPrint}
+                      className="h-11 w-full"
+                    >
+                      <Printer className="size-4" />
+                      Print Ticket
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={markTicketIssued}
+                      disabled={!canMarkIssued}
+                      variant="outline"
+                      className="h-11 w-full"
+                    >
+                      <Ticket className="size-4" />
+                      Mark Issued
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={reset}
+                      disabled={!canNextVehicle}
+                      variant="outline"
+                      className="h-11 w-full"
+                    >
+                      <RotateCcw className="size-4" />
+                      Next Vehicle
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <>
               <div className="space-y-3">
                 <Field
                   label="Confirmed license plate"
@@ -590,7 +694,7 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
                       ) : (
                         <ScanLine className="size-4" />
                       )}
-                      Lookup
+                      Re-check plate
                     </Button>
                   </div>
                 </Field>
@@ -695,7 +799,7 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
                     ) : (
                       <CheckCircle2 className="size-4" />
                     )}
-                    {status === 'CHECKING_IN' ? 'Checking in...' : 'Confirm Walk-in Check-in'}
+                    {status === 'CHECKING_IN' ? 'Checking in...' : 'Confirm Check-in'}
                   </Button>
                 </div>
               )}
@@ -711,11 +815,31 @@ export function StaffOcrCheckInPanel({ toasts }: Props) {
                   Reset
                 </Button>
               </div>
+                </>
+              )}
             </CardContent>
           </Card>
         <RecentSessionsCard type="checkin" refreshTrigger={checkInCount} />
       </div>
     </div>
+
+      {ticket ? (
+        <>
+          <Dialog open={ticketDialogOpen} onOpenChange={setTicketDialogOpen}>
+            <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100vw-24px)] max-w-md overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Ticket ready</DialogTitle>
+                <DialogDescription>{ticket.sessionCode}</DialogDescription>
+              </DialogHeader>
+              <SessionTicketPreview ticket={ticket} issuedAt={issuedAt} />
+            </DialogContent>
+          </Dialog>
+
+          <div className="hidden print:block">
+            <SessionTicketPreview ticket={ticket} issuedAt={issuedAt} />
+          </div>
+        </>
+      ) : null}
 
       <AlertDialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
         <AlertDialogContent>

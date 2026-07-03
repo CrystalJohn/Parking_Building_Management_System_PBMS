@@ -1,26 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { isAxiosError } from 'axios'
 import {
-  ArrowDownToLine,
-  ArrowUpFromLine,
-  Banknote,
-  CheckCircle2,
   CircleAlert,
-  CreditCard,
   Loader2,
   LogOut,
   Printer,
   QrCode,
   ReceiptText,
-  RefreshCw,
   RotateCcw,
   Search,
   TicketCheck,
-  WalletCards,
 } from 'lucide-react'
+import { useLocation } from 'react-router-dom'
 import { useToasts } from '../../lib/use-toasts'
 import {
-  checkIn,
   checkOut,
   confirmPayment,
   confirmCashPayment,
@@ -29,8 +22,6 @@ import {
   getPaymentStatus,
   lookupSessionForCheckout,
   requestCheckout,
-  type CheckInResponse,
-  type CheckInIdentificationMethod,
   type CheckOutResponse,
   type CheckoutWorkflowResponse,
   type ConfirmExitResponse,
@@ -39,14 +30,14 @@ import {
   type PaymentWorkflowResponse,
   type PaymentStatus,
   type SessionStatus,
-  type VehicleType,
 } from '../../lib/sessions-api'
 import { Receipt } from '../../components/receipt/Receipt'
 import { QRScanner } from '../../components/qr-scanner/QRScanner'
 import { RecentSessionsCard } from '../../components/ui/RecentSessionsCard'
-import { LicensePlateScanner } from '../../components/plate-scanner/LicensePlateScanner'
 import { formatDateTimeVN } from '../../lib/date-time'
-import { StaffCheckInPanel } from './StaffCheckInPanel'
+import { formatPlateForDisplay, normalizePlateForApi } from '../../lib/plate-format'
+import { StaffOcrCheckInPanel } from './StaffOcrCheckInPanel'
+import { StaffReservationQrCheckInPanel } from './StaffReservationQrCheckInPanel'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -54,45 +45,23 @@ import {
   Card,
   CardAction,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 
 type Tab = 'check-in' | 'check-out'
-
-const GATE_TABS: Array<{
-  id: Tab
-  title: string
-  subtitle: string
-  activeHint: string
-  icon: typeof ArrowDownToLine
-}> = [
-  {
-    id: 'check-in',
-    title: 'Check-in',
-    subtitle: 'Vehicle entry',
-    activeHint: 'OCR, reserve, issue ticket',
-    icon: ArrowDownToLine,
-  },
-  {
-    id: 'check-out',
-    title: 'Check-out',
-    subtitle: 'Vehicle exit',
-    activeHint: 'QR, plate, collect fee',
-    icon: ArrowUpFromLine,
-  },
-]
 
 const VND = (n: number) =>
   `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(Math.round(n))} VND`
 
 const isUuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+const CASH_ICON_SRC = '/cash-icon.svg'
+const VNPAY_ICON_SRC = '/vnpay-logo.jpg'
 
 function debugLog(...args: unknown[]) {
   if (import.meta.env.DEV) {
@@ -102,6 +71,23 @@ function debugLog(...args: unknown[]) {
 }
 
 const formatDateTime = formatDateTimeVN
+
+function normalizeGateTab(value: string | null | undefined): Tab {
+  if (value === 'check-out' || value === 'checkout') return 'check-out'
+  return 'check-in'
+}
+
+interface PanelProps {
+  toasts: ReturnType<typeof useToasts>
+}
+
+interface CheckOutPanelProps extends PanelProps {
+  hideLookupCard?: boolean
+  initialLookupKind?: 'sessionCode' | 'licensePlate'
+  initialLookupValue?: string
+  initialWorkflow?: CheckoutWorkflowResponse | null
+  onResetToGateOps?: () => void
+}
 
 /**
  * Extracts a user-friendly error message from an Axios error.
@@ -127,82 +113,49 @@ function extractError(err: unknown): { message: string; isFull: boolean } {
 }
 
 export default function Gate() {
-  // Read initial tab from URL query param (e.g. ?tab=check-out from VNPAY return)
-  const initialTab = (() => {
-    const p = new URLSearchParams(window.location.search).get('tab')
-    return p === 'check-out' ? 'check-out' : 'check-in'
-  })()
-  const [tab, setTab] = useState<Tab>(initialTab as Tab)
+  const location = useLocation()
   const toasts = useToasts()
+  const gateRoute = useMemo(() => {
+    const params = new URLSearchParams(location.search)
+    const tab = normalizeGateTab(params.get('tab'))
+    const sessionCode = params.get('sessionCode') || params.get('session')
+    const licensePlate = params.get('licensePlate')
+    const hasCheckoutContext = Boolean(sessionCode?.trim() || licensePlate?.trim())
+
+    return {
+      tab,
+      hasCheckoutContext,
+      renderLegacyCheckout: tab === 'check-out' && hasCheckoutContext,
+    }
+  }, [location.search])
 
   return (
     <div className="min-h-[calc(100svh-5rem)] bg-muted/40">
       <div className="mx-auto max-w-7xl px-4 pb-4 pt-4 sm:px-6 print:hidden">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-                Gate operations
-              </h1>
-              <Badge variant="outline" className="bg-background">
-                Staff console
-              </Badge>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Run entry OCR, ticket issue, payment checkout, and vehicle exit from one station.
-            </p>
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+              Gate Operations
+            </h1>
+            <Badge variant="outline" className="bg-background">
+              Staff console
+            </Badge>
           </div>
-
-          <nav
-            className="grid grid-cols-2 gap-1 rounded-lg border bg-background p-1 shadow-sm lg:min-w-[360px]"
-            role="tablist"
-            aria-label="Gate actions"
-          >
-            {GATE_TABS.map((item) => {
-              const isActive = tab === item.id
-              const Icon = item.icon
-              return (
-                <Button
-                  key={item.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={isActive}
-                  aria-controls={`gate-panel-${item.id}`}
-                  variant={isActive ? 'default' : 'ghost'}
-                  onClick={() => setTab(item.id)}
-                  className={cn('h-10 justify-start gap-2 px-3', !isActive && 'text-muted-foreground')}
-                >
-                  <Icon className="size-4" />
-                  <span className="flex min-w-0 flex-col items-start leading-tight">
-                    <span className="text-sm font-semibold">{item.title}</span>
-                    <span
-                      className={cn(
-                        'hidden text-[11px] font-medium lg:block',
-                        isActive ? 'text-primary-foreground/75' : 'text-muted-foreground',
-                      )}
-                    >
-                      {item.subtitle}
-                    </span>
-                  </span>
-                </Button>
-              )
-            })}
-          </nav>
         </div>
       </div>
 
       <div className="mx-auto max-w-7xl px-4 pb-4 sm:px-6 print:max-w-none print:p-0">
         <div
-          id={`gate-panel-${tab}`}
+          id={`gate-panel-${gateRoute.renderLegacyCheckout ? 'check-out' : 'gate-operations'}`}
           role="tabpanel"
           className={cn(
             "print:rounded-none print:border-0 print:p-0 print:shadow-none",
           )}
         >
-          {tab === 'check-in' ? (
-            <StaffCheckInPanel toasts={toasts} />
-          ) : (
+          {gateRoute.renderLegacyCheckout ? (
             <CheckOutPanel toasts={toasts} />
+          ) : (
+            <GateOperationsPanel toasts={toasts} />
           )}
         </div>
       </div>
@@ -210,375 +163,48 @@ export default function Gate() {
   )
 }
 
-// ─── Check-in Panel ──────────────────────────────────────────────────────────
+function GateOperationsPanel({ toasts }: PanelProps) {
+  const [mode, setMode] = useState<'scan-plate' | 'reservation-qr' | 'checkout'>('scan-plate')
+  const [routedCheckout, setRoutedCheckout] = useState<{
+    checkout: CheckoutWorkflowResponse
+    plateConfirmed: string
+    subMode: 'PAYMENT_REQUIRED' | 'PAYMENT_PENDING' | 'READY_TO_EXIT'
+  } | null>(null)
 
-interface PanelProps {
-  toasts: ReturnType<typeof useToasts>
-}
-
-export function CheckInPanel({ toasts }: PanelProps) {
-  const [licensePlate, setLicensePlate] = useState('')
-  const [vehicleType, setVehicleType] = useState<VehicleType>('car')
-  const [driverPhone, setDriverPhone] = useState('')
-  const [reservationId, setReservationId] = useState('')
-  const [plateIdentificationMethod, setPlateIdentificationMethod] =
-    useState<CheckInIdentificationMethod>('MANUAL_PLATE')
-  const [submitting, setSubmitting] = useState(false)
-  const [result, setResult] = useState<CheckInResponse | null>(null)
-  const [showPlateScanner, setShowPlateScanner] = useState(false)
-  const [showReservationScanner, setShowReservationScanner] = useState(false)
-  const [showManualInput, setShowManualInput] = useState(false)
-
-  const reset = () => {
-    setLicensePlate('')
-    setDriverPhone('')
-    setReservationId('')
-    setPlateIdentificationMethod('MANUAL_PLATE')
-    setResult(null)
-    setShowManualInput(false)
-    setShowReservationScanner(false)
+  if (mode === 'reservation-qr') {
+    return (
+      <StaffReservationQrCheckInPanel
+        onSwitchToOcr={() => setMode('scan-plate')}
+        toasts={toasts}
+      />
+    )
   }
 
-  const handlePlateDetected = useCallback((plate: string) => {
-    setLicensePlate(plate)
-    setPlateIdentificationMethod('OCR')
-    setShowPlateScanner(false)
-    setShowManualInput(true)
-    toasts.showSuccess(`Plate detected: ${plate}`)
-  }, [toasts])
-
-  const handleReservationQrScanned = useCallback((decodedText: string) => {
-    const code = decodedText.trim()
-    setShowReservationScanner(false)
-    if (!code) {
-      toasts.showError('Invalid reservation QR code')
-      return
-    }
-
-    setReservationId(code)
-    toasts.showSuccess('Reservation ID received from QR')
-  }, [toasts])
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!licensePlate.trim()) {
-      toasts.showError('Please enter the license plate')
-      return
-    }
-
-    setSubmitting(true)
-    try {
-      const response = await checkIn({
-        licensePlate: licensePlate.trim().toUpperCase(),
-        vehicleType,
-        driverPhone: driverPhone.trim() || undefined,
-        reservationId: reservationId.trim() || undefined,
-        identificationMethod: reservationId.trim()
-          ? 'RESERVATION_QR'
-          : plateIdentificationMethod,
-      })
-      setResult(response)
-      toasts.showSuccess(`Slot ${response.slot.code} assigned`)
-    } catch (err) {
-      const { message, isFull } = extractError(err)
-      if (isFull) {
-        toasts.showError(`Parking lot full: ${message}`)
-      } else {
-        toasts.showError(message)
-      }
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  if (result) {
-    return <CheckInResult data={result} onNext={reset} />
+  if (mode === 'checkout' && routedCheckout) {
+    return (
+      <CheckOutPanel
+        toasts={toasts}
+        initialWorkflow={routedCheckout.checkout}
+        initialLookupValue={normalizePlateForApi(routedCheckout.plateConfirmed)}
+        initialLookupKind="licensePlate"
+        hideLookupCard
+        onResetToGateOps={() => {
+          setRoutedCheckout(null)
+          setMode('scan-plate')
+        }}
+      />
+    )
   }
 
   return (
-    <>
-      <form onSubmit={handleSubmit} className="space-y-5">
-        <h2 className="text-lg font-semibold">Check-in vehicle entry</h2>
-
-        <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 space-y-3">
-          <div>
-            <label className="block text-sm font-semibold text-gray-800">
-              Reservation ID / Code
-            </label>
-            <p className="text-xs text-gray-600 mt-1">
-              Optional - used when the driver has reserved a slot. OCR / manual plate is still required to confirm the vehicle plate.
-            </p>
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-2">
-            <button
-              type="button"
-              onClick={() => setShowReservationScanner(true)}
-              className="btn-secondary"
-              disabled={submitting}
-            >
-              Scan Reservation QR
-            </button>
-            {reservationId && (
-              <button
-                type="button"
-                onClick={() => setReservationId('')}
-                className="text-sm text-gray-500 hover:text-gray-700 px-2"
-                disabled={submitting}
-              >
-                Clear
-              </button>
-            )}
-          </div>
-
-          <input
-            className="input font-mono text-xs"
-            placeholder="Paste or type reservation UUID"
-            value={reservationId}
-            onChange={(e) => setReservationId(e.target.value)}
-            disabled={submitting}
-          />
-
-          <p className="text-xs text-gray-500">
-            If provided, backend will use the reserved slot. If empty, check-in uses OCR/manual plate with smart allocation.
-          </p>
-        </div>
-
-        {/* ── License plate section ── */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            License plate <span className="text-red-500">*</span>
-          </label>
-
-          {/* Primary: camera scan button */}
-          {!showManualInput && !licensePlate && (
-            <div className="space-y-3">
-              <button
-                type="button"
-                onClick={() => setShowPlateScanner(true)}
-                className="w-full flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-semibold py-4 px-6 rounded-xl transition-all shadow-md hover:shadow-lg text-base"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
-                  />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                📸 Scan license plate with camera
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowManualInput(true)}
-                className="w-full text-sm text-gray-500 hover:text-gray-700 py-2 underline underline-offset-2 transition-colors"
-              >
-                ✏️ Enter plate manually (fallback)
-              </button>
-            </div>
-          )}
-
-          {/* After scan: show detected plate + allow re-scan or manual edit */}
-          {(showManualInput || licensePlate) && (
-            <div className="space-y-2">
-              {licensePlate && !showManualInput && (
-                <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-                  <span className="text-green-600 text-lg">✓</span>
-                  <span className="font-mono font-bold text-gray-900 text-lg tracking-widest flex-1">{licensePlate}</span>
-                  <button
-                    type="button"
-                    onClick={() => setShowManualInput(true)}
-                    className="text-xs text-blue-600 hover:text-blue-800 underline"
-                  >
-                    Edit
-                  </button>
-                </div>
-              )}
-
-              {showManualInput && (
-                <div className="space-y-2">
-                  <div className="relative">
-                    <input
-                      className="input uppercase pr-10"
-                      placeholder="VD: 59A-12345"
-                      value={licensePlate}
-                      onChange={(e) => {
-                        setLicensePlate(e.target.value)
-                        setPlateIdentificationMethod('MANUAL_PLATE')
-                      }}
-                      required
-                      autoFocus
-                    />
-                    {licensePlate && (
-                      <button
-                        type="button"
-                        onClick={() => setLicensePlate('')}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowPlateScanner(true)}
-                      className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 py-1 px-2 rounded-md hover:bg-blue-50 transition-colors"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                          d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
-                        />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                      Rescan with camera
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* ── Vehicle type ── */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Vehicle type <span className="text-red-500">*</span>
-          </label>
-          <div className="flex gap-3">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="vehicleType"
-                value="car"
-                checked={vehicleType === 'car'}
-                onChange={() => setVehicleType('car')}
-              />
-              <span>Car (Zone A)</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="vehicleType"
-                value="motorbike"
-                checked={vehicleType === 'motorbike'}
-                onChange={() => setVehicleType('motorbike')}
-              />
-              <span>Motorbike (Zone B)</span>
-            </label>
-          </div>
-        </div>
-
-        {/* ── Driver phone ── */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Driver phone <span className="text-gray-400 font-normal">(optional)</span>
-          </label>
-          <input
-            className="input"
-            placeholder="e.g. 0901234567 — enter if the customer has an account to receive QR"
-            value={driverPhone}
-            onChange={(e) => setDriverPhone(e.target.value)}
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            If the customer is registered, the system will generate a QR code for check-out.
-          </p>
-        </div>
-
-        {/* ── Submit ── */}
-        {(licensePlate || showManualInput) && (
-          <div className="flex gap-2">
-            <button type="submit" className="btn-primary" disabled={submitting || !licensePlate.trim()}>
-              {submitting ? 'Processing...' : 'Check-in'}
-            </button>
-            <button
-              type="button"
-              onClick={reset}
-              className="btn-secondary"
-              disabled={submitting}
-            >
-              Cancel
-            </button>
-          </div>
-        )}
-      </form>
-
-      {/* License plate scanner modal */}
-      {showPlateScanner && (
-        <LicensePlateScanner
-          onDetected={handlePlateDetected}
-          onClose={() => setShowPlateScanner(false)}
-        />
-      )}
-
-      {showReservationScanner && (
-        <QRScanner
-          title="Scan Reservation QR"
-          instructions="Scan the reservation QR/code from the driver's mobile reservation detail screen."
-          manualToggleLabel="Camera cannot scan? Enter reservation ID/code manually"
-          manualInputLabel="Reservation ID / Code"
-          manualInputPlaceholder="Reservation UUID"
-          onScan={handleReservationQrScanned}
-          onClose={() => setShowReservationScanner(false)}
-          onManualInput={handleReservationQrScanned}
-        />
-      )}
-    </>
-  )
-}
-
-function CheckInResult({
-  data,
-  onNext,
-}: {
-  data: CheckInResponse
-  onNext: () => void
-}) {
-  return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-semibold text-green-700">
-      ✓ Check-in successful
-      </h2>
-
-      <dl className="grid grid-cols-2 gap-y-2 text-sm">
-        <dt className="text-gray-500">License plate</dt>
-        <dd className="font-medium">{data.session.licensePlate}</dd>
-
-        <dt className="text-gray-500">Vehicle type</dt>
-        <dd>{data.session.vehicleType === 'car' ? 'Car' : 'Motorbike'}</dd>
-
-        <dt className="text-gray-500">Assigned slot</dt>
-        <dd className="font-mono text-lg font-bold">{data.slot.code}</dd>
-
-        <dt className="text-gray-500">Floor</dt>
-        <dd>
-          {data.slot.floor.name} (Floor {data.slot.floor.floorNumber}) — Zone {data.slot.zone}
-        </dd>
-
-        <dt className="text-gray-500">Check-in time</dt>
-        <dd>{formatDateTime(data.session.checkInTime)}</dd>
-      </dl>
-
-      {data.qr_code && (
-        <div className="border-t border-gray-200 pt-4">
-          <p className="text-sm font-medium mb-2">
-            QR code for driver (registered):
-          </p>
-          <img
-            src={data.qr_code}
-            alt="QR code"
-            className="w-48 h-48 border border-gray-200 rounded-md"
-          />
-          <p className="text-xs text-gray-500 mt-2">
-            Driver presents this QR at exit for check-out.
-          </p>
-        </div>
-      )}
-
-      <div className="flex gap-2 pt-2">
-        <button onClick={onNext} className="btn-primary">
-          Next vehicle
-        </button>
-      </div>
-    </div>
+    <StaffOcrCheckInPanel
+      toasts={toasts}
+      onSwitchToReservationQr={() => setMode('reservation-qr')}
+      onRouteToCheckout={(input) => {
+        setRoutedCheckout(input)
+        setMode('checkout')
+      }}
+    />
   )
 }
 
@@ -629,7 +255,7 @@ export function LegacyCheckOutPanel({ toasts }: PanelProps) {
       toasts.showError('Please enter the license plate')
       return
     }
-    lookup({ licensePlate: licensePlate.trim().toUpperCase() })
+    lookup({ licensePlate: normalizePlateForApi(licensePlate) })
   }
 
   const handleScanQR = () => {
@@ -810,18 +436,25 @@ export function LegacyCheckOutPanel({ toasts }: PanelProps) {
   )
 }
 
-function CheckOutPanel({ toasts }: PanelProps) {
-  const [sessionCode, setSessionCode] = useState('')
-  const [workflow, setWorkflow] = useState<CheckoutWorkflowResponse | null>(null)
+function CheckOutPanel({
+  hideLookupCard = false,
+  initialLookupKind = 'sessionCode',
+  initialLookupValue = '',
+  initialWorkflow = null,
+  onResetToGateOps,
+  toasts,
+}: CheckOutPanelProps) {
+  const location = useLocation()
+  const [sessionCode, setSessionCode] = useState(initialLookupValue)
+  const [workflow, setWorkflow] = useState<CheckoutWorkflowResponse | null>(initialWorkflow)
   const [receipt, setReceipt] = useState<ConfirmPaymentResponse | null>(null)
   const [exitResult, setExitResult] = useState<ConfirmExitResponse | null>(null)
   const [action, setAction] = useState<'lookup' | 'checkout' | 'payment' | 'bankQr' | 'refresh' | 'exit' | null>(null)
   const [showScanner, setShowScanner] = useState(false)
   const [checkOutCount, setCheckOutCount] = useState(0)
-  const hydratedFromQuery = useRef(false)
+  const hydratedQueryRef = useRef<string | null>(null)
 
   const status = workflow?.session.status
-  const paymentStatus = workflow?.payment?.status ?? null
   const canRequestCheckout = status === 'active'
   const paymentExpired =
     workflow?.payment?.method === 'bank_qr' &&
@@ -848,6 +481,8 @@ function CheckOutPanel({ toasts }: PanelProps) {
   const canGenerateBankQr = status === 'checkout_pending' && !isBankQrPending && !isBankQrExpired && !isBankQrFailed
   const canConfirmExit = status === 'exit_authorized'
   const isCompleted = status === 'completed'
+  const lookupLabel = initialLookupKind === 'licensePlate' ? 'License plate' : 'Session Code / QR'
+  const lookupPlaceholder = initialLookupKind === 'licensePlate' ? '59A12345' : 'PBMS-D1878BC500'
 
   const mergePaymentWorkflow = (data: PaymentWorkflowResponse) => {
     setWorkflow((current) =>
@@ -894,6 +529,7 @@ function CheckOutPanel({ toasts }: PanelProps) {
     setExitResult(null)
     setAction(null)
     setShowScanner(false)
+    onResetToGateOps?.()
   }
 
   const normalizeSessionCode = (value: string) => {
@@ -903,7 +539,7 @@ function CheckOutPanel({ toasts }: PanelProps) {
 
   const lookupSession = async (input: { sessionCode?: string; licensePlate?: string }) => {
     const code = input.sessionCode ? normalizeSessionCode(input.sessionCode) : ''
-    const plate = input.licensePlate?.trim().toUpperCase() ?? ''
+    const plate = normalizePlateForApi(input.licensePlate)
     if (!code && !plate) {
       toasts.showError('Please enter a Session Code/QR or license plate to look up.')
       return
@@ -932,10 +568,19 @@ function CheckOutPanel({ toasts }: PanelProps) {
   }
 
   useEffect(() => {
-    if (hydratedFromQuery.current) return
-    hydratedFromQuery.current = true
+    setSessionCode(initialLookupValue)
+  }, [initialLookupValue])
 
-    const params = new URLSearchParams(window.location.search)
+  useEffect(() => {
+    setWorkflow(initialWorkflow)
+  }, [initialWorkflow])
+
+  useEffect(() => {
+    if (hideLookupCard) return
+    if (hydratedQueryRef.current === location.search) return
+    hydratedQueryRef.current = location.search
+
+    const params = new URLSearchParams(location.search)
     const code = params.get('sessionCode') || params.get('session')
     const plate = params.get('licensePlate')
 
@@ -946,15 +591,20 @@ function CheckOutPanel({ toasts }: PanelProps) {
     }
 
     if (plate) {
-      const normalizedPlate = plate.trim().toUpperCase()
+      const normalizedPlate = normalizePlateForApi(plate)
       setSessionCode(normalizedPlate)
       void lookupSession({ licensePlate: normalizedPlate })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [hideLookupCard, location.search])
 
   const handleLookupBySession = (event: React.FormEvent) => {
     event.preventDefault()
+    if (initialLookupKind === 'licensePlate') {
+      lookupSession({ licensePlate: sessionCode })
+      return
+    }
+
     lookupSession({ sessionCode })
   }
 
@@ -962,7 +612,7 @@ function CheckOutPanel({ toasts }: PanelProps) {
     const code = decodedText.trim()
     setShowScanner(false)
     if (!code) {
-      toasts.showError('Ma QR khong hop le.')
+      toasts.showError('Invalid QR code.')
       return
     }
     setSessionCode(code)
@@ -1138,561 +788,414 @@ function CheckOutPanel({ toasts }: PanelProps) {
   }
 
   const handlePrint = () => window.print()
-  const guide = checkoutGuide(status)
+  const handleOpenVnpay = () => {
+    if (workflow?.payment?.checkoutUrl) {
+      window.open(workflow.payment.checkoutUrl, '_blank', 'noopener,noreferrer')
+      return
+    }
+
+    void refreshPaymentStatus(true)
+  }
+
   const amountDue = workflow ? VND(workflow.payment?.amount ?? workflow.fee.total) : ''
+  const plateDisplay = workflow ? formatPlateForDisplay(workflow.session.licensePlate) : ''
+  const durationLabel = workflow ? `${workflow.fee.durationHours}h` : ''
+  const paymentMethod = workflow?.payment?.method ?? null
+  const paymentFact = workflow
+    ? workflow.payment
+      ? readablePaymentStatus(workflow.payment.status)
+      : 'Not started'
+    : 'Not loaded'
+  const paymentLabel = workflow?.payment
+    ? `${readablePaymentMethod(workflow.payment.method)} · ${readablePaymentStatus(workflow.payment.status)}`
+    : 'Calculated fee preview'
+  const showRecentHistory = !workflow
+  const showInvalidState =
+    workflow && !canRequestCheckout && !canConfirmPayment && !canConfirmExit && !isCompleted && !isBankQrPending && !isBankQrExpired && !isBankQrFailed
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.45fr)]">
-        <div className="space-y-4">
-          <Card className="border-primary/20 shadow-sm print:hidden">
-            <CardHeader className="grid-cols-[1fr_auto] border-b bg-muted/30">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
-                    <TicketCheck className="size-4" />
-                  </span>
-                  Session ticket checkout
-                </CardTitle>
-                <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <span className="inline-flex items-center gap-1">
-                    <QrCode className="size-3.5" />
-                    Session QR first
-                  </span>
-                  <span>Plate lookup only for lost tickets</span>
-                </CardDescription>
-              </div>
-              <CardAction>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={reset}
-                  disabled={Boolean(action)}
-                  className="h-10 px-3"
-                >
-                  <RotateCcw className="size-4" />
-                  Next Vehicle
-                </Button>
-              </CardAction>
-            </CardHeader>
-            <CardContent>
-              <form
-                onSubmit={handleLookupBySession}
-                className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-end"
+      {!hideLookupCard ? (
+        <Card className="border-primary/20 shadow-sm print:hidden">
+          <CardHeader className="grid-cols-[1fr_auto] border-b bg-muted/30">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
+                  <TicketCheck className="size-4" />
+                </span>
+                Checkout lookup
+              </CardTitle>
+            </div>
+            <CardAction>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={reset}
+                disabled={Boolean(action)}
+                className="h-10 px-3"
               >
-                <div className="space-y-2">
-                  <Label htmlFor="checkout-session-code" className="text-xs font-semibold">
-                    Session Code / QR
-                  </Label>
-                  <Input
-                    id="checkout-session-code"
-                    className="h-11 font-mono text-base font-semibold uppercase"
-                    placeholder="PBMS-D1878BC500"
-                    value={sessionCode}
-                    onChange={(event) => setSessionCode(event.target.value)}
-                    autoFocus
+                <RotateCcw className="size-4" />
+                Reset
+              </Button>
+            </CardAction>
+          </CardHeader>
+          <CardContent>
+            <form
+              onSubmit={handleLookupBySession}
+              className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-end"
+            >
+              <div className="space-y-2">
+                <Label htmlFor="checkout-session-code" className="text-xs font-semibold">
+                  {lookupLabel}
+                </Label>
+                <Input
+                  id="checkout-session-code"
+                  className="h-11 font-mono text-base font-semibold uppercase"
+                  placeholder={lookupPlaceholder}
+                  value={sessionCode}
+                  onChange={(event) => setSessionCode(event.target.value)}
+                  autoFocus
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowScanner(true)}
+                disabled={action === 'lookup'}
+                className="h-11 lg:min-w-32"
+              >
+                <QrCode className="size-4" />
+                Scan QR
+              </Button>
+              <Button
+                type="submit"
+                disabled={action === 'lookup'}
+                className="h-11 lg:min-w-28"
+              >
+                {action === 'lookup' ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Search className="size-4" />
+                )}
+                {action === 'lookup' ? 'Loading...' : 'Lookup'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {workflow ? (
+        <Card className="overflow-hidden border-primary/20 shadow-sm">
+          <CardContent className="space-y-5 p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  {hideLookupCard ? 'Checkout detected' : 'Plate'}
+                </p>
+                <p className="mt-2 break-words font-mono text-3xl font-black tracking-[0.12em] text-foreground sm:text-4xl">
+                  {plateDisplay}
+                </p>
+              </div>
+              <StatusBadge status={workflow.session.status} />
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.52fr)] lg:items-start">
+              <div className="rounded-2xl border bg-card px-5 py-5 text-card-foreground shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  Fee
+                </p>
+                <p className="mt-2 text-4xl font-black tracking-tight">
+                  {amountDue}
+                </p>
+                <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
+                  {paymentMethod ? (
+                    <PaymentMethodIcon method={paymentMethod} size={18} decorative />
+                  ) : null}
+                  <span>{paymentLabel}</span>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+                <CheckoutMetric label="Slot" value={workflow.slot.code} mono />
+                <CheckoutMetric label="Duration" value={durationLabel} />
+                <CheckoutMetric
+                  label="Payment status"
+                  value={
+                    paymentMethod ? (
+                      <span className="inline-flex items-center gap-2">
+                        <PaymentMethodIcon method={paymentMethod} size={20} decorative />
+                        <span>{paymentFact}</span>
+                      </span>
+                    ) : (
+                      paymentFact
+                    )
+                  }
+                />
+              </div>
+            </div>
+
+            {workflow.payment?.method === 'bank_qr' && workflow.payment.qrCode ? (
+              <div className="rounded-xl border bg-muted/20 p-4">
+                {workflow.payment.qrCode.startsWith('data:image') ? (
+                  <img
+                    src={workflow.payment.qrCode}
+                    alt="VNPAY Bank QR"
+                    className="mx-auto h-44 w-44 rounded-lg border bg-background object-contain p-2"
                   />
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setShowScanner(true)}
-                  disabled={action === 'lookup'}
-                  className="h-11 lg:min-w-32"
-                >
-                  <QrCode className="size-4" />
-                  Scan QR
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={action === 'lookup'}
-                  className="h-11 lg:min-w-28"
-                >
-                  {action === 'lookup' ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Search className="size-4" />
-                  )}
-                  {action === 'lookup' ? 'Loading...' : 'Lookup'}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-
-          {workflow ? (
-            <Card className="border-primary/20 shadow-sm">
-              <CardHeader className="grid-cols-[1fr_auto] border-b bg-muted/30">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
-                      <ReceiptText className="size-4" />
-                    </span>
-                    Loaded session
-                  </CardTitle>
-                  <CardDescription className="font-mono">
-                    {workflow.session.sessionCode}
-                  </CardDescription>
-                </div>
-                <CardAction>
-                  <StatusBadge status={workflow.session.status} />
-                </CardAction>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(15rem,0.45fr)]">
-                  <div className="rounded-lg border bg-muted/30 p-4">
-                    <p className="text-xs font-semibold uppercase text-muted-foreground">
-                      Vehicle plate
-                    </p>
-                    <p className="mt-2 break-words font-mono text-3xl font-bold text-foreground">
-                      {workflow.session.licensePlate}
-                    </p>
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                      <CheckoutMetric label="Vehicle" value={formatVehicleType(workflow.session.vehicleType)} />
-                      <CheckoutMetric label="Slot" value={workflow.slot.code} mono />
-                      <CheckoutMetric
-                        label="Floor / Zone"
-                        value={`${workflow.slot.floor.name} / Zone ${workflow.slot.zone}`}
-                      />
-                      <CheckoutMetric
-                        label="Duration"
-                        value={`${workflow.fee.durationHours} hour${workflow.fee.durationHours > 1 ? 's' : ''}`}
-                      />
-                    </div>
+                ) : (
+                  <div className="break-all rounded-lg border bg-background p-3 font-mono text-xs text-foreground">
+                    {workflow.payment.qrCode}
                   </div>
-
-                  <div className="rounded-lg bg-primary p-4 text-primary-foreground shadow-sm">
-                    <p className="text-xs font-semibold uppercase text-primary-foreground/70">
-                      Amount due
-                    </p>
-                    <p className="mt-2 text-3xl font-bold">
-                      {VND(workflow.fee.total)}
-                    </p>
-                    <p className="mt-2 text-sm text-primary-foreground/70">
-                      {workflow.payment
-                        ? `${readablePaymentMethod(workflow.payment.method)} - ${readablePaymentStatus(workflow.payment.status)}`
-                        : 'Calculated fee preview'}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-                  <div className="rounded-lg border bg-muted/30 p-4">
-                    <p className="text-xs font-semibold uppercase text-muted-foreground">
-                      Fee breakdown
-                    </p>
-                    <div className="mt-3 space-y-2 text-sm">
-                      <DetailRow label="Base fee" value={VND(workflow.fee.baseFee)} />
-                      <DetailRow label="Penalty" value={VND(workflow.fee.penalty)} />
-                      <DetailRow label="Check-in" value={formatDateTime(workflow.session.checkInTime)} />
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg border bg-card p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-semibold uppercase text-muted-foreground">
-                          Payment
-                        </p>
-                        <p className="mt-1 text-sm font-medium text-muted-foreground">
-                          {workflow.payment ? readablePaymentMethod(workflow.payment.method) : 'Method not selected'}
-                        </p>
-                      </div>
-                      <PaymentBadge status={paymentStatus} />
-                    </div>
-                    <div className="mt-4 space-y-2 text-sm">
-                      <DetailRow
-                        label="Status"
-                        value={workflow.payment ? readablePaymentStatus(workflow.payment.status) : 'Not created'}
-                      />
-                      {workflow.payment?.paidAt ? (
-                        <DetailRow label="Paid at" value={formatDateTime(workflow.payment.paidAt)} />
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-
-                {workflow.payment?.method === 'bank_qr' ? (
-                  <div className="rounded-lg border bg-muted/30 p-4">
-                    <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                      <QrCode className="size-4 text-primary" />
-                      VNPAY Bank QR payment
-                    </div>
-                    {workflow.payment.qrCode ? (
-                      workflow.payment.qrCode.startsWith('data:image') ? (
-                        <img
-                          src={workflow.payment.qrCode}
-                          alt="VNPAY Bank QR"
-                          className="mx-auto mt-3 h-44 w-44 rounded-lg border bg-background object-contain p-2"
-                        />
-                      ) : (
-                        <div className="mt-3 break-all rounded-lg border bg-background p-3 font-mono text-xs text-foreground">
-                          {workflow.payment.qrCode}
-                        </div>
-                      )
-                    ) : null}
-                    {workflow.payment.checkoutUrl ? (
-                      <Button asChild variant="outline" className="mt-3 h-11 w-full">
-                        <a href={workflow.payment.checkoutUrl} target="_blank" rel="noreferrer">
-                          <CreditCard className="size-4" />
-                          Open VNPAY Payment Page
-                        </a>
-                      </Button>
-                    ) : null}
-                    {workflow.payment.expiredAt ? (
-                      <p className="mt-2 text-xs font-medium text-muted-foreground">
-                        Expires at {formatDateTime(workflow.payment.expiredAt)}
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {workflow.fee.isOvertime || workflow.fee.isLostTicket ? (
-                  <Alert className="border-amber-200 bg-amber-50 text-amber-950">
-                    <CircleAlert className="size-4" />
-                    <AlertTitle>Fee includes penalty</AlertTitle>
-                    <AlertDescription className="text-amber-800">
-                      Overtime or lost-ticket surcharge is included in the total amount.
-                    </AlertDescription>
-                  </Alert>
-                ) : null}
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="border-dashed shadow-sm">
-              <CardContent className="grid min-h-44 place-items-center p-8 text-center">
-                <div className="space-y-2">
-                  <QrCode className="mx-auto size-8 text-primary/70" />
-                  <p className="text-sm font-semibold uppercase text-muted-foreground">
-                    Waiting for Session Ticket
+                )}
+                {workflow.payment.expiredAt ? (
+                  <p className="mt-3 text-xs font-medium text-muted-foreground">
+                    Expires at {formatDateTime(workflow.payment.expiredAt)}
                   </p>
-                  <p className="text-base font-medium text-foreground">
-                    Enter Session Code or scan QR to load checkout details.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+                ) : null}
+              </div>
+            ) : null}
 
-          {isCompleted && receipt ? (
-            <Card className="border-emerald-200 bg-emerald-50 shadow-sm">
-              <CardHeader className="grid-cols-[1fr_auto]">
-                <div>
-                  <CardTitle className="flex items-center gap-2 text-emerald-950">
-                    <CheckCircle2 className="size-5" />
-                    Checkout completed
-                  </CardTitle>
-                  <CardDescription className="text-emerald-700">
-                    Vehicle exited. Slot released.
-                  </CardDescription>
-                </div>
-                <CardAction className="flex gap-2">
+            {workflow.fee.isOvertime || workflow.fee.isLostTicket ? (
+              <Alert className="border-amber-200 bg-amber-50 text-amber-950">
+                <CircleAlert className="size-4" />
+                <AlertTitle>Fee includes penalty</AlertTitle>
+                <AlertDescription className="text-amber-800">
+                  Overtime or lost-ticket surcharge is included in the total amount.
+                </AlertDescription>
+              </Alert>
+            ) : null}
+
+            {isBankQrFailed ? (
+              <Alert variant="destructive" className="border-rose-200 bg-rose-50">
+                <CircleAlert className="size-4" />
+                <AlertTitle>Payment failed / cancelled</AlertTitle>
+                <AlertDescription>{amountDue}. Generate a new VNPAY link or switch to cash.</AlertDescription>
+              </Alert>
+            ) : null}
+
+            {isBankQrExpired ? (
+              <Alert className="border-orange-200 bg-orange-50 text-orange-950">
+                <CircleAlert className="size-4" />
+                <AlertTitle>VNPAY link expired</AlertTitle>
+                <AlertDescription className="text-orange-800">
+                  {amountDue}. Generate a new link to continue.
+                </AlertDescription>
+              </Alert>
+            ) : null}
+
+            {showInvalidState ? (
+              <Alert variant="destructive">
+                <CircleAlert className="size-4" />
+                <AlertTitle>Checkout cannot continue</AlertTitle>
+                <AlertDescription>This session cannot continue from the current status.</AlertDescription>
+              </Alert>
+            ) : null}
+
+            {isCompleted ? (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-950">
+                <p className="text-sm font-semibold">Checkout completed</p>
+                <p className="mt-1 text-sm text-emerald-800">Vehicle exited. Slot released.</p>
+              </div>
+            ) : null}
+
+            <details className="rounded-xl border bg-muted/15 px-4 py-3 [&_summary::-webkit-details-marker]:hidden">
+              <summary className="cursor-pointer list-none text-sm font-medium text-muted-foreground">
+                Details
+              </summary>
+              <div className="mt-3 space-y-2 text-sm">
+                <DetailRow label="Session code" value={workflow.session.sessionCode} mono strong />
+                <DetailRow label="Check-in time" value={formatDateTime(workflow.session.checkInTime)} />
+                <DetailRow label="Floor / Zone" value={`${workflow.slot.floor.name} / Zone ${workflow.slot.zone}`} />
+                <DetailRow label="Base fee" value={VND(workflow.fee.baseFee)} />
+                <DetailRow label="Penalty" value={VND(workflow.fee.penalty)} />
+                {workflow.payment?.paidAt ? (
+                  <DetailRow label="Paid at" value={formatDateTime(workflow.payment.paidAt)} />
+                ) : null}
+                {exitResult?.session.checkOutTime ? (
+                  <DetailRow label="Exit time" value={formatDateTime(exitResult.session.checkOutTime)} />
+                ) : workflow.session.checkOutTime ? (
+                  <DetailRow label="Exit time" value={formatDateTime(workflow.session.checkOutTime)} />
+                ) : null}
+              </div>
+            </details>
+
+            <div className="sticky bottom-0 -mx-6 border-t bg-background/95 px-6 pb-1 pt-4 backdrop-blur print:hidden">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  {!isCompleted ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={reset}
+                      disabled={Boolean(action)}
+                      className="h-11"
+                    >
+                      <RotateCcw className="size-4" />
+                      Reset
+                    </Button>
+                  ) : null}
                   {receipt ? (
-                    <Button type="button" variant="outline" onClick={handlePrint} className="h-10 print:hidden">
+                    <Button type="button" variant="outline" onClick={handlePrint} className="h-11">
                       <Printer className="size-4" />
                       Print
                     </Button>
                   ) : null}
-                  <Button type="button" onClick={reset} className="h-10 print:hidden">
-                    <RotateCcw className="size-4" />
-                    Next
-                  </Button>
-                </CardAction>
-              </CardHeader>
-              <CardContent className="print:block">
-                <Receipt data={receipt} sessionCode={workflow?.session.sessionCode} />
-              </CardContent>
-            </Card>
-          ) : null}
-        </div>
-
-        <aside className="space-y-4 xl:sticky xl:top-28 xl:self-start print:hidden">
-          <Card className="border-primary/20 shadow-sm">
-            <CardHeader className="grid-cols-[1fr_auto] border-b bg-muted/30">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
-                    <WalletCards className="size-4" />
-                  </span>
-                  Next staff action
-                </CardTitle>
-                <CardDescription>{guide.title}</CardDescription>
-              </div>
-              <CardAction>
-                <Badge variant="outline" className="bg-background">
-                  {workflow ? readableStatus(workflow.session.status) : 'Ready'}
-                </Badge>
-              </CardAction>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                {guide.description}
-              </p>
-
-              {workflow ? (
-                <div className="grid grid-cols-3 gap-2">
-                  <OperatorSignal
-                    label="Payment"
-                    value={workflow.payment ? readablePaymentStatus(workflow.payment.status) : 'Not started'}
-                    tone={workflow.payment?.status === 'paid' ? 'good' : workflow.payment?.status === 'pending' ? 'warn' : 'idle'}
-                  />
-                  <OperatorSignal
-                    label="Exit"
-                    value={readableExitStatus(status)}
-                    tone={status === 'exit_authorized' || status === 'completed' ? 'good' : status === 'checkout_pending' ? 'warn' : 'idle'}
-                  />
-                  <OperatorSignal
-                    label="Slot"
-                    value={readableSlotStatus(workflow.slot.status)}
-                    tone={workflow.slot.status === 'available' ? 'good' : 'warn'}
-                  />
-                </div>
-              ) : (
-                <Alert className="border-dashed bg-muted/30">
-                  <QrCode className="size-4" />
-                  <AlertTitle>Load a session first</AlertTitle>
-                  <AlertDescription>
-                    Payment and exit actions appear after staff scans the ticket.
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              <Separator />
-
-              <div className="space-y-3">
-                {canRequestCheckout ? (
-                  <Button
-                    type="button"
-                    onClick={handleRequestCheckout}
-                    disabled={Boolean(action)}
-                    className="h-11 w-full"
-                  >
-                    {action === 'checkout' ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <ReceiptText className="size-4" />
-                    )}
-                    {action === 'checkout' ? 'Starting checkout...' : 'Calculate Fee & Start Checkout'}
-                  </Button>
-                ) : null}
-
-                {canConfirmPayment ? (
-                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                  {canConfirmPayment && canGenerateBankQr ? (
                     <Button
                       type="button"
-                      onClick={handleConfirmPayment}
-                      disabled={Boolean(action)}
-                      className="h-11 w-full bg-emerald-600 text-white hover:bg-emerald-700"
-                    >
-                      {action === 'payment' ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : (
-                        <Banknote className="size-4" />
-                      )}
-                      {action === 'payment' ? 'Confirming cash...' : 'Confirm Cash Payment'}
-                    </Button>
-                    {canGenerateBankQr ? (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={handleGenerateBankQr}
-                        disabled={Boolean(action)}
-                        className="h-11 w-full"
-                      >
-                        {action === 'bankQr' ? (
-                          <Loader2 className="size-4 animate-spin" />
-                        ) : (
-                          <CreditCard className="size-4" />
-                        )}
-                        {action === 'bankQr' ? 'Generating VNPAY QR...' : 'Generate VNPAY Payment Link'}
-                      </Button>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {isBankQrFailed ? (
-                  <div className="space-y-3">
-                    <Alert variant="destructive" className="border-rose-200 bg-rose-50">
-                      <CircleAlert className="size-4" />
-                      <AlertTitle>Payment failed / cancelled</AlertTitle>
-                      <AlertDescription>
-                        {amountDue}. Regenerate the link or switch to cash.
-                      </AlertDescription>
-                    </Alert>
-                    <Button
-                      type="button"
-                      variant="secondary"
+                      variant="outline"
                       onClick={handleGenerateBankQr}
                       disabled={Boolean(action)}
-                      className="h-11 w-full"
+                      className="h-11"
                     >
                       {action === 'bankQr' ? (
                         <Loader2 className="size-4 animate-spin" />
                       ) : (
-                        <CreditCard className="size-4" />
+                        <img src={VNPAY_ICON_SRC} alt="" aria-hidden="true" className="size-5 object-contain" />
                       )}
-                      {action === 'bankQr' ? 'Generating new link...' : 'Regenerate VNPAY Payment Link'}
+                      {action === 'bankQr' ? 'Generating...' : 'Generate VNPAY'}
                     </Button>
-                    <Button
-                      type="button"
-                      onClick={handleConfirmPayment}
-                      disabled={Boolean(action)}
-                      className="h-11 w-full bg-emerald-600 text-white hover:bg-emerald-700"
-                    >
-                      {action === 'payment' ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : (
-                        <Banknote className="size-4" />
-                      )}
-                      {action === 'payment' ? 'Confirming cash...' : 'Confirm Cash Payment Instead'}
-                    </Button>
-                  </div>
-                ) : null}
-
-                {isBankQrExpired ? (
-                  <div className="space-y-3">
-                    <Alert className="border-orange-200 bg-orange-50 text-orange-950">
-                      <CircleAlert className="size-4" />
-                      <AlertTitle>VNPAY link expired</AlertTitle>
-                      <AlertDescription className="text-orange-800">
-                        {amountDue}. Generate a new link to continue.
-                      </AlertDescription>
-                    </Alert>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={handleGenerateBankQr}
-                      disabled={Boolean(action)}
-                      className="h-11 w-full"
-                    >
-                      {action === 'bankQr' ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : (
-                        <CreditCard className="size-4" />
-                      )}
-                      {action === 'bankQr' ? 'Generating new link...' : 'Regenerate VNPAY Payment Link'}
-                    </Button>
-                  </div>
-                ) : null}
-
-                {isBankQrPending ? (
-                  <div className="space-y-3">
-                    <Alert className="border-sky-200 bg-sky-50 text-sky-950">
-                      <CreditCard className="size-4" />
-                      <AlertTitle>Waiting for VNPAY Bank QR payment</AlertTitle>
-                      <AlertDescription className="text-sky-800">
-                        {amountDue}. Slot remains occupied until payment is confirmed.
-                      </AlertDescription>
-                    </Alert>
+                  ) : null}
+                  {isBankQrPending ? (
                     <Button
                       type="button"
                       variant="outline"
                       onClick={() => void refreshPaymentStatus(true)}
                       disabled={Boolean(action)}
-                      className="h-11 w-full"
+                      className="h-11"
                     >
                       {action === 'refresh' ? (
                         <Loader2 className="size-4 animate-spin" />
                       ) : (
-                        <RefreshCw className="size-4" />
+                        <img src={VNPAY_ICON_SRC} alt="" aria-hidden="true" className="size-5 object-contain" />
                       )}
-                      {action === 'refresh' ? 'Refreshing...' : 'Refresh Payment Status'}
+                      {action === 'refresh' ? 'Refreshing...' : 'Refresh VNPAY'}
                     </Button>
-                    {workflow?.payment?.checkoutUrl ? (
-                      <Button asChild className="h-11 w-full">
-                        <a href={workflow.payment.checkoutUrl} target="_blank" rel="noreferrer">
-                          <CreditCard className="size-4" />
-                          Open VNPAY Payment Page
-                        </a>
-                      </Button>
-                    ) : null}
-                  </div>
-                ) : null}
+                  ) : null}
+                </div>
 
-                {canConfirmExit ? (
-                  <div className="space-y-3">
-                    <Alert className="border-emerald-200 bg-emerald-50 text-emerald-950">
-                      <CheckCircle2 className="size-4" />
-                      <AlertTitle>Payment confirmed</AlertTitle>
-                      <AlertDescription className="text-emerald-800">
-                        Vehicle is authorized to exit. Confirm only after it has left the gate.
-                      </AlertDescription>
-                    </Alert>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  {canRequestCheckout ? (
+                    <Button
+                      type="button"
+                      onClick={handleRequestCheckout}
+                      disabled={Boolean(action)}
+                      className="h-11 min-w-[190px]"
+                    >
+                      {action === 'checkout' ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <ReceiptText className="size-4" />
+                      )}
+                      {action === 'checkout' ? 'Starting checkout...' : 'Start Checkout'}
+                    </Button>
+                  ) : null}
+
+                  {canConfirmPayment ? (
+                    <Button
+                      type="button"
+                      onClick={handleConfirmPayment}
+                      disabled={Boolean(action)}
+                      className="h-11 min-w-[220px] bg-emerald-600 text-white hover:bg-emerald-700"
+                    >
+                      {action === 'payment' ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <img src={CASH_ICON_SRC} alt="" aria-hidden="true" className="size-5 object-contain" />
+                      )}
+                      {action === 'payment' ? 'Confirming cash...' : 'Confirm Cash Payment'}
+                    </Button>
+                  ) : null}
+
+                  {isBankQrPending ? (
+                    <Button
+                      type="button"
+                      onClick={handleOpenVnpay}
+                      disabled={Boolean(action) && action !== 'refresh'}
+                      className="h-11 min-w-[220px]"
+                    >
+                      <img src={VNPAY_ICON_SRC} alt="" aria-hidden="true" className="size-5 object-contain" />
+                      Open VNPAY
+                    </Button>
+                  ) : null}
+
+                  {isBankQrExpired || isBankQrFailed ? (
+                    <Button
+                      type="button"
+                      onClick={handleGenerateBankQr}
+                      disabled={Boolean(action)}
+                      className="h-11 min-w-[220px]"
+                    >
+                      {action === 'bankQr' ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <img src={VNPAY_ICON_SRC} alt="" aria-hidden="true" className="size-5 object-contain" />
+                      )}
+                      {action === 'bankQr' ? 'Refreshing VNPAY...' : 'Open / Refresh VNPAY'}
+                    </Button>
+                  ) : null}
+
+                  {canConfirmExit ? (
                     <Button
                       type="button"
                       onClick={handleConfirmExit}
                       disabled={Boolean(action)}
-                      className="h-11 w-full"
+                      className="h-11 min-w-[200px]"
                     >
                       {action === 'exit' ? (
                         <Loader2 className="size-4 animate-spin" />
                       ) : (
                         <LogOut className="size-4" />
                       )}
-                      {action === 'exit' ? 'Releasing slot...' : 'Confirm Vehicle Exited'}
+                      {action === 'exit' ? 'Confirming exit...' : 'Confirm Exit'}
                     </Button>
-                  </div>
-                ) : null}
+                  ) : null}
 
-                {isCompleted ? (
-                  <div className="space-y-3">
-                    <Alert className="border-emerald-200 bg-emerald-50 text-emerald-950">
-                      <CheckCircle2 className="size-4" />
-                      <AlertTitle>Checkout completed</AlertTitle>
-                      <AlertDescription className="text-emerald-800">
-                        Vehicle exited and slot released.
-                      </AlertDescription>
-                    </Alert>
-                    <div className="grid grid-cols-2 gap-2">
-                      {receipt ? (
-                        <Button type="button" variant="outline" onClick={handlePrint} className="h-10">
-                          <Printer className="size-4" />
-                          Print
-                        </Button>
-                      ) : null}
-                      <Button type="button" onClick={reset} className="h-10">
-                        <RotateCcw className="size-4" />
-                        Next
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-
-                {workflow && !canRequestCheckout && !canConfirmPayment && !canConfirmExit && !isCompleted ? (
-                  <Alert variant="destructive">
-                    <CircleAlert className="size-4" />
-                    <AlertTitle>Checkout cannot continue</AlertTitle>
-                    <AlertDescription>
-                      This session cannot continue checkout from the current status.
-                    </AlertDescription>
-                  </Alert>
-                ) : null}
+                  {isCompleted ? (
+                    <Button type="button" onClick={reset} className="h-11 min-w-[180px]">
+                      <RotateCcw className="size-4" />
+                      Next Vehicle
+                    </Button>
+                  ) : null}
+                </div>
               </div>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="border-dashed shadow-sm">
+          <CardContent className="grid min-h-44 place-items-center p-8 text-center">
+            <div className="space-y-2">
+              <QrCode className="mx-auto size-8 text-primary/70" />
+              <p className="text-sm font-semibold uppercase text-muted-foreground">
+                Waiting for session
+              </p>
+              <p className="text-base font-medium text-foreground">
+                Enter Session Code or scan QR.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-              <Separator />
+      {isCompleted && receipt ? (
+        <Card className="hidden print:block">
+          <CardContent>
+            <Receipt data={receipt} sessionCode={workflow?.session.sessionCode} />
+          </CardContent>
+        </Card>
+      ) : null}
 
-              <div className="space-y-2 text-sm">
-                <p className="text-xs font-semibold uppercase text-muted-foreground">
-                  Gate Summary
-                </p>
-                <DetailRow label="Slot status" value={workflow?.slot.status ?? 'Not loaded'} />
-                <DetailRow label="Exit status" value={readableExitStatus(status)} />
-                <DetailRow
-                  label="Exit time"
-                  value={
-                    workflow?.session.checkOutTime
-                      ? formatDateTime(workflow.session.checkOutTime)
-                      : exitResult?.session.checkOutTime
-                        ? formatDateTime(exitResult.session.checkOutTime)
-                        : 'Pending'
-                  }
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          <RecentSessionsCard type="checkout" refreshTrigger={checkOutCount} />
-        </aside>
-      </div>
+      {showRecentHistory ? (
+        <details className="rounded-xl border bg-background px-4 py-3 print:hidden [&_summary::-webkit-details-marker]:hidden">
+          <summary className="cursor-pointer list-none text-sm font-medium text-muted-foreground">
+            Recent check-out history
+          </summary>
+          <div className="mt-4">
+            <RecentSessionsCard type="checkout" refreshTrigger={checkOutCount} />
+          </div>
+        </details>
+      ) : null}
 
       {showScanner ? (
         <QRScanner
@@ -1708,10 +1211,6 @@ function CheckOutPanel({ toasts }: PanelProps) {
       ) : null}
     </div>
   )
-}
-
-function formatVehicleType(type: VehicleType) {
-  return type === 'car' ? 'Car' : 'Motorbike'
 }
 
 function readableStatus(status: SessionStatus) {
@@ -1742,61 +1241,6 @@ function readablePaymentMethod(method: PaymentMethod) {
     bank_qr: 'Bank QR',
   }
   return labels[method]
-}
-
-function readableExitStatus(status?: SessionStatus) {
-  if (status === 'exit_authorized') return 'Authorized'
-  if (status === 'completed') return 'Exited'
-  if (status === 'checkout_pending') return 'Waiting for payment'
-  if (status === 'active') return 'Not ready'
-  return 'Not loaded'
-}
-
-function readableSlotStatus(status: 'available' | 'occupied' | 'reserved' | 'maintenance') {
-  const labels: Record<typeof status, string> = {
-    available: 'Available',
-    occupied: 'Occupied',
-    reserved: 'Reserved',
-    maintenance: 'Maintenance',
-  }
-  return labels[status]
-}
-
-function checkoutGuide(status?: SessionStatus) {
-  if (status === 'active') {
-    return {
-      title: 'Ready to calculate fee',
-      description: 'Review plate, slot, and duration. Start checkout only when the vehicle is at the exit gate.',
-    }
-  }
-  if (status === 'checkout_pending') {
-    return {
-      title: 'Collect cash payment',
-      description: 'Payment is pending. Confirm cash only after staff has received the full amount.',
-    }
-  }
-  if (status === 'exit_authorized') {
-    return {
-      title: 'Allow vehicle exit',
-      description: 'Payment is paid. Confirm vehicle exited after the car has physically left the gate.',
-    }
-  }
-  if (status === 'completed') {
-    return {
-      title: 'Checkout completed',
-      description: 'Vehicle exited. The parking slot has been released for the next assignment.',
-    }
-  }
-  if (status === 'cancelled') {
-    return {
-      title: 'Session cancelled',
-      description: 'This session cannot continue checkout. Ask a supervisor if this status is unexpected.',
-    }
-  }
-  return {
-    title: 'Scan ticket to start',
-    description: 'Use the Session QR or Session Code first. Plate lookup is only a fallback for lost tickets.',
-  }
 }
 
 function DetailRow({
@@ -1830,14 +1274,38 @@ function CheckoutMetric({
   mono = false,
 }: {
   label: string
-  value: string
+  value: ReactNode
   mono?: boolean
 }) {
   return (
-    <div className="rounded-lg border bg-muted/30 px-4 py-3">
+    <div className="flex min-h-[82px] flex-col justify-center rounded-lg border bg-muted/30 px-4 py-3">
       <p className="text-xs font-semibold uppercase text-muted-foreground">{label}</p>
       <p className={`mt-1 text-sm font-semibold text-foreground ${mono ? 'font-mono' : ''}`}>{value}</p>
     </div>
+  )
+}
+
+function PaymentMethodIcon({
+  method,
+  size = 20,
+  decorative = false,
+}: {
+  method: PaymentMethod
+  size?: number
+  decorative?: boolean
+}) {
+  const src = method === 'cash' ? CASH_ICON_SRC : VNPAY_ICON_SRC
+  const alt = decorative ? '' : method === 'cash' ? 'Cash' : 'VNPAY'
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      aria-hidden={decorative ? 'true' : undefined}
+      width={size}
+      height={size}
+      className="shrink-0 object-contain"
+    />
   )
 }
 
@@ -1853,53 +1321,5 @@ function StatusBadge({ status }: { status: SessionStatus }) {
     <Badge variant="outline" className={cn('h-6 px-2.5 font-semibold', tone[status])}>
       {readableStatus(status)}
     </Badge>
-  )
-}
-
-function PaymentBadge({ status }: { status: PaymentStatus | null }) {
-  if (!status) {
-    return (
-      <Badge variant="outline" className="h-6 bg-muted px-2.5 font-semibold text-muted-foreground">
-        No Payment
-      </Badge>
-    )
-  }
-
-  const tone: Record<PaymentStatus, string> = {
-    pending: 'border-amber-200 bg-amber-50 text-amber-700',
-    paid: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    failed: 'border-rose-200 bg-rose-50 text-rose-700',
-    cancelled: 'border-border bg-muted text-muted-foreground',
-    expired: 'border-orange-200 bg-orange-50 text-orange-700',
-  }
-  return (
-    <Badge variant="outline" className={cn('h-6 px-2.5 font-semibold', tone[status])}>
-      {readablePaymentStatus(status)}
-    </Badge>
-  )
-}
-
-function OperatorSignal({
-  label,
-  value,
-  tone,
-}: {
-  label: string
-  value: string
-  tone: 'idle' | 'warn' | 'good'
-}) {
-  const toneClass = {
-    idle: 'bg-background text-muted-foreground',
-    warn: 'border-amber-200 bg-amber-50 text-amber-900',
-    good: 'border-emerald-200 bg-emerald-50 text-emerald-900',
-  }[tone]
-
-  return (
-    <div className={cn('rounded-lg border p-3', toneClass)}>
-      <span className="block text-xs font-semibold uppercase opacity-70">
-        {label}
-      </span>
-      <span className="mt-1 block text-sm font-semibold leading-tight">{value}</span>
-    </div>
   )
 }

@@ -16,6 +16,9 @@ interface QRScannerProps {
   onScan: (decodedText: string) => void
   onClose: () => void
   onManualInput?: (value: string) => void
+  variant?: 'dialog' | 'inline'
+  presentation?: 'framed' | 'bare'
+  showCancelButton?: boolean
   title?: string
   instructions?: string
   manualToggleLabel?: string
@@ -45,6 +48,9 @@ export function QRScanner({
   onScan,
   onClose,
   onManualInput,
+  variant = 'dialog',
+  presentation = 'framed',
+  showCancelButton = true,
   title = 'Scan QR code',
   instructions = 'Place the QR inside the frame.',
   manualToggleLabel = 'Paste token manually',
@@ -61,6 +67,8 @@ export function QRScanner({
   const [error, setError] = useState<string | null>(null)
   const [manualOpen, setManualOpen] = useState(false)
   const [manualInput, setManualInput] = useState('')
+  const isDialog = variant === 'dialog'
+  const isBare = presentation === 'bare'
 
   const stopScanner = useCallback(async () => {
     if (stopPromiseRef.current) {
@@ -204,9 +212,9 @@ export function QRScanner({
             tone: 'text-emerald-700 dark:text-emerald-400',
           }
 
-  return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-[calc(100vw-24px)] max-h-[calc(100dvh-2rem)] max-w-[480px] overflow-hidden p-0 sm:max-w-lg">
+  const headerContent = isBare
+    ? null
+    : isDialog ? (
         <DialogHeader className="border-b bg-muted/30 px-5 py-4 pr-12">
           <DialogTitle className="flex items-center gap-2">
             <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
@@ -216,80 +224,124 @@ export function QRScanner({
           </DialogTitle>
           <DialogDescription>{instructions}</DialogDescription>
         </DialogHeader>
-
-        <div className="space-y-4 overflow-y-auto p-5">
-          <div className="mx-auto w-full max-w-[320px] sm:max-w-[380px]">
-            <div
-              id={readerId}
-              ref={containerRef}
-              className="aspect-square w-full overflow-hidden rounded-xl border bg-primary/5 [&_video]:!h-full [&_video]:!w-full [&_video]:!object-cover"
-            />
+      ) : (
+        <div className="border-b bg-muted/30 px-5 py-4">
+          <div className="flex items-center gap-2 text-base font-semibold text-foreground">
+            <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
+              <QrCode className="size-4" />
+            </span>
+            <h3>{title}</h3>
           </div>
+          <p className="mt-2 text-sm text-muted-foreground">{instructions}</p>
+        </div>
+      )
 
-          <div className="flex flex-col gap-2 rounded-xl border bg-muted/15 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-            <div className={`inline-flex items-center gap-2 font-medium ${statusMeta.tone}`}>
-              {statusMeta.icon}
-              <span>{statusMeta.label}</span>
-            </div>
-            <span className="text-xs text-muted-foreground">QR only. Keep it centered.</span>
+  const content = (
+    <>
+      {headerContent}
+
+      <div className={`overflow-y-auto ${isBare ? 'space-y-3 p-0' : 'space-y-4 p-5'}`}>
+        <div className="mx-auto w-full max-w-[320px] sm:max-w-[380px]">
+          <div
+            id={readerId}
+            ref={containerRef}
+            className="aspect-square w-full overflow-hidden rounded-xl border bg-primary/5 [&_video]:!h-full [&_video]:!w-full [&_video]:!object-cover"
+          />
+        </div>
+
+        <div
+          className={`flex flex-col gap-2 rounded-xl border px-4 py-3 text-sm ${
+            isBare ? 'bg-background' : 'bg-muted/15'
+          } sm:flex-row sm:items-center sm:justify-between`}
+        >
+          <div className={`inline-flex items-center gap-2 font-medium ${statusMeta.tone}`}>
+            {statusMeta.icon}
+            <span>{statusMeta.label}</span>
           </div>
+          {!isBare ? <span className="text-xs text-muted-foreground">QR only. Keep it centered.</span> : null}
+        </div>
 
-          {error ? (
-            <p className="text-sm text-destructive">{error}</p>
-          ) : null}
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-          {onManualInput ? (
-            <div className="-mx-5 -mb-5 rounded-b-xl border-t bg-muted/10 px-5 py-4">
-              {manualOpen ? (
-                <div className="mb-4 grid gap-3">
-                  <div className="space-y-2">
-                    <Label htmlFor={`${readerId}-manual`}>{manualInputLabel}</Label>
-                    <Input
-                      id={`${readerId}-manual`}
-                      value={manualInput}
-                      onChange={(event) => setManualInput(event.target.value)}
-                      placeholder={manualInputPlaceholder}
-                      className="h-11 font-mono text-xs"
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    onClick={() => void handleManualSubmit()}
-                    disabled={!manualInput.trim()}
-                    className="h-11 w-full whitespace-nowrap sm:w-auto"
-                  >
-                    Confirm token
-                  </Button>
+        {!isBare && onManualInput ? (
+          <div
+            className={
+              isDialog
+                ? '-mx-5 -mb-5 rounded-b-xl border-t bg-muted/10 px-5 py-4'
+                : 'rounded-xl border bg-muted/10 px-4 py-4'
+            }
+          >
+            {manualOpen ? (
+              <div className="mb-4 grid gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor={`${readerId}-manual`}>{manualInputLabel}</Label>
+                  <Input
+                    id={`${readerId}-manual`}
+                    value={manualInput}
+                    onChange={(event) => setManualInput(event.target.value)}
+                    placeholder={manualInputPlaceholder}
+                    className="h-11 font-mono text-xs"
+                  />
                 </div>
-              ) : null}
-
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <Button
                   type="button"
-                  variant="ghost"
-                  onClick={() => setManualOpen((value) => !value)}
-                  className="h-10 justify-start px-0 text-sm font-medium text-muted-foreground hover:bg-transparent hover:text-foreground"
+                  onClick={() => void handleManualSubmit()}
+                  disabled={!manualInput.trim()}
+                  className="h-11 w-full whitespace-nowrap sm:w-auto"
                 >
-                  {manualToggleLabel}
-                  <ChevronDown
-                    className={`ml-2 size-4 transition-transform ${manualOpen ? 'rotate-180' : ''}`}
-                  />
+                  Confirm token
                 </Button>
+              </div>
+            ) : null}
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setManualOpen((value) => !value)}
+                className="h-10 justify-start px-0 text-sm font-medium text-muted-foreground hover:bg-transparent hover:text-foreground"
+              >
+                {manualToggleLabel}
+                <ChevronDown
+                  className={`ml-2 size-4 transition-transform ${manualOpen ? 'rotate-180' : ''}`}
+                />
+              </Button>
+              {showCancelButton ? (
                 <Button type="button" variant="outline" onClick={onClose} className="h-10 whitespace-nowrap">
                   Cancel
                 </Button>
-              </div>
+              ) : null}
             </div>
-          ) : (
-            <div className="-mx-5 -mb-5 rounded-b-xl border-t bg-muted/10 px-5 py-4">
-              <div className="flex justify-end">
-                <Button type="button" variant="outline" onClick={onClose} className="h-10 whitespace-nowrap">
-                  Cancel
-                </Button>
-              </div>
+          </div>
+        ) : !isBare && showCancelButton ? (
+          <div
+            className={
+              isDialog
+                ? '-mx-5 -mb-5 rounded-b-xl border-t bg-muted/10 px-5 py-4'
+                : 'rounded-xl border bg-muted/10 px-4 py-4'
+            }
+          >
+            <div className="flex justify-end">
+              <Button type="button" variant="outline" onClick={onClose} className="h-10 whitespace-nowrap">
+                Cancel
+              </Button>
             </div>
-          )}
-        </div>
+          </div>
+        ) : null}
+      </div>
+    </>
+  )
+
+  if (!isDialog) {
+    if (isBare) return <div className="space-y-3">{content}</div>
+
+    return <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">{content}</div>
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="w-[calc(100vw-24px)] max-h-[calc(100dvh-2rem)] max-w-[480px] overflow-hidden p-0 sm:max-w-lg">
+        {content}
       </DialogContent>
     </Dialog>
   )
