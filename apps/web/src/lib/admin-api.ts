@@ -2,32 +2,46 @@ import api from './api'
 
 export interface AdminSummary {
   meta: {
-    date: string
+    selectedDate: string
     timezone: string
     range: {
       start: string
       end: string
     }
   }
-  users: {
-    total: number
-    active: number
-    inactive: number
-    byRole: Record<'admin' | 'manager' | 'staff' | 'driver', number>
-  }
-  slots: {
-    total: number
-    available: number
-    reserved: number
-    occupied: number
-    occupancyRate: number
-    byVehicleType: {
-      car: SlotMetric
-      motorbike: SlotMetric
+  todayStatus: {
+    slots: SlotSummary
+    openSessions: {
+      active: number
+      checkoutPending: number
+      exitAuthorized: number
+      total: number
     }
-    byFloor: Array<SlotMetric & { floor: string | number; occupancyRate: number }>
-    byZone: Array<SlotMetric & { floor: string | number; zone: string; occupancyRate: number }>
+    pendingPayments: number
+    paymentRisk: {
+      normal: number
+      warning: number
+      critical: number
+      total: number
+    }
   }
+  report: {
+    checkIns: number
+    checkOuts: number
+    completedSessions: number
+    paidPayments: number
+    revenue: number
+    revenueByMethod: {
+      cash: number
+      bankQr: number
+    }
+    revenueByProvider: {
+      vnpay: number
+    }
+    reservationCheckIns: number
+    expiredReservations: number
+  }
+  slots: SlotSummary
   sessions: {
     active: number
     checkoutPending: number
@@ -62,6 +76,16 @@ export interface SlotMetric {
   available: number
   reserved: number
   occupied: number
+}
+
+export interface SlotSummary extends SlotMetric {
+  occupancyRate: number
+  byVehicleType: {
+    car: SlotMetric
+    motorbike: SlotMetric
+  }
+  byFloor: Array<SlotMetric & { floor: string | number; occupancyRate: number }>
+  byZone: Array<SlotMetric & { floor: string | number; zone: string; occupancyRate: number }>
 }
 
 export type AdminFlagSeverity = 'critical' | 'warning' | 'info'
@@ -144,7 +168,36 @@ export interface AdminPendingPayments {
 
 export async function getAdminSummary(date?: string) {
   const { data } = await api.get<AdminSummary>('/admin/summary', { params: { date } })
-  return data
+  return normalizeAdminSummary(data)
+}
+
+function normalizeAdminSummary(data: AdminSummary): AdminSummary {
+  return {
+    ...data,
+    slots: data.slots ?? data.todayStatus.slots,
+    sessions: data.sessions ?? {
+      active: data.todayStatus.openSessions.active,
+      checkoutPending: data.todayStatus.openSessions.checkoutPending,
+      exitAuthorized: data.todayStatus.openSessions.exitAuthorized,
+      completedToday: data.report.completedSessions,
+    },
+    reservations: data.reservations ?? {
+      active: 0,
+      fulfilledToday: data.report.reservationCheckIns,
+      cancelledToday: 0,
+      expiredToday: data.report.expiredReservations,
+    },
+    payments: data.payments ?? {
+      pending: data.todayStatus.pendingPayments,
+      paidToday: data.report.paidPayments,
+      failedToday: 0,
+      cancelledToday: 0,
+      expiredToday: 0,
+      revenueToday: data.report.revenue,
+      byMethod: data.report.revenueByMethod,
+      byProvider: data.report.revenueByProvider,
+    },
+  }
 }
 
 export async function getAdminOperationsFlags() {

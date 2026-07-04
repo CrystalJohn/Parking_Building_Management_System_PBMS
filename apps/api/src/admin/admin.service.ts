@@ -3,7 +3,6 @@ import {
   PaymentMethod,
   PaymentStatus,
   ReservationStatus,
-  Role,
   SessionStatus,
   SlotStatus,
   VehicleType,
@@ -18,6 +17,7 @@ import type {
 import type {
   AdminSummaryDto,
   FloorSlotMetricDto,
+  SlotSummaryDto,
   SlotMetricDto,
   ZoneSlotMetricDto,
 } from './dto/admin-summary.dto';
@@ -36,10 +36,7 @@ export class AdminService {
   async getSummary(now = new Date()): Promise<AdminSummaryDto> {
     const today = getHoChiMinhDayRange(now);
 
-    const [users, slots, sessions, reservations, payments] = await Promise.all([
-      this.prisma.user.findMany({
-        select: { role: true, isActive: true },
-      }),
+    const [slots, sessions, reservations, payments] = await Promise.all([
       this.prisma.slot.findMany({
         select: {
           status: true,
@@ -49,10 +46,24 @@ export class AdminService {
         },
       }),
       this.prisma.parkingSession.findMany({
-        select: { status: true, checkOutTime: true },
+        select: {
+          status: true,
+          checkInTime: true,
+          checkOutTime: true,
+          reservationId: true,
+        },
       }),
       this.prisma.reservation.findMany({
-        select: { status: true, createdAt: true, expiresAt: true },
+        select: {
+          status: true,
+          createdAt: true,
+          expiresAt: true,
+          session: {
+            select: {
+              checkInTime: true,
+            },
+          },
+        },
       }),
       this.prisma.payment.findMany({
         select: {
@@ -67,48 +78,57 @@ export class AdminService {
     ]);
 
     const reportDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(now);
+    const activeSessions = sessions.filter((s) => s.status === SessionStatus.active).length;
+    const checkoutPending = sessions.filter((s) => s.status === SessionStatus.checkout_pending).length;
+    const exitAuthorized = sessions.filter((s) => s.status === SessionStatus.exit_authorized).length;
+    const paidPayments = payments.filter(
+      (p) => p.status === PaymentStatus.paid && isWithinRange(p.paidAt, today.start, today.end),
+    );
 
     return {
       meta: {
-        date: reportDate,
+        selectedDate: reportDate,
         timezone: 'Asia/Ho_Chi_Minh',
         range: {
           start: today.start.toISOString(),
           end: today.end.toISOString(),
         },
       },
-      users: buildUserSummary(users),
-      slots: buildSlotSummary(slots),
-      sessions: {
-        active: sessions.filter((s) => s.status === SessionStatus.active).length,
-        checkoutPending: sessions.filter((s) => s.status === SessionStatus.checkout_pending).length,
-        exitAuthorized: sessions.filter((s) => s.status === SessionStatus.exit_authorized).length,
-        completedToday: sessions.filter(
-          (s) =>
-            s.status === SessionStatus.completed &&
-            isWithinRange(s.checkOutTime, today.start, today.end),
+      todayStatus: {
+        slots: buildSlotSummary(slots),
+        openSessions: {
+          active: activeSessions,
+          checkoutPending,
+          exitAuthorized,
+          total: activeSessions + checkoutPending + exitAuthorized,
+        },
+        pendingPayments: payments.filter((p) => p.status === PaymentStatus.pending).length,
+        paymentRisk: buildPaymentRiskSummary(payments, now),
+      },
+      report: {
+        checkIns: sessions.filter((s) => isWithinRange(s.checkInTime, today.start, today.end)).length,
+        checkOuts: sessions.filter((s) => isWithinRange(s.checkOutTime, today.start, today.end)).length,
+        completedSessions: sessions.filter(
+          (s) => s.status === SessionStatus.completed && isWithinRange(s.checkOutTime, today.start, today.end),
+        ).length,
+        paidPayments: paidPayments.length,
+        revenue: sumAmount(paidPayments),
+        revenueByMethod: {
+          cash: sumAmount(paidPayments.filter((p) => p.method === PaymentMethod.cash)),
+          bankQr: sumAmount(paidPayments.filter((p) => p.method === PaymentMethod.bank_qr)),
+        },
+        revenueByProvider: {
+          vnpay: sumAmount(
+            paidPayments.filter((p) => (p.provider ?? '').toLowerCase() === 'vnpay'),
+          ),
+        },
+        reservationCheckIns: reservations.filter((r) =>
+          isWithinRange(r.session?.checkInTime, today.start, today.end),
+        ).length,
+        expiredReservations: reservations.filter((r) =>
+          isWithinRange(r.expiresAt, today.start, today.end),
         ).length,
       },
-      reservations: {
-        active: reservations.filter((r) => r.status === ReservationStatus.active).length,
-        fulfilledToday: reservations.filter(
-          (r) =>
-            r.status === ReservationStatus.fulfilled &&
-            isWithinRange(r.createdAt, today.start, today.end),
-        ).length,
-        cancelledToday: reservations.filter(
-          (r) =>
-            r.status === ReservationStatus.cancelled &&
-            isWithinRange(r.createdAt, today.start, today.end),
-        ).length,
-        expiredToday: reservations.filter(
-          (r) =>
-            r.status === ReservationStatus.expired &&
-            (isWithinRange(r.expiresAt, today.start, today.end) ||
-              isWithinRange(r.createdAt, today.start, today.end)),
-        ).length,
-      },
-      payments: buildPaymentSummary(payments, today),
     };
   }
 
@@ -444,20 +464,6 @@ export class AdminService {
   }
 }
 
-function buildUserSummary(users: { role: Role; isActive: boolean }[]): AdminSummaryDto['users'] {
-  return {
-    total: users.length,
-    active: users.filter((u) => u.isActive).length,
-    inactive: users.filter((u) => !u.isActive).length,
-    byRole: {
-      admin: users.filter((u) => u.role === Role.admin).length,
-      manager: users.filter((u) => u.role === Role.manager).length,
-      staff: users.filter((u) => u.role === Role.staff).length,
-      driver: users.filter((u) => u.role === Role.driver).length,
-    },
-  };
-}
-
 function buildSlotSummary(
   slots: {
     status: SlotStatus;
@@ -465,7 +471,7 @@ function buildSlotSummary(
     zone: string;
     floor: { floorNumber: number; name: string };
   }[],
-): AdminSummaryDto['slots'] {
+): SlotSummaryDto {
   const totalMetric = makeSlotMetric();
   const byVehicleType = {
     car: makeSlotMetric(),
@@ -513,43 +519,29 @@ function buildSlotSummary(
   };
 }
 
-function buildPaymentSummary(
+function buildPaymentRiskSummary(
   payments: {
-    amount: number;
     method: PaymentMethod;
     status: PaymentStatus;
-    paidAt: Date | null;
-    provider: string | null;
     expiredAt: Date | null;
   }[],
-  today: { start: Date; end: Date },
-): AdminSummaryDto['payments'] {
-  const paidToday = payments.filter(
-    (p) => p.status === PaymentStatus.paid && isWithinRange(p.paidAt, today.start, today.end),
-  );
+  now: Date,
+): AdminSummaryDto['todayStatus']['paymentRisk'] {
+  const pending = payments.filter((p) => p.status === PaymentStatus.pending);
+  const critical = payments.filter((p) => p.status === PaymentStatus.failed).length;
+  const warning = pending.filter(
+    (p) =>
+      p.method === PaymentMethod.bank_qr &&
+      p.expiredAt !== null &&
+      p.expiredAt.getTime() <= now.getTime(),
+  ).length;
+  const normal = pending.length - warning;
 
   return {
-    pending: payments.filter((p) => p.status === PaymentStatus.pending).length,
-    paidToday: paidToday.length,
-    // Payment has no failed/cancelled transition timestamp in Phase 1. Failed
-    // can only be safely counted for "today" when expiredAt is present.
-    failedToday: payments.filter(
-      (p) => p.status === PaymentStatus.failed && isWithinRange(p.expiredAt, today.start, today.end),
-    ).length,
-    cancelledToday: 0,
-    expiredToday: payments.filter(
-      (p) => p.status === PaymentStatus.expired && isWithinRange(p.expiredAt, today.start, today.end),
-    ).length,
-    revenueToday: sumAmount(paidToday),
-    byMethod: {
-      cash: sumAmount(paidToday.filter((p) => p.method === PaymentMethod.cash)),
-      bankQr: sumAmount(paidToday.filter((p) => p.method === PaymentMethod.bank_qr)),
-    },
-    byProvider: {
-      vnpay: sumAmount(
-        paidToday.filter((p) => (p.provider ?? '').toLowerCase() === 'vnpay'),
-      ),
-    },
+    normal,
+    warning,
+    critical,
+    total: normal + warning + critical,
   };
 }
 

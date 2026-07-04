@@ -52,14 +52,14 @@ describe('AdminService', () => {
       ]);
 
       prisma.parkingSession.findMany.mockResolvedValue([
-        { status: SessionStatus.active, checkOutTime: null },
-        { status: SessionStatus.checkout_pending, checkOutTime: null },
-        { status: SessionStatus.exit_authorized, checkOutTime: null },
-        { status: SessionStatus.completed, checkOutTime: new Date('2026-06-25T02:00:00.000Z') },
+        { status: SessionStatus.active, checkInTime: new Date('2026-06-25T00:00:00.000Z'), checkOutTime: null, reservationId: null },
+        { status: SessionStatus.checkout_pending, checkInTime: new Date('2026-06-25T00:30:00.000Z'), checkOutTime: null, reservationId: null },
+        { status: SessionStatus.exit_authorized, checkInTime: new Date('2026-06-25T01:00:00.000Z'), checkOutTime: null, reservationId: null },
+        { status: SessionStatus.completed, checkInTime: new Date('2026-06-25T01:30:00.000Z'), checkOutTime: new Date('2026-06-25T02:00:00.000Z'), reservationId: null },
       ]);
 
       prisma.reservation.findMany.mockResolvedValue([
-        { status: ReservationStatus.active, createdAt: new Date('2026-06-25T01:00:00.000Z'), expiresAt: new Date('2026-06-25T01:30:00.000Z') },
+        { status: ReservationStatus.active, createdAt: new Date('2026-06-25T01:00:00.000Z'), expiresAt: new Date('2026-06-25T01:30:00.000Z'), session: null },
       ]);
 
       prisma.payment.findMany.mockResolvedValue([
@@ -87,26 +87,15 @@ describe('AdminService', () => {
       ]);
     });
 
-    it('summary returns real user counts', async () => {
-      const result = await service.getSummary(NOW);
-
-      expect(result.users).toEqual({
-        total: 4,
-        active: 3,
-        inactive: 1,
-        byRole: { admin: 1, manager: 1, staff: 1, driver: 1 },
-      });
-    });
-
     it('summary returns slot occupancy counts', async () => {
       const result = await service.getSummary(NOW);
 
-      expect(result.slots.total).toBe(3);
-      expect(result.slots.available).toBe(1);
-      expect(result.slots.reserved).toBe(1);
-      expect(result.slots.occupied).toBe(1);
-      expect(result.slots.occupancyRate).toBe(33.33);
-      expect(result.slots.byVehicleType.car).toEqual({
+      expect(result.todayStatus.slots.total).toBe(3);
+      expect(result.todayStatus.slots.available).toBe(1);
+      expect(result.todayStatus.slots.reserved).toBe(1);
+      expect(result.todayStatus.slots.occupied).toBe(1);
+      expect(result.todayStatus.slots.occupancyRate).toBe(33.33);
+      expect(result.todayStatus.slots.byVehicleType.car).toEqual({
         total: 2,
         available: 1,
         reserved: 0,
@@ -117,8 +106,8 @@ describe('AdminService', () => {
     it('documents building and floor occupancy denominators separately', async () => {
       const result = await service.getSummary(NOW);
 
-      expect(result.slots.occupancyRate).toBe(33.33);
-      expect(result.slots.byFloor).toEqual(
+      expect(result.todayStatus.slots.occupancyRate).toBe(33.33);
+      expect(result.todayStatus.slots.byFloor).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             floor: 'T1',
@@ -136,34 +125,108 @@ describe('AdminService', () => {
       );
     });
 
-    it('summary returns active/checkout_pending/exit_authorized session counts', async () => {
+    it('summary returns current open session counts in todayStatus', async () => {
       const result = await service.getSummary(NOW);
 
-      expect(result.sessions).toEqual({
+      expect(result.todayStatus.openSessions).toEqual({
         active: 1,
         checkoutPending: 1,
         exitAuthorized: 1,
-        completedToday: 1,
+        total: 3,
       });
     });
 
-    it('revenueToday uses paidAt and Asia/Ho_Chi_Minh day range', async () => {
+    it('report revenue uses paidAt and Asia/Ho_Chi_Minh day range', async () => {
       const result = await service.getSummary(NOW);
 
-      expect(result.payments.revenueToday).toBe(30000);
-      expect(result.payments.paidToday).toBe(2);
+      expect(result.report.revenue).toBe(30000);
+      expect(result.report.paidPayments).toBe(2);
     });
 
     it('bankQr revenue uses method = bank_qr', async () => {
       const result = await service.getSummary(NOW);
 
-      expect(result.payments.byMethod.bankQr).toBe(20000);
+      expect(result.report.revenueByMethod.bankQr).toBe(20000);
     });
 
     it('vnpay revenue uses provider = vnpay', async () => {
       const result = await service.getSummary(NOW);
 
-      expect(result.payments.byProvider.vnpay).toBe(20000);
+      expect(result.report.revenueByProvider.vnpay).toBe(20000);
+    });
+
+    it('report uses selected-date timestamps while todayStatus remains current', async () => {
+      prisma.parkingSession.findMany.mockResolvedValue([
+        {
+          status: SessionStatus.checkout_pending,
+          checkInTime: new Date('2026-06-24T18:30:00.000Z'),
+          checkOutTime: null,
+          reservationId: null,
+        },
+        {
+          status: SessionStatus.completed,
+          checkInTime: new Date('2026-06-24T16:59:59.000Z'),
+          checkOutTime: new Date('2026-06-24T18:15:00.000Z'),
+          reservationId: null,
+        },
+        {
+          status: SessionStatus.completed,
+          checkInTime: new Date('2026-06-25T01:00:00.000Z'),
+          checkOutTime: new Date('2026-06-25T02:00:00.000Z'),
+          reservationId: 'reservation-1',
+        },
+      ]);
+      prisma.reservation.findMany.mockResolvedValue([
+        {
+          status: ReservationStatus.fulfilled,
+          createdAt: new Date('2026-06-24T18:00:00.000Z'),
+          expiresAt: new Date('2026-06-24T18:20:00.000Z'),
+          session: { checkInTime: new Date('2026-06-25T01:00:00.000Z') },
+        },
+        {
+          status: ReservationStatus.expired,
+          createdAt: new Date('2026-06-24T16:00:00.000Z'),
+          expiresAt: new Date('2026-06-24T18:10:00.000Z'),
+          session: null,
+        },
+      ]);
+      prisma.payment.findMany.mockResolvedValue([
+        makePayment({
+          status: PaymentStatus.paid,
+          method: PaymentMethod.bank_qr,
+          amount: 20000,
+          provider: 'vnpay',
+          paidAt: new Date('2026-06-24T18:05:00.000Z'),
+        }),
+        makePayment({
+          status: PaymentStatus.paid,
+          method: PaymentMethod.cash,
+          amount: 10000,
+          paidAt: new Date('2026-06-25T01:00:00.000Z'),
+        }),
+        makePayment({
+          status: PaymentStatus.pending,
+          method: PaymentMethod.bank_qr,
+          amount: 30000,
+          expiredAt: new Date('2026-06-25T02:59:00.000Z'),
+        }),
+      ]);
+
+      const result = await service.getSummary(NOW);
+
+      expect(result.todayStatus.openSessions.checkoutPending).toBe(1);
+      expect(result.todayStatus.pendingPayments).toBe(1);
+      expect(result.report).toEqual(
+        expect.objectContaining({
+          checkIns: 2,
+          checkOuts: 2,
+          completedSessions: 2,
+          paidPayments: 2,
+          revenue: 30000,
+          reservationCheckIns: 1,
+          expiredReservations: 2,
+        }),
+      );
     });
   });
 
