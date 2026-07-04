@@ -54,6 +54,9 @@ coverage
 *.js.map
 *.d.ts.map
 
+# Runtime uploads
+apps/api/uploads/
+
 # Prisma
 prisma/migrations/dev.db
 *.db
@@ -79,6 +82,7 @@ Thumbs.db
 # Kiro
 .kiro
 
+.opencode/
 .codegraph
 Admin Telemetry Phase 1.docx
 .agent

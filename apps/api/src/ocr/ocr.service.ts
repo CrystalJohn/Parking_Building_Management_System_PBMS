@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { PlateRecognitionService } from '../plate-recognition/plate-recognition.service';
+import { OcrEvidenceStorageService } from '../ocr-evidences/ocr-evidence-storage.service';
 import type { OcrRecognizeInput, OcrRecognizeResponse, PlateBox, UploadedOcrImage } from './ocr.types';
 
 type EvidenceRecord = {
@@ -9,6 +10,15 @@ type EvidenceRecord = {
   provider: string;
   providerFilename: string | null;
   providerTimestamp: Date | string | null;
+  imageKey: string | null;
+  thumbnailKey: string | null;
+  imageMimeType: string | null;
+  imageSizeBytes: number | null;
+  imageSha256: string | null;
+  imageExpiresAt: Date | null;
+  thumbnailExpiresAt: Date | null;
+  imageDeletedAt: Date | null;
+  thumbnailDeletedAt: Date | null;
   cameraId: string | null;
   rawResponse?: unknown;
   plateBox: unknown;
@@ -28,10 +38,13 @@ type EvidenceRecord = {
 
 @Injectable()
 export class OcrService {
+  private readonly logger = new Logger(OcrService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly plateRecognitionService: PlateRecognitionService,
     private readonly config: ConfigService,
+    private readonly storageService: OcrEvidenceStorageService,
   ) {}
 
   async recognize(
@@ -40,6 +53,7 @@ export class OcrService {
     staffId: string,
   ): Promise<OcrRecognizeResponse> {
     const startedAt = Date.now();
+    const eventType = input.eventType ?? 'check_in';
     const cameraId = input.cameraId || this.config.get<string>('PLATE_RECOGNIZER_CAMERA_ID') || null;
     const buildingName = input.buildingName || this.config.get<string>('PBMS_BUILDING_NAME') || 'PBMS Building';
     const gateName = input.gateName || this.config.get<string>('PBMS_GATE_NAME') || 'Main Gate';
@@ -47,7 +61,9 @@ export class OcrService {
     try {
       const scan = await this.plateRecognitionService.recognize(file.buffer, file.mimetype);
       const providerTimestamp = parseOptionalDate(scan.providerTimestamp);
-      const evidence = await this.createEvidence({
+
+      const evidence = await this.createEvidenceWithImage({
+        eventType,
         provider: 'PLATE_RECOGNIZER',
         providerFilename: scan.providerFilename ?? null,
         providerTimestamp,
@@ -62,12 +78,15 @@ export class OcrService {
         errorMessage: scan.plate ? null : 'No plate detected',
         staffId,
         reservationId: input.reservationId || null,
-      });
+      }, file.buffer, file.mimetype);
 
       return this.toResponse(evidence, Date.now() - startedAt);
     } catch (error) {
       const message = getErrorMessage(error);
-      const evidence = await this.createEvidence({
+      this.logger.error(`OCR recognize failed: ${message}`, error instanceof Error ? error.stack : undefined);
+
+      const evidence = await this.createEvidenceWithImage({
+        eventType,
         provider: 'PLATE_RECOGNIZER',
         providerFilename: null,
         providerTimestamp: null,
@@ -82,9 +101,30 @@ export class OcrService {
         errorMessage: message,
         staffId,
         reservationId: input.reservationId || null,
-      });
+      }, file.buffer, file.mimetype);
 
       return this.toResponse(evidence, Date.now() - startedAt);
+    }
+  }
+
+  async linkEvidenceToCheckout(
+    ocrEvidenceId: string,
+    sessionId: string,
+    confirmedPlate: string,
+  ): Promise<void> {
+    try {
+      await (this.prisma as any).ocrEvidence.update({
+        where: { id: ocrEvidenceId },
+        data: {
+          eventType: 'check_out',
+          sessionId,
+          confirmedPlate,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to link evidence ${ocrEvidenceId} to checkout session ${sessionId}: ${(error as Error).message}`,
+      );
     }
   }
 
@@ -121,8 +161,71 @@ export class OcrService {
     return evidence;
   }
 
-  private async createEvidence(data: Record<string, unknown>): Promise<EvidenceRecord> {
-    return (this.prisma as any).ocrEvidence.create({ data });
+  async getCheckInEvidenceForSession(sessionId: string) {
+    const evidence = await (this.prisma as any).ocrEvidence.findFirst({
+      where: {
+        sessionId,
+        eventType: 'check_in',
+      },
+      select: {
+        id: true,
+        thumbnailKey: true,
+        imageKey: true,
+        capturedAt: true,
+        ocrPlate: true,
+        ocrConfidence: true,
+        providerFilename: true,
+      },
+      orderBy: { capturedAt: 'desc' },
+    });
+
+    return evidence;
+  }
+
+  private async createEvidenceWithImage(
+    data: Record<string, unknown>,
+    imageBuffer: Buffer,
+    mimeType: string,
+  ): Promise<EvidenceRecord> {
+    const retentionDays = this.config.get<number>('OCR_FULL_IMAGE_RETENTION_DAYS', 30);
+    const thumbnailRetentionDays = this.config.get<number>('OCR_THUMBNAIL_RETENTION_DAYS', 90);
+
+    const evidence = await (this.prisma as any).ocrEvidence.create({
+      data,
+    });
+
+    let imageMeta: Awaited<ReturnType<OcrEvidenceStorageService['saveImage']>> | null = null;
+
+    try {
+      imageMeta = await this.storageService.saveImage(
+        evidence.id,
+        imageBuffer,
+        mimeType,
+      );
+
+      const now = new Date();
+      const fullExpiresAt = new Date(now.getTime() + retentionDays * 24 * 60 * 60 * 1000);
+      const thumbExpiresAt = new Date(now.getTime() + thumbnailRetentionDays * 24 * 60 * 60 * 1000);
+
+      return (this.prisma as any).ocrEvidence.update({
+        where: { id: evidence.id },
+        data: {
+          imageKey: imageMeta.imageKey,
+          thumbnailKey: imageMeta.thumbnailKey,
+          imageMimeType: imageMeta.imageMimeType,
+          imageSizeBytes: imageMeta.imageSizeBytes,
+          imageSha256: imageMeta.imageSha256,
+          imageExpiresAt: fullExpiresAt,
+          thumbnailExpiresAt: thumbExpiresAt,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(`Failed to save OCR evidence image metadata, cleaning up files: ${(err as Error).message}`);
+      if (imageMeta) {
+        await this.storageService.deleteEvidenceFiles(imageMeta.imageKey, imageMeta.thumbnailKey);
+      }
+      return evidence;
+    }
   }
 
   private toResponse(evidence: EvidenceRecord, durationMs: number): OcrRecognizeResponse {
@@ -134,6 +237,10 @@ export class OcrService {
       provider: 'PLATE_RECOGNIZER',
       providerFilename: evidence.providerFilename,
       providerTimestamp: formatOptionalDate(evidence.providerTimestamp),
+      imageUrl: evidence.imageKey ? `/api/ocr-evidences/${evidence.id}/image` : null,
+      thumbnailUrl: evidence.thumbnailKey ? `/api/ocr-evidences/${evidence.id}/thumbnail` : null,
+      imageMimeType: evidence.imageMimeType,
+      imageSizeBytes: evidence.imageSizeBytes,
       cameraId: evidence.cameraId,
       plateBox: normalizePlateBox(evidence.plateBox),
       buildingName: evidence.buildingName || 'PBMS Building',
@@ -183,9 +290,9 @@ function normalizePlateBox(value: unknown): PlateBox | null {
   ) {
     return {
       xmin: box.xmin,
-      ymin: box.ymin,
-      xmax: box.xmax,
       ymax: box.ymax,
+      xmax: box.xmax,
+      ymin: box.ymin,
     };
   }
   return null;

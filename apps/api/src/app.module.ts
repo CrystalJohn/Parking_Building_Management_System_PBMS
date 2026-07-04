@@ -15,6 +15,7 @@ import { ConfigMgmtModule } from './config-mgmt/config-mgmt.module';
 import { SimulationModule } from './simulation/simulation.module';
 import { PlateRecognitionModule } from './plate-recognition/plate-recognition.module';
 import { OcrModule } from './ocr';
+import { OcrEvidencesModule } from './ocr-evidences/ocr-evidences.module';
 import { PaymentsModule } from './payments/payments.module';
 import { AdminModule } from './admin/admin.module';
 import { VehiclesModule } from './vehicles/vehicles.module';
@@ -40,6 +41,7 @@ import { GateModule } from './gate/gate.module';
     SimulationModule,
     PlateRecognitionModule,
     OcrModule,
+    OcrEvidencesModule,
     PaymentsModule,
     AdminModule,
     VehiclesModule,

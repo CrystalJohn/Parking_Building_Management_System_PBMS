@@ -359,11 +359,26 @@ model SimulationRun {
   @@map("simulation_runs")
 }
 
+enum OcrEventType {
+  check_in
+  check_out
+}
+
 model OcrEvidence {
   id                String   @id @default(uuid())
+  eventType         OcrEventType @default(check_in) @map("event_type")
   provider          String   @default("PLATE_RECOGNIZER")
   providerFilename  String?  @map("provider_filename")
   providerTimestamp DateTime? @map("provider_timestamp") @db.Timestamptz(3)
+  imageKey          String?  @map("image_key")
+  thumbnailKey      String?  @map("thumbnail_key")
+  imageMimeType     String?  @map("image_mime_type")
+  imageSizeBytes    Int?     @map("image_size_bytes")
+  imageSha256       String?  @map("image_sha256")
+  imageExpiresAt    DateTime? @map("image_expires_at") @db.Timestamptz(3)
+  imageDeletedAt    DateTime? @map("image_deleted_at") @db.Timestamptz(3)
+  thumbnailExpiresAt    DateTime? @map("thumbnail_expires_at") @db.Timestamptz(3)
+  thumbnailDeletedAt    DateTime? @map("thumbnail_deleted_at") @db.Timestamptz(3)
   cameraId          String?  @map("camera_id")
   rawResponse       Json?    @map("raw_response")
   plateBox          Json?    @map("plate_box")

@@ -10,6 +10,7 @@ export interface OcrRecognizeInput {
   buildingName?: string;
   gateName?: string;
   reservationId?: string;
+  eventType?: 'check_in' | 'check_out';
 }
 
 export interface PlateBox {
@@ -27,6 +28,10 @@ export interface OcrRecognizeResponse {
   provider: 'PLATE_RECOGNIZER';
   providerFilename: string | null;
   providerTimestamp: string | null;
+  imageUrl: string | null;
+  thumbnailUrl: string | null;
+  imageMimeType: string | null;
+  imageSizeBytes: number | null;
   cameraId: string | null;
   plateBox: PlateBox | null;
   buildingName: string;

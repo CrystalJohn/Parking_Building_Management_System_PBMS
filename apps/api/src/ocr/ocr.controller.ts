@@ -2,8 +2,6 @@ import {
   BadRequestException,
   Body,
   Controller,
-  Get,
-  Param,
   Post,
   UploadedFile,
   UseGuards,
@@ -44,17 +42,5 @@ export class OcrController {
     }
 
     return this.ocrService.recognize(file, body, staffId);
-  }
-}
-
-@Controller('ocr-evidences')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.staff, Role.manager, Role.admin)
-export class OcrEvidencesController {
-  constructor(private readonly ocrService: OcrService) {}
-
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.ocrService.findEvidence(id);
   }
 }

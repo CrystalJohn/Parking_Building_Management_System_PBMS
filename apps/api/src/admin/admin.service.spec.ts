@@ -114,6 +114,28 @@ describe('AdminService', () => {
       });
     });
 
+    it('documents building and floor occupancy denominators separately', async () => {
+      const result = await service.getSummary(NOW);
+
+      expect(result.slots.occupancyRate).toBe(33.33);
+      expect(result.slots.byFloor).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            floor: 'T1',
+            total: 2,
+            occupied: 1,
+            occupancyRate: 50,
+          }),
+          expect.objectContaining({
+            floor: 'T2',
+            total: 1,
+            occupied: 0,
+            occupancyRate: 0,
+          }),
+        ]),
+      );
+    });
+
     it('summary returns active/checkout_pending/exit_authorized session counts', async () => {
       const result = await service.getSummary(NOW);
 

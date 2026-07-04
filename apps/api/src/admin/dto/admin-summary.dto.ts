@@ -23,6 +23,11 @@ export interface AdminSummaryDto {
     available: number;
     reserved: number;
     occupied: number;
+    /**
+     * Building occupancy percentage, calculated as occupied / total slots
+     * across the full building. Floor and zone rows use their own local
+     * denominators.
+     */
     occupancyRate: number;
     byVehicleType: {
       car: SlotMetricDto;
@@ -69,11 +74,13 @@ export interface SlotMetricDto {
 
 export interface FloorSlotMetricDto extends SlotMetricDto {
   floor: string | number;
+  /** Floor occupancy percentage, calculated as occupied / total slots on this floor. */
   occupancyRate: number;
 }
 
 export interface ZoneSlotMetricDto extends SlotMetricDto {
   floor: string | number;
   zone: string;
+  /** Zone occupancy percentage, calculated as occupied / total slots in this zone. */
   occupancyRate: number;
 }

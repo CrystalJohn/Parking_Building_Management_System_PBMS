@@ -91,6 +91,13 @@ export class GateService {
 
     const checkout = await this.sessionsService.lookupOpenForGateByPlate(plateConfirmed);
     if (checkout) {
+      if (input.ocrEvidenceId) {
+        await this.ocrService.linkEvidenceToCheckout(
+          input.ocrEvidenceId,
+          checkout.session.id,
+          plateConfirmed,
+        );
+      }
       return {
         mode: 'CHECK_OUT',
         source: input.source,

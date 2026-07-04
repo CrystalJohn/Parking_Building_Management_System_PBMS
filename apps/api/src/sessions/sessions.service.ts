@@ -20,6 +20,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AllocationService } from '../slots/allocation.service';
 import { FeesService, FeeBreakdown } from '../fees/fees.service';
+import { OcrService } from '../ocr';
+import { OcrEvidenceStorageService } from '../ocr-evidences/ocr-evidence-storage.service';
 import { VehicleIdentificationService } from '../vehicle-identification/vehicle-identification.service';
 import type { VehicleIdentityResult } from '../vehicle-identification/vehicle-identity.types';
 import { normalizePlateNumber } from '../vehicles/vehicles.service';
@@ -56,6 +58,8 @@ export class SessionsService {
     private readonly vehicleIdentificationService: VehicleIdentificationService,
     private readonly jwtService: JwtService,
     private readonly notificationsService: NotificationsService,
+    private readonly ocrService: OcrService,
+    private readonly ocrStorageService: OcrEvidenceStorageService,
   ) {}
 
   /**
@@ -884,6 +888,8 @@ export class SessionsService {
       session.checkOutTime ?? new Date(),
     );
 
+    const checkInEvidence = await this.ocrService.getCheckInEvidenceForSession(session.id);
+
     return {
       session: {
         id: session.id,
@@ -923,6 +929,20 @@ export class SessionsService {
             checkoutUrl: session.payment.checkoutUrl ?? null,
             qrCode: session.payment.qrCode ?? null,
             expiredAt: session.payment.expiredAt ?? null,
+          }
+        : null,
+      checkInEvidence: checkInEvidence
+        ? {
+            id: checkInEvidence.id,
+            thumbnailUrl: checkInEvidence.thumbnailKey
+              ? `/api/ocr-evidences/${checkInEvidence.id}/thumbnail`
+              : null,
+            imageUrl: checkInEvidence.imageKey
+              ? `/api/ocr-evidences/${checkInEvidence.id}/image`
+              : null,
+            capturedAt: checkInEvidence.capturedAt,
+            ocrPlate: checkInEvidence.ocrPlate,
+            ocrConfidence: checkInEvidence.ocrConfidence,
           }
         : null,
     };
