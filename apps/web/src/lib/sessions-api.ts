@@ -1,3 +1,4 @@
+import { isAxiosError } from 'axios'
 import api from './api'
 
 // ─── Types matching backend DTOs ─────────────────────────────────────────────
@@ -113,6 +114,10 @@ export interface OcrRecognizeResponse {
   provider: 'PLATE_RECOGNIZER'
   providerFilename: string | null
   providerTimestamp: string | null
+  imageUrl: string | null
+  thumbnailUrl: string | null
+  imageMimeType: string | null
+  imageSizeBytes: number | null
   cameraId: string | null
   plateBox: OcrPlateBox | null
   buildingName: string
@@ -259,11 +264,26 @@ export interface CheckoutSlotInfo {
   floor: FloorInfo
 }
 
+export interface CheckInEvidence {
+  id: string
+  thumbnailUrl: string | null
+  imageUrl: string | null
+  capturedAt: string | null
+  ocrPlate: string | null
+  ocrConfidence: number | null
+}
+
+export interface CheckoutEvidence extends CheckInEvidence {
+  localImageUrl?: string | null
+}
+
 export interface CheckoutWorkflowResponse {
   session: CheckoutSessionInfo
   slot: CheckoutSlotInfo
   fee: FeeBreakdown
   payment: PaymentInfo | null
+  checkInEvidence: CheckInEvidence | null
+  exitEvidence?: CheckoutEvidence | null
 }
 
 export interface PaymentWorkflowResponse {
@@ -337,6 +357,7 @@ interface BackendLookupCheckoutResponse {
   slot: CheckoutSlotInfo
   fee: FeeBreakdown
   payment: PaymentInfo | null
+  checkInEvidence: CheckInEvidence | null
 }
 
 interface BackendCheckOutResponse {
@@ -441,6 +462,7 @@ function mapBackendCheckout(data: BackendCheckOutResponse): CheckoutWorkflowResp
       ...data.payment,
       sessionId: data.session.id,
     },
+    checkInEvidence: null,
   }
 }
 
@@ -670,4 +692,50 @@ export interface ActiveSessionDetail {
 export async function getActiveSessionBySlotId(slotId: number): Promise<ActiveSessionDetail | null> {
   const { data } = await api.get<ActiveSessionDetail[]>('/sessions/active')
   return data.find((s) => s.slotId === slotId) ?? null
+}
+
+export async function fetchEvidenceImageBlob(url: string): Promise<string | null> {
+  const result = await fetchEvidenceImageBlobResult(url)
+  return result.url
+}
+
+export type EvidenceImageFetchStatus = 'loaded' | 'missing' | 'expired' | 'failed'
+
+export interface EvidenceImageBlobResult {
+  url: string | null
+  status: EvidenceImageFetchStatus
+}
+
+export function normalizeEvidenceImagePath(url: string) {
+  if (!url) return url
+
+  try {
+    if (/^https?:\/\//i.test(url)) {
+      const parsed = new URL(url)
+      return parsed.pathname.replace(/^\/api(?=\/)/, '') + parsed.search
+    }
+  } catch {
+    // Fall through to relative normalization.
+  }
+
+  return url.replace(/^\/api(?=\/)/, '')
+}
+
+export async function fetchEvidenceImageBlobResult(url: string): Promise<EvidenceImageBlobResult> {
+  try {
+    const { data } = await api.get(normalizeEvidenceImagePath(url), { responseType: 'blob' })
+    const blob = data as Blob
+    if (!blob.type.startsWith('image/')) {
+      return { url: null, status: 'failed' }
+    }
+    return { url: URL.createObjectURL(blob), status: 'loaded' }
+  } catch (error) {
+    if (isAxiosError(error)) {
+      const status = error.response?.status
+      const message = String((error.response?.data as { message?: unknown } | undefined)?.message ?? '')
+      if (status === 410 || /expired|deleted/i.test(message)) return { url: null, status: 'expired' }
+      if (status === 404) return { url: null, status: 'missing' }
+    }
+    return { url: null, status: 'failed' }
+  }
 }

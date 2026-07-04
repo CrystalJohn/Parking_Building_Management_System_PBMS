@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from 'react'
 import { isAxiosError } from 'axios'
 import {
   CircleAlert,
@@ -20,10 +29,14 @@ import {
   confirmVehicleExited,
   createBankQrPayment,
   getPaymentStatus,
+  fetchEvidenceImageBlobResult,
   lookupSessionForCheckout,
   requestCheckout,
   type CheckOutResponse,
+  type CheckInEvidence,
+  type CheckoutEvidence,
   type CheckoutWorkflowResponse,
+  type EvidenceImageFetchStatus,
   type ConfirmExitResponse,
   type ConfirmPaymentResponse,
   type PaymentMethod,
@@ -62,12 +75,67 @@ const isUuid =
 
 const CASH_ICON_SRC = '/cash-icon.svg'
 const VNPAY_ICON_SRC = '/vnpay-logo.jpg'
+type EvidenceImageState = {
+  url: string | null
+  status: 'idle' | 'loading' | EvidenceImageFetchStatus
+  source?: 'local' | 'remote'
+}
+
+const EMPTY_EVIDENCE_IMAGE: EvidenceImageState = { url: null, status: 'idle' }
 
 function debugLog(...args: unknown[]) {
   if (import.meta.env.DEV) {
     // eslint-disable-next-line no-console
     console.log('[Gate/Checkout]', ...args)
   }
+}
+
+function loadEvidenceImage(
+  evidence: CheckoutEvidence | CheckInEvidence | null,
+  setImage: Dispatch<SetStateAction<EvidenceImageState>>,
+) {
+  let cancelled = false
+  let objectUrl: string | null = null
+
+  if (!evidence) {
+    setImage({ url: null, status: 'missing' })
+    return () => undefined
+  }
+
+  if ('localImageUrl' in evidence && evidence.localImageUrl) {
+    setImage({ url: evidence.localImageUrl, status: 'loaded', source: 'local' })
+    return () => undefined
+  }
+
+  const imagePath = evidence.thumbnailUrl ?? evidence.imageUrl
+  if (!imagePath) {
+    setImage({ url: null, status: 'missing' })
+    return () => undefined
+  }
+
+  setImage({ url: null, status: 'loading' })
+  void fetchEvidenceImageBlobResult(imagePath).then((result) => {
+    if (cancelled) {
+      if (result.url?.startsWith('blob:')) URL.revokeObjectURL(result.url)
+      return
+    }
+    objectUrl = result.url
+    setImage({ ...result, source: result.url ? 'remote' : undefined })
+  })
+
+  return () => {
+    cancelled = true
+    if (objectUrl?.startsWith('blob:')) URL.revokeObjectURL(objectUrl)
+  }
+}
+
+function markEvidenceImageFailed(setImage: Dispatch<SetStateAction<EvidenceImageState>>) {
+  setImage((current) => {
+    if (current.source === 'remote' && current.url?.startsWith('blob:')) {
+      URL.revokeObjectURL(current.url)
+    }
+    return { url: null, status: 'failed' }
+  })
 }
 
 const formatDateTime = formatDateTimeVN
@@ -169,6 +237,7 @@ function GateOperationsPanel({ toasts }: PanelProps) {
     checkout: CheckoutWorkflowResponse
     plateConfirmed: string
     subMode: 'PAYMENT_REQUIRED' | 'PAYMENT_PENDING' | 'READY_TO_EXIT'
+    exitEvidence?: CheckoutEvidence | null
   } | null>(null)
 
   if (mode === 'reservation-qr') {
@@ -537,6 +606,17 @@ function CheckOutPanel({
     return trimmed.toUpperCase().startsWith('PBMS-') ? trimmed.toUpperCase() : trimmed
   }
 
+  const [entryEvidenceImage, setEntryEvidenceImage] = useState<EvidenceImageState>(EMPTY_EVIDENCE_IMAGE)
+  const [exitEvidenceImage, setExitEvidenceImage] = useState<EvidenceImageState>(EMPTY_EVIDENCE_IMAGE)
+
+  useEffect(() => {
+    return loadEvidenceImage(workflow?.checkInEvidence ?? null, setEntryEvidenceImage)
+  }, [workflow?.checkInEvidence])
+
+  useEffect(() => {
+    return loadEvidenceImage(workflow?.exitEvidence ?? null, setExitEvidenceImage)
+  }, [workflow?.exitEvidence])
+
   const lookupSession = async (input: { sessionCode?: string; licensePlate?: string }) => {
     const code = input.sessionCode ? normalizeSessionCode(input.sessionCode) : ''
     const plate = normalizePlateForApi(input.licensePlate)
@@ -627,7 +707,11 @@ function CheckOutPanel({
       const data = await requestCheckout({
         sessionCode: workflow.session.sessionCode || workflow.session.id,
       })
-      setWorkflow(data)
+      setWorkflow({
+        ...data,
+        checkInEvidence: data.checkInEvidence ?? workflow.checkInEvidence,
+        exitEvidence: data.exitEvidence ?? workflow.exitEvidence ?? null,
+      })
       setReceipt(null)
       setExitResult(null)
       toasts.showSuccess('Checkout started. Payment is pending.')
@@ -899,37 +983,50 @@ function CheckOutPanel({
               <StatusBadge status={workflow.session.status} />
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.52fr)] lg:items-start">
-              <div className="rounded-2xl border bg-card px-5 py-5 text-card-foreground shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                  Fee
-                </p>
-                <p className="mt-2 text-4xl font-black tracking-tight">
-                  {amountDue}
-                </p>
-                <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
-                  {paymentMethod ? (
-                    <PaymentMethodIcon method={paymentMethod} size={18} decorative />
-                  ) : null}
-                  <span>{paymentLabel}</span>
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.38fr)] lg:items-start">
+              <div className="space-y-4">
+                <div className="rounded-2xl border bg-card px-5 py-5 text-card-foreground shadow-sm">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    Fee
+                  </p>
+                  <p className="mt-2 text-4xl font-black tracking-tight">
+                    {amountDue}
+                  </p>
+                  <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
+                    {paymentMethod ? (
+                      <PaymentMethodIcon method={paymentMethod} size={18} decorative />
+                    ) : null}
+                    <span>{paymentLabel}</span>
+                  </div>
                 </div>
+
+                <div className="lg:hidden">
+                  <SessionSummary
+                    workflow={workflow}
+                    paymentMethod={paymentMethod}
+                    paymentFact={paymentFact}
+                    durationLabel={durationLabel}
+                    exitTime={exitResult?.session.checkOutTime ?? workflow.session.checkOutTime}
+                  />
+                </div>
+
+                <EvidenceComparison
+                  entryEvidence={workflow.checkInEvidence}
+                  entryImage={entryEvidenceImage}
+                  exitEvidence={workflow.exitEvidence ?? null}
+                  exitImage={exitEvidenceImage}
+                  onEntryImageError={() => markEvidenceImageFailed(setEntryEvidenceImage)}
+                  onExitImageError={() => markEvidenceImageFailed(setExitEvidenceImage)}
+                />
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
-                <CheckoutMetric label="Slot" value={workflow.slot.code} mono />
-                <CheckoutMetric label="Duration" value={durationLabel} />
-                <CheckoutMetric
-                  label="Payment status"
-                  value={
-                    paymentMethod ? (
-                      <span className="inline-flex items-center gap-2">
-                        <PaymentMethodIcon method={paymentMethod} size={20} decorative />
-                        <span>{paymentFact}</span>
-                      </span>
-                    ) : (
-                      paymentFact
-                    )
-                  }
+              <div className="hidden lg:block">
+                <SessionSummary
+                  workflow={workflow}
+                  paymentMethod={paymentMethod}
+                  paymentFact={paymentFact}
+                  durationLabel={durationLabel}
+                  exitTime={exitResult?.session.checkOutTime ?? workflow.session.checkOutTime}
                 />
               </div>
             </div>
@@ -997,27 +1094,6 @@ function CheckOutPanel({
                 <p className="mt-1 text-sm text-emerald-800">Vehicle exited. Slot released.</p>
               </div>
             ) : null}
-
-            <details className="rounded-xl border bg-muted/15 px-4 py-3 [&_summary::-webkit-details-marker]:hidden">
-              <summary className="cursor-pointer list-none text-sm font-medium text-muted-foreground">
-                Details
-              </summary>
-              <div className="mt-3 space-y-2 text-sm">
-                <DetailRow label="Session code" value={workflow.session.sessionCode} mono strong />
-                <DetailRow label="Check-in time" value={formatDateTime(workflow.session.checkInTime)} />
-                <DetailRow label="Floor / Zone" value={`${workflow.slot.floor.name} / Zone ${workflow.slot.zone}`} />
-                <DetailRow label="Base fee" value={VND(workflow.fee.baseFee)} />
-                <DetailRow label="Penalty" value={VND(workflow.fee.penalty)} />
-                {workflow.payment?.paidAt ? (
-                  <DetailRow label="Paid at" value={formatDateTime(workflow.payment.paidAt)} />
-                ) : null}
-                {exitResult?.session.checkOutTime ? (
-                  <DetailRow label="Exit time" value={formatDateTime(exitResult.session.checkOutTime)} />
-                ) : workflow.session.checkOutTime ? (
-                  <DetailRow label="Exit time" value={formatDateTime(workflow.session.checkOutTime)} />
-                ) : null}
-              </div>
-            </details>
 
             <div className="sticky bottom-0 -mx-6 border-t bg-background/95 px-6 pb-1 pt-4 backdrop-blur print:hidden">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1243,14 +1319,67 @@ function readablePaymentMethod(method: PaymentMethod) {
   return labels[method]
 }
 
-function DetailRow({
+function SessionSummary({
+  workflow,
+  paymentMethod,
+  paymentFact,
+  durationLabel,
+  exitTime,
+}: {
+  workflow: CheckoutWorkflowResponse
+  paymentMethod: PaymentMethod | null
+  paymentFact: string
+  durationLabel: string
+  exitTime: string | null
+}) {
+  return (
+    <div className="rounded-2xl border bg-card p-4 text-card-foreground shadow-sm">
+      <div className="flex items-center justify-between gap-3 border-b pb-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          Session summary
+        </p>
+        <Badge variant="outline" className="h-5 font-semibold">
+          {workflow.slot.code}
+        </Badge>
+      </div>
+      <div className="mt-3 space-y-2 text-sm">
+        <SummaryRow label="Session code" value={workflow.session.sessionCode} mono strong />
+        <SummaryRow label="Slot" value={workflow.slot.code} mono />
+        <SummaryRow label="Duration" value={durationLabel} />
+        <SummaryRow
+          label="Payment status"
+          value={
+            paymentMethod ? (
+              <span className="inline-flex items-center justify-end gap-2">
+                <PaymentMethodIcon method={paymentMethod} size={18} decorative />
+                <span>{paymentFact}</span>
+              </span>
+            ) : (
+              paymentFact
+            )
+          }
+        />
+        <SummaryRow label="Check-in time" value={formatDateTime(workflow.session.checkInTime)} />
+        <SummaryRow label="Floor / Zone" value={`${workflow.slot.floor.name} / Zone ${workflow.slot.zone}`} />
+        <SummaryRow label="Base fee" value={VND(workflow.fee.baseFee)} />
+        <SummaryRow label="Penalty" value={VND(workflow.fee.penalty)} />
+        {workflow.payment?.paidAt ? (
+          <SummaryRow label="Paid at" value={formatDateTime(workflow.payment.paidAt)} />
+        ) : null}
+        {exitTime ? <SummaryRow label="Exit time" value={formatDateTime(exitTime)} /> : null}
+      </div>
+    </div>
+  )
+}
+
+function SummaryRow({
   label,
   value,
   mono = false,
   strong = false,
 }: {
   label: string
-  value: string
+  value: ReactNode
   mono?: boolean
   strong?: boolean
 }) {
@@ -1258,29 +1387,14 @@ function DetailRow({
     <div className="flex items-start justify-between gap-3 border-b pb-2 last:border-0 last:pb-0">
       <span className="text-muted-foreground">{label}</span>
       <span
-        className={`text-right ${mono ? 'font-mono' : ''} ${
-          strong ? 'font-semibold text-foreground' : 'font-medium text-foreground'
-        }`}
+        className={cn(
+          'max-w-[60%] text-right font-medium text-foreground',
+          mono && 'font-mono',
+          strong && 'font-semibold',
+        )}
       >
         {value}
       </span>
-    </div>
-  )
-}
-
-function CheckoutMetric({
-  label,
-  value,
-  mono = false,
-}: {
-  label: string
-  value: ReactNode
-  mono?: boolean
-}) {
-  return (
-    <div className="flex min-h-[82px] flex-col justify-center rounded-lg border bg-muted/30 px-4 py-3">
-      <p className="text-xs font-semibold uppercase text-muted-foreground">{label}</p>
-      <p className={`mt-1 text-sm font-semibold text-foreground ${mono ? 'font-mono' : ''}`}>{value}</p>
     </div>
   )
 }
@@ -1307,6 +1421,124 @@ function PaymentMethodIcon({
       className="shrink-0 object-contain"
     />
   )
+}
+
+function EvidenceComparison({
+  entryEvidence,
+  entryImage,
+  exitEvidence,
+  exitImage,
+  onEntryImageError,
+  onExitImageError,
+}: {
+  entryEvidence: CheckInEvidence | null
+  entryImage: EvidenceImageState
+  exitEvidence: CheckoutEvidence | null
+  exitImage: EvidenceImageState
+  onEntryImageError: () => void
+  onExitImageError: () => void
+}) {
+  return (
+    <div className="rounded-2xl border bg-muted/15 p-3">
+      <div className="grid gap-3 md:grid-cols-2">
+        <EvidencePanel
+          title="CHECK-IN EVIDENCE"
+          evidence={entryEvidence}
+          image={entryImage}
+          emptyText="No evidence"
+          onImageError={onEntryImageError}
+        />
+        <EvidencePanel
+          title="CHECK-OUT EVIDENCE"
+          evidence={exitEvidence}
+          image={exitImage}
+          emptyText="No evidence"
+          onImageError={onExitImageError}
+        />
+      </div>
+    </div>
+  )
+}
+
+function EvidencePanel({
+  title,
+  evidence,
+  image,
+  emptyText,
+  onImageError,
+}: {
+  title: string
+  evidence: CheckInEvidence | CheckoutEvidence | null
+  image: EvidenceImageState
+  emptyText: string
+  onImageError: () => void
+}) {
+  const plate = evidence?.ocrPlate ? formatPlateForDisplay(evidence.ocrPlate) : null
+  const confidence = evidence?.ocrConfidence != null ? `${Math.round(evidence.ocrConfidence * 100)}%` : null
+  const timestamp = evidence?.capturedAt ? formatDateTime(evidence.capturedAt) : null
+  const message = evidenceStatusLabel(image.status, Boolean(evidence), emptyText)
+
+  return (
+    <div className="overflow-hidden rounded-xl border bg-card text-card-foreground">
+      <div className="flex items-center justify-between gap-3 border-b px-3 py-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          {title}
+        </p>
+        <Badge variant={image.status === 'loaded' ? 'secondary' : 'outline'} className="h-5">
+          {image.status === 'loading' ? 'Loading' : image.status === 'loaded' ? 'Image' : 'No image'}
+        </Badge>
+      </div>
+      <div className="grid gap-3 p-3 sm:grid-cols-[160px_minmax(0,1fr)]">
+        {image.url ? (
+          <img
+            src={image.url}
+            alt={`${title}${plate ? ` for plate ${plate}` : ''}`}
+            className="h-32 w-full rounded-lg border object-cover sm:h-28"
+            onError={onImageError}
+          />
+        ) : (
+          <div className="grid h-32 place-items-center rounded-lg border border-dashed bg-muted/40 p-3 text-center text-xs font-medium text-muted-foreground sm:h-28">
+            {message}
+          </div>
+        )}
+        <div className="min-w-0 space-y-2 text-sm">
+          <EvidenceFact label="Plate" value={plate ?? 'Unknown'} mono={Boolean(plate)} />
+          <EvidenceFact label="Confidence" value={confidence ?? 'Not available'} />
+          <EvidenceFact label="CAPTURED AT" value={timestamp ?? 'Not available'} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function EvidenceFact({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string
+  value: string
+  mono?: boolean
+}) {
+  return (
+    <div>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+        {label}
+      </p>
+      <p className={cn('mt-0.5 truncate font-semibold text-foreground', mono && 'font-mono')}>
+        {value}
+      </p>
+    </div>
+  )
+}
+
+function evidenceStatusLabel(status: EvidenceImageState['status'], hasEvidence: boolean, emptyText: string) {
+  if (!hasEvidence) return emptyText
+  if (status === 'loading') return 'Loading image'
+  if (status === 'expired') return 'Image expired'
+  if (status === 'failed') return 'Image unavailable'
+  if (status === 'missing') return 'Image not stored'
+  return 'Image unavailable'
 }
 
 function StatusBadge({ status }: { status: SessionStatus }) {

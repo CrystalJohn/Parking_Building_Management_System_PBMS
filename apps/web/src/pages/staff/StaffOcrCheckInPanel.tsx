@@ -60,6 +60,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { cn } from '@/lib/utils'
 import {
   checkIn,
+  type CheckoutEvidence,
   type CheckoutWorkflowResponse,
   type GateCheckoutSubMode,
   issueSessionTicket,
@@ -97,6 +98,7 @@ type Props = {
     checkout: CheckoutWorkflowResponse
     plateConfirmed: string
     subMode: GateCheckoutSubMode
+    exitEvidence?: CheckoutEvidence | null
   }) => void
   onSwitchToReservationQr?: () => void
   toasts: ReturnType<typeof useToasts>
@@ -271,10 +273,20 @@ export function StaffOcrCheckInPanel({
       if (requestId !== lookupRequestIdRef.current) return
 
       if (result.mode === 'CHECK_OUT') {
+        const exitEvidence = buildExitEvidenceFromOcr({
+          ocrEvidenceId: ocrResult?.ocrEvidenceId,
+          plate: result.plateOcr ?? result.plateConfirmed,
+          confidence: result.confidence ?? ocrResult?.confidence ?? null,
+          localImageUrl: capturedImageUrl,
+        })
         onRouteToCheckout?.({
-          checkout: result.checkout,
+          checkout: {
+            ...result.checkout,
+            exitEvidence,
+          },
           plateConfirmed: formatPlateForDisplay(result.plateConfirmed),
           subMode: result.subMode,
+          exitEvidence,
         })
         return
       }
@@ -287,7 +299,7 @@ export function StaffOcrCheckInPanel({
       setPlateLookupError(extractErrorMessage(error))
       setVehicleTypeOverride(true)
     }
-  }, [applyCheckInLookup, ocrResult?.ocrEvidenceId, onRouteToCheckout])
+  }, [applyCheckInLookup, capturedImageUrl, ocrResult?.confidence, ocrResult?.ocrEvidenceId, onRouteToCheckout])
 
   const captureAndRecognize = useCallback(async () => {
     if (status === 'OCR_PROCESSING' || status === 'CHECKING_IN') return
@@ -319,9 +331,10 @@ export function StaffOcrCheckInPanel({
       return
     }
 
+    const capturedUrl = URL.createObjectURL(blob)
     setCapturedImageUrl((current) => {
       if (current) URL.revokeObjectURL(current)
-      return URL.createObjectURL(blob)
+      return capturedUrl
     })
     setOcrResult(null)
     setStatus('OCR_PROCESSING')
@@ -352,19 +365,33 @@ export function StaffOcrCheckInPanel({
         buildingName: BUILDING_NAME,
         gateName: GATE_NAME,
         error: response.mode === 'NEEDS_MANUAL_PLATE' ? response.error ?? 'No plate detected' : null,
+        imageUrl: null,
+        thumbnailUrl: null,
+        imageMimeType: null,
+        imageSizeBytes: null,
         durationMs: 0,
       }
       setOcrResult(nextOcrResult)
 
       if (response.mode === 'CHECK_OUT') {
+        const exitEvidence = buildExitEvidenceFromOcr({
+          ocrEvidenceId: response.ocrEvidenceId,
+          plate: response.plateOcr ?? response.plateConfirmed,
+          confidence: response.confidence ?? null,
+          localImageUrl: capturedUrl,
+        })
         setStatus('OCR_SUCCESS')
         toasts.showInfo(
           `Open session found for ${formatPlateForDisplay(response.plateConfirmed)}. Continue checkout.`,
         )
         onRouteToCheckout?.({
-          checkout: response.checkout,
+          checkout: {
+            ...response.checkout,
+            exitEvidence,
+          },
           plateConfirmed: formatPlateForDisplay(response.plateConfirmed),
           subMode: response.subMode,
+          exitEvidence,
         })
         return
       }
@@ -926,6 +953,30 @@ function formatLookupMode(mode: VehicleLookupMode) {
   if (mode === 'SUBSCRIBER') return 'Subscriber'
   if (mode === 'REGISTERED') return 'Registered'
   return 'Walk-in'
+}
+
+function buildExitEvidenceFromOcr({
+  ocrEvidenceId,
+  plate,
+  confidence,
+  localImageUrl,
+}: {
+  ocrEvidenceId?: string
+  plate?: string | null
+  confidence?: number | null
+  localImageUrl?: string | null
+}): CheckoutEvidence | null {
+  if (!ocrEvidenceId && !localImageUrl && !plate) return null
+
+  return {
+    id: ocrEvidenceId ?? 'exit-scan-local',
+    thumbnailUrl: null,
+    imageUrl: null,
+    capturedAt: new Date().toISOString(),
+    ocrPlate: plate ? normalizePlateForApi(plate) : null,
+    ocrConfidence: confidence ?? null,
+    localImageUrl: localImageUrl ?? null,
+  }
 }
 
 function EvidencePreview({ title, imageUrl }: { title: string; imageUrl: string | null }) {
