@@ -12,6 +12,7 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 import api from '../../lib/api'
+import { RequestManagerReviewDialog } from '../../components/operation-issues/RequestManagerReviewDialog'
 import { useToasts } from '../../lib/use-toasts'
 import { formatDateTimeVN } from '../../lib/date-time'
 import {
@@ -210,9 +211,9 @@ export default function LostTicket() {
                   </Field>
 
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                    <div className="flex gap-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                       <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" strokeWidth={1.8} />
-                      <div>
+                      <div className="min-w-0 flex-1">
                         <p className="text-sm font-black text-amber-900">
                           Identity verification required
                         </p>
@@ -220,6 +221,21 @@ export default function LostTicket() {
                           Confirm that the ID card and driver license belong to the requesting person. If identity cannot be verified, contact the manager before proceeding.
                         </p>
                       </div>
+                      <RequestManagerReviewDialog
+                        defaultType="lost_ticket_review"
+                        defaultSeverity="critical"
+                        defaultNote={`Lost ticket identity review for ${licensePlate || 'unknown plate'}.`}
+                        sessionId={preview?.session.id}
+                        plateNumber={licensePlate}
+                        trigger={
+                          <button
+                            type="button"
+                            className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-xl border border-amber-300 bg-white px-3 text-xs font-black text-amber-900 shadow-sm transition hover:bg-amber-100"
+                          >
+                            Request Manager Review
+                          </button>
+                        }
+                      />
                     </div>
                   </div>
 

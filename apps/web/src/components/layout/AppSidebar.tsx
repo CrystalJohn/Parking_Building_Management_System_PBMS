@@ -32,6 +32,8 @@ import {
   SidebarRail,
   SidebarSeparator,
 } from '@/components/ui/sidebar'
+import { Badge } from '@/components/ui/badge'
+import { useManagerOperations } from '@/lib/ManagerOperationsContext'
 import { clearAuth, getUser, type AuthUser } from '@/lib/auth'
 import { useTheme } from '@/lib/ThemeContext'
 import { cn } from '@/lib/utils'
@@ -187,10 +189,12 @@ export default function AppSidebar() {
 
 function AppSidebarItem({ item }: { item: NavItem }) {
   const location = useLocation()
+  const { summary } = useManagerOperations()
   const isActive = item.match
     ? item.match(location.pathname, location.search)
     : location.pathname === item.to
   const Icon = item.icon
+  const issueCount = item.to === '/manager/operations' ? summary.openTotal : 0
 
   return (
     <SidebarMenuItem>
@@ -206,6 +210,11 @@ function AppSidebarItem({ item }: { item: NavItem }) {
         <NavLink to={item.to}>
           <Icon className="size-4" strokeWidth={1.8} />
           <span>{item.label}</span>
+          {issueCount > 0 ? (
+            <Badge className="ml-auto h-5 min-w-5 justify-center rounded-full px-1.5 text-[10px] font-black group-data-[collapsible=icon]:hidden">
+              {issueCount > 99 ? '99+' : issueCount}
+            </Badge>
+          ) : null}
         </NavLink>
       </SidebarMenuButton>
     </SidebarMenuItem>

@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ConflictException } from '@nestjs/common';
+import { NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { UsersService } from './users.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -33,6 +33,7 @@ describe('UsersService', () => {
     user: {
       findMany: jest.Mock;
       findUnique: jest.Mock;
+      count: jest.Mock;
       create: jest.Mock;
       update: jest.Mock;
     };
@@ -43,6 +44,7 @@ describe('UsersService', () => {
       user: {
         findMany: jest.fn(),
         findUnique: jest.fn(),
+        count: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
       },
@@ -128,7 +130,7 @@ describe('UsersService', () => {
       const updated = makeUser({ fullName: 'Updated Name' });
       prisma.user.update.mockResolvedValue(updated);
 
-      const result = await service.update('uuid-1', { fullName: 'Updated Name' });
+      const result = await service.update('uuid-1', { fullName: 'Updated Name' }, 'admin-actor');
 
       expect(result).toEqual(updated);
       expect(prisma.user.update).toHaveBeenCalledWith(
@@ -140,7 +142,7 @@ describe('UsersService', () => {
       prisma.user.findUnique.mockResolvedValue(makeUser());
       prisma.user.update.mockResolvedValue(makeUser());
 
-      await service.update('uuid-1', { password: 'newpassword' });
+      await service.update('uuid-1', { password: 'newpassword' }, 'admin-actor');
 
       const updateCall = prisma.user.update.mock.calls[0][0];
       expect(updateCall.data.passwordHash).toBeDefined();
@@ -152,9 +154,49 @@ describe('UsersService', () => {
     it('throws NotFoundException when user does not exist', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
 
-      await expect(service.update('non-existent', { fullName: 'X' })).rejects.toThrow(
+      await expect(service.update('non-existent', { fullName: 'X' }, 'admin-actor')).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it('rejects self-deactivation', async () => {
+      prisma.user.findUnique.mockResolvedValue(makeUser({ id: 'admin-self', role: Role.admin }));
+
+      await expect(
+        service.update('admin-self', { isActive: false }, 'admin-self'),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects self-role downgrade from admin', async () => {
+      prisma.user.findUnique.mockResolvedValue(makeUser({ id: 'admin-self', role: Role.admin }));
+
+      await expect(
+        service.update('admin-self', { role: Role.manager }, 'admin-self'),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects demoting the last active admin', async () => {
+      prisma.user.findUnique.mockResolvedValue(makeUser({ id: 'admin-1', role: Role.admin, isActive: true }));
+      prisma.user.count.mockResolvedValue(1);
+
+      await expect(
+        service.update('admin-1', { role: Role.manager }, 'another-admin'),
+      ).rejects.toThrow(ConflictException);
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('allows demoting an admin when another active admin exists', async () => {
+      prisma.user.findUnique.mockResolvedValue(makeUser({ id: 'admin-1', role: Role.admin, isActive: true }));
+      prisma.user.count.mockResolvedValue(2);
+      const updated = makeUser({ id: 'admin-1', role: Role.manager });
+      prisma.user.update.mockResolvedValue(updated);
+
+      const result = await service.update('admin-1', { role: Role.manager }, 'admin-2');
+
+      expect(result.role).toBe(Role.manager);
+      expect(prisma.user.update).toHaveBeenCalled();
     });
   });
 
@@ -164,7 +206,7 @@ describe('UsersService', () => {
       const deactivated = makeUser({ isActive: false });
       prisma.user.update.mockResolvedValue(deactivated);
 
-      const result = await service.deactivate('uuid-1');
+      const result = await service.deactivate('uuid-1', 'admin-actor');
 
       expect(result.isActive).toBe(false);
       expect(prisma.user.update).toHaveBeenCalledWith(
@@ -178,7 +220,26 @@ describe('UsersService', () => {
     it('throws NotFoundException when user does not exist', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
 
-      await expect(service.deactivate('non-existent')).rejects.toThrow(NotFoundException);
+      await expect(service.deactivate('non-existent', 'admin-actor')).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects deactivating your own account', async () => {
+      prisma.user.findUnique.mockResolvedValue(makeUser({ id: 'admin-self', role: Role.admin }));
+
+      await expect(service.deactivate('admin-self', 'admin-self')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects deactivating the last active admin', async () => {
+      prisma.user.findUnique.mockResolvedValue(makeUser({ id: 'admin-1', role: Role.admin, isActive: true }));
+      prisma.user.count.mockResolvedValue(1);
+
+      await expect(service.deactivate('admin-1', 'admin-2')).rejects.toThrow(
+        ConflictException,
+      );
+      expect(prisma.user.update).not.toHaveBeenCalled();
     });
   });
 });

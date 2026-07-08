@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
-import { Roles } from '../auth/decorators';
+import { CurrentUser, Roles } from '../auth/decorators';
 import { UsersService } from './users.service';
 import { CreateUserDto, UpdateUserDto } from './dto';
 
@@ -50,8 +50,9 @@ export class UsersController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserDto,
+    @CurrentUser('id') actorId: string,
   ) {
-    return this.usersService.update(id, dto);
+    return this.usersService.update(id, dto, actorId);
   }
 
   /**
@@ -61,7 +62,10 @@ export class UsersController {
    */
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
-  deactivate(@Param('id', ParseUUIDPipe) id: string) {
-    return this.usersService.deactivate(id);
+  deactivate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') actorId: string,
+  ) {
+    return this.usersService.deactivate(id, actorId);
   }
 }

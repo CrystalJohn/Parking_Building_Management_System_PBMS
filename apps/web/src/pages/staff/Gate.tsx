@@ -45,6 +45,7 @@ import {
   type SessionStatus,
 } from '../../lib/sessions-api'
 import { Receipt } from '../../components/receipt/Receipt'
+import { RequestManagerReviewDialog } from '../../components/operation-issues/RequestManagerReviewDialog'
 import { QRScanner } from '../../components/qr-scanner/QRScanner'
 import { RecentSessionsCard } from '../../components/ui/RecentSessionsCard'
 import { formatDateTimeVN } from '../../lib/date-time'
@@ -896,6 +897,13 @@ function CheckOutPanel({
   const showRecentHistory = !workflow
   const showInvalidState =
     workflow && !canRequestCheckout && !canConfirmPayment && !canConfirmExit && !isCompleted && !isBankQrPending && !isBankQrExpired && !isBankQrFailed
+  const managerReviewType =
+    isBankQrFailed || isBankQrExpired || workflow?.payment?.status === 'pending'
+      ? 'payment_issue'
+      : 'manual_review'
+  const managerReviewNote = workflow
+    ? `Review checkout case for ${plateDisplay}. Session status: ${workflow.session.status}. Payment status: ${workflow.payment?.status ?? 'not_started'}.`
+    : ''
 
   return (
     <div className="space-y-4">
@@ -1115,6 +1123,17 @@ function CheckOutPanel({
                       <Printer className="size-4" />
                       Print
                     </Button>
+                  ) : null}
+                  {!isCompleted ? (
+                    <RequestManagerReviewDialog
+                      defaultType={managerReviewType}
+                      defaultSeverity={isBankQrFailed || showInvalidState ? 'critical' : 'warning'}
+                      defaultNote={managerReviewNote}
+                      sessionId={workflow.session.id}
+                      paymentId={workflow.payment?.id}
+                      slotId={workflow.slot.id}
+                      plateNumber={workflow.session.licensePlate}
+                    />
                   ) : null}
                   {canConfirmPayment && canGenerateBankQr ? (
                     <Button

@@ -16,6 +16,7 @@ import {
   Timer,
 } from 'lucide-react'
 import api from '../../lib/api'
+import { useManagerOperations } from '../../lib/ManagerOperationsContext'
 import {
   getAdminPendingPayments,
   getAdminSummary,
@@ -27,6 +28,7 @@ import {
   type PaymentMonitoringRisk,
 } from '../../lib/admin-api'
 import { getActiveSessionBySlotId, type ActiveSessionDetail } from '../../lib/sessions-api'
+import { type OperationIssue } from '../../lib/operation-issues-api'
 import { formatDateTimeVN } from '../../lib/date-time'
 
 type SlotStatus = 'available' | 'occupied' | 'reserved' | 'maintenance'
@@ -105,6 +107,7 @@ export default function Dashboard() {
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null)
   const [sessionDetail, setSessionDetail] = useState<ActiveSessionDetail | null>(null)
   const [sessionLoading, setSessionLoading] = useState(false)
+  const { issues: operationIssues, summary: operationIssueSummary, connected: issueStreamConnected } = useManagerOperations()
 
   const handleSlotSelect = useCallback(async (slot: Slot) => {
     setSelectedSlot(slot)
@@ -216,6 +219,12 @@ export default function Dashboard() {
                 <KpiCard key={kpi.label} {...kpi} />
               ))}
             </section>
+
+            <OperationsQueueCard
+              issues={operationIssues}
+              openTotal={operationIssueSummary.openTotal}
+              connected={issueStreamConnected}
+            />
 
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-200/60 transition-colors dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -642,6 +651,58 @@ export function OperationalFlagsCard({
           ))}
         </ul>
       ) : null}
+    </InfoCard>
+  )
+}
+
+export function OperationsQueueCard({
+  issues,
+  openTotal,
+  connected,
+}: {
+  issues: OperationIssue[]
+  openTotal: number
+  connected: boolean
+}) {
+  const activeIssues = issues
+    .filter((issue) => issue.status === 'open' || issue.status === 'in_review')
+    .slice(0, 3)
+
+  return (
+    <InfoCard
+      title="Operations Queue"
+      icon={<ClipboardList className="h-4 w-4" strokeWidth={1.8} />}
+      action={<LinkButton to="/manager/operations" label="Open Queue" />}
+    >
+      <div className="grid gap-2 sm:grid-cols-[160px_minmax(0,1fr)]">
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-white/10 dark:bg-slate-950/60">
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Open reviews</p>
+          <p className="mt-2 text-3xl font-black text-cyan-700 dark:text-cyan-100">{openTotal}</p>
+          <p className="mt-1 text-xs font-semibold text-slate-500">{connected ? 'Live stream' : 'Fallback refresh'}</p>
+        </div>
+        {activeIssues.length === 0 ? (
+          <EmptyInline title="No staff review requests waiting." />
+        ) : (
+          <ul className="grid gap-2">
+            {activeIssues.map((issue) => (
+              <li
+                key={issue.id}
+                className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-white/10 dark:bg-slate-950/60"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-black text-slate-950 dark:text-white">
+                    {issue.plateNumber ?? issue.session?.plateNumberConfirmed ?? issue.session?.licensePlate ?? 'Manual review'}
+                  </p>
+                  <p className="mt-0.5 truncate text-xs font-semibold text-slate-500">
+                    {titleCase(issue.type.replace(/_/g, ' '))} · {issue.status.replace(/_/g, ' ')}
+                  </p>
+                </div>
+                <StatusBadge tone={issue.severity === 'critical' ? 'critical' : issue.severity === 'warning' ? 'warning' : 'normal'} label={issue.severity} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </InfoCard>
   )
 }

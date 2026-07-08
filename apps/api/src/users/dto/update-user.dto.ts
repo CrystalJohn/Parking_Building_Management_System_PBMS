@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsString,
   IsOptional,
   IsEnum,
@@ -34,4 +35,8 @@ export class UpdateUserDto {
   @IsOptional()
   @IsEnum(Role, { message: 'Role must be one of: admin, manager, staff, driver' })
   role?: Role;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }

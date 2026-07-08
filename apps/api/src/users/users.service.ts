@@ -1,8 +1,10 @@
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
   ConflictException,
 } from '@nestjs/common';
+import { Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto, UpdateUserDto } from './dto';
@@ -94,9 +96,9 @@ export class UsersService {
    * Update user fields. If password is provided, re-hash it.
    * Req 12.2
    */
-  async update(id: string, dto: UpdateUserDto) {
-    // Ensure user exists
-    await this.findOne(id);
+  async update(id: string, dto: UpdateUserDto, actorId: string) {
+    const existingUser = await this.findOne(id);
+    await this.assertSafeAdminMutation(existingUser, dto, actorId);
 
     const { password, username, fullName, ...rest } = dto;
 
@@ -138,9 +140,9 @@ export class UsersService {
    * The JwtStrategy checks isActive on every request, so this immediately
    * revokes all active sessions for that account (Req 12.4).
    */
-  async deactivate(id: string) {
-    // Ensure user exists
-    await this.findOne(id);
+  async deactivate(id: string, actorId: string) {
+    const existingUser = await this.findOne(id);
+    await this.assertSafeAdminMutation(existingUser, { isActive: false }, actorId);
 
     return this.prisma.user.update({
       where: { id },
@@ -157,5 +159,42 @@ export class UsersService {
   private normalizeNullableText(value: string | null | undefined): string | null {
     const normalized = value?.trim();
     return normalized || null;
+  }
+
+  private async assertSafeAdminMutation(
+    existingUser: Awaited<ReturnType<UsersService['findOne']>>,
+    dto: Pick<UpdateUserDto, 'role' | 'isActive'>,
+    actorId: string,
+  ) {
+    const isSelf = existingUser.id === actorId;
+    const nextRole = dto.role ?? existingUser.role;
+    const nextIsActive = dto.isActive ?? existingUser.isActive;
+    const roleDowngradedFromAdmin =
+      existingUser.role === Role.admin && nextRole !== Role.admin;
+    const removingActiveAdmin =
+      existingUser.role === Role.admin &&
+      existingUser.isActive &&
+      (!nextIsActive || nextRole !== Role.admin);
+
+    if (isSelf && !nextIsActive) {
+      throw new BadRequestException('You cannot deactivate your own account');
+    }
+
+    if (isSelf && roleDowngradedFromAdmin) {
+      throw new BadRequestException('You cannot change your own admin role');
+    }
+
+    if (removingActiveAdmin) {
+      const activeAdminCount = await this.prisma.user.count({
+        where: {
+          role: Role.admin,
+          isActive: true,
+        },
+      });
+
+      if (activeAdminCount <= 1) {
+        throw new ConflictException('You cannot remove the last active admin');
+      }
+    }
   }
 }

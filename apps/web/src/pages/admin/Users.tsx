@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '../../lib/api'
+import { getUser } from '../../lib/auth'
 import {
   Alert,
   AlertDescription,
@@ -101,6 +102,7 @@ const ROLE_BADGE_CLASS: Record<Role, string> = {
 }
 
 export default function Users() {
+  const currentUser = getUser()
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -130,6 +132,11 @@ export default function Users() {
   }
 
   const handleToggleActive = async (user: User) => {
+    if (user.id === currentUser?.id && user.isActive) {
+      toast.error('You cannot deactivate your own account')
+      return
+    }
+
     const action = user.isActive ? 'deactivate' : 'activate'
 
     try {
@@ -185,7 +192,7 @@ export default function Users() {
 
   const filteredUsers = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
-    return users.filter((user) => {
+    const matchingUsers = users.filter((user) => {
       const roleMatches = filterRole === 'all' || user.role === filterRole
       const queryMatches =
         !normalizedQuery ||
@@ -194,7 +201,14 @@ export default function Users() {
         (user.fullName ?? '').toLowerCase().includes(normalizedQuery)
       return roleMatches && queryMatches
     })
-  }, [filterRole, query, users])
+
+    return matchingUsers.sort((left, right) => {
+      const leftIsCurrent = left.id === currentUser?.id
+      const rightIsCurrent = right.id === currentUser?.id
+      if (leftIsCurrent === rightIsCurrent) return 0
+      return leftIsCurrent ? -1 : 1
+    })
+  }, [currentUser?.id, filterRole, query, users])
 
   const pendingAction = pendingStatusUser?.isActive ? 'deactivate' : 'activate'
 
@@ -295,12 +309,27 @@ export default function Users() {
               {filteredUsers.map((user) => (
                 <TableRow
                   key={user.id}
-                  className={cn(!user.isActive && 'bg-muted/40 opacity-75')}
+                  className={cn(
+                    user.id === currentUser?.id && 'bg-primary/5',
+                    !user.isActive && 'bg-muted/40 opacity-75',
+                  )}
                 >
                   <TableCell className="px-5 py-4 whitespace-normal">
-                    <p className="font-medium text-foreground">
-                      {user.fullName || 'Unnamed account'}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium text-foreground">
+                        {user.fullName || 'Unnamed account'}
+                      </p>
+                      {user.id === currentUser?.id ? (
+                        <Badge variant="outline" className="border-border bg-background/70 text-foreground">
+                          You
+                        </Badge>
+                      ) : null}
+                    </div>
+                    {user.id === currentUser?.id ? (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Current account
+                      </p>
+                    ) : null}
                     <p className="mt-1 font-mono text-xs text-muted-foreground">
                       {user.phone}
                     </p>
@@ -338,17 +367,24 @@ export default function Users() {
                           <Pencil className="size-4" strokeWidth={1.8} />
                           Edit account
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                          variant={user.isActive ? 'destructive' : 'default'}
-                          onSelect={() => setPendingStatusUser(user)}
-                        >
-                          {user.isActive ? (
+                        {user.id === currentUser?.id && user.isActive ? (
+                          <DropdownMenuItem disabled>
                             <Power className="size-4" strokeWidth={1.8} />
-                          ) : (
-                            <RotateCcw className="size-4" strokeWidth={1.8} />
-                          )}
-                          {user.isActive ? 'Deactivate' : 'Activate'}
-                        </DropdownMenuItem>
+                            You cannot deactivate your own account
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem
+                            variant={user.isActive ? 'destructive' : 'default'}
+                            onSelect={() => setPendingStatusUser(user)}
+                          >
+                            {user.isActive ? (
+                              <Power className="size-4" strokeWidth={1.8} />
+                            ) : (
+                              <RotateCcw className="size-4" strokeWidth={1.8} />
+                            )}
+                            {user.isActive ? 'Deactivate' : 'Activate'}
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -371,6 +407,7 @@ export default function Users() {
       <UserDialog
         open={dialogOpen}
         user={editingUser}
+        currentUserId={currentUser?.id ?? null}
         onOpenChange={handleDialogOpenChange}
         onSave={handleDialogSaved}
       />
@@ -408,15 +445,18 @@ export default function Users() {
 function UserDialog({
   open,
   user,
+  currentUserId,
   onOpenChange,
   onSave,
 }: {
   open: boolean
   user: User | null
+  currentUserId: string | null
   onOpenChange: (open: boolean) => void
   onSave: () => Promise<void>
 }) {
   const isEdit = user !== null
+  const isCurrentUser = user?.id === currentUserId
   const [phone, setPhone] = useState('')
   const [username, setUsername] = useState('')
   const [fullName, setFullName] = useState('')
@@ -448,7 +488,7 @@ function UserDialog({
         await api.patch(`/users/${user.id}`, {
           username: normalizedUsername || null,
           fullName: normalizedFullName || null,
-          role,
+          ...(isCurrentUser ? {} : { role }),
         })
         toast.success('Account updated')
       } else {
@@ -540,7 +580,7 @@ function UserDialog({
             <Select
               value={role}
               onValueChange={(value) => setRole(value as Role)}
-              disabled={saving}
+              disabled={saving || isCurrentUser}
             >
               <SelectTrigger id="user-role" className="h-10 w-full">
                 <SelectValue placeholder="Select role" />
@@ -553,6 +593,11 @@ function UserDialog({
                 ))}
               </SelectContent>
             </Select>
+            {isCurrentUser ? (
+              <p className="text-xs leading-5 text-muted-foreground">
+                You cannot change your own admin role from this screen.
+              </p>
+            ) : null}
           </div>
 
           {!isEdit ? (

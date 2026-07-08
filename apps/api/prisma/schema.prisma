@@ -80,6 +80,33 @@ enum NotificationType {
   reservation_expiring_soon
 }
 
+enum OperationIssueType {
+  lost_ticket_review
+  payment_issue
+  ocr_mismatch
+  reservation_exception
+  slot_state_mismatch
+  manual_review
+}
+
+enum OperationIssueSeverity {
+  critical
+  warning
+  info
+}
+
+enum OperationIssueStatus {
+  open
+  in_review
+  resolved
+  dismissed
+}
+
+enum OperationIssueSource {
+  staff
+  system
+}
+
 // ─── Models ──────────────────────────────────────────────────────────────────
 
 model User {
@@ -105,6 +132,8 @@ model User {
   pricingUpdates      PricingConfig[]  @relation("PricingUpdatedBy")
   vehicleUsers        VehicleUser[]
   notifications       Notification[]
+  operationIssuesCreated OperationIssue[] @relation("OperationIssueCreatedBy")
+  operationIssuesReviewed OperationIssue[] @relation("OperationIssueReviewedBy")
 
   @@map("users")
 }
@@ -184,6 +213,7 @@ model Slot {
   floor        Floor            @relation(fields: [floorId], references: [id])
   sessions     ParkingSession[]
   reservations Reservation[]
+  operationIssues OperationIssue[]
 
   @@index([status, vehicleType], map: "idx_slot_status_type")
   @@map("slots")
@@ -233,6 +263,7 @@ model ParkingSession {
   ticketIssuedByStaff User?  @relation("TicketIssuedBy", fields: [ticketIssuedByStaffId], references: [id])
   payment      Payment?
   ocrEvidences OcrEvidence[]
+  operationIssues OperationIssue[]
 
   @@index([licensePlate, status], map: "idx_session_plate_status")
   @@index([vehicleId], map: "idx_session_vehicle")
@@ -262,6 +293,7 @@ model Reservation {
   vehicle Vehicle?        @relation(fields: [vehicleId], references: [id])
   session ParkingSession?
   ocrEvidences OcrEvidence[]
+  operationIssues OperationIssue[]
 
   @@index([status, expiresAt], map: "idx_reservation_active")
   @@index([vehicleId], map: "idx_reservation_vehicle")
@@ -305,10 +337,47 @@ model Payment {
   // Relations
   session      ParkingSession @relation(fields: [sessionId], references: [id])
   receivedUser User?          @relation("ReceivedBy", fields: [receivedBy], references: [id])
+  operationIssues OperationIssue[]
 
   @@index([providerOrderCode], map: "idx_payment_provider_order_code")
   @@index([providerRef], map: "idx_payment_provider_ref")
   @@map("payments")
+}
+
+model OperationIssue {
+  id             String                 @id @default(uuid())
+  type           OperationIssueType
+  severity       OperationIssueSeverity @default(warning)
+  status         OperationIssueStatus   @default(open)
+  source         OperationIssueSource   @default(staff)
+  note           String
+  resolutionNote String?                @map("resolution_note")
+  plateNumber    String?                @map("plate_number")
+  sessionId      String?                @map("session_id")
+  reservationId  String?                @map("reservation_id")
+  paymentId      String?                @map("payment_id")
+  slotId         Int?                   @map("slot_id")
+  createdById    String?                @map("created_by_id")
+  reviewedById   String?                @map("reviewed_by_id")
+  reviewedAt     DateTime?              @map("reviewed_at") @db.Timestamptz(3)
+  resolvedAt     DateTime?              @map("resolved_at") @db.Timestamptz(3)
+  createdAt      DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  session     ParkingSession? @relation(fields: [sessionId], references: [id])
+  reservation Reservation?    @relation(fields: [reservationId], references: [id])
+  payment     Payment?        @relation(fields: [paymentId], references: [id])
+  slot        Slot?           @relation(fields: [slotId], references: [id])
+  createdBy   User?           @relation("OperationIssueCreatedBy", fields: [createdById], references: [id])
+  reviewedBy  User?           @relation("OperationIssueReviewedBy", fields: [reviewedById], references: [id])
+
+  @@index([status, severity, createdAt], map: "idx_operation_issues_queue")
+  @@index([type, status], map: "idx_operation_issues_type_status")
+  @@index([sessionId], map: "idx_operation_issues_session")
+  @@index([reservationId], map: "idx_operation_issues_reservation")
+  @@index([paymentId], map: "idx_operation_issues_payment")
+  @@index([slotId], map: "idx_operation_issues_slot")
+  @@map("operation_issues")
 }
 
 model PricingConfig {
