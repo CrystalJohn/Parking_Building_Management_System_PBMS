@@ -200,6 +200,39 @@ function normalizeAdminSummary(data: AdminSummary): AdminSummary {
   }
 }
 
+export interface AdminReservationAuditItem {
+  id: string
+  status: 'active' | 'fulfilled' | 'expired' | 'cancelled'
+  driverName: string | null
+  driverPhone: string | null
+  plateNumber: string | null
+  vehicleType: 'car' | 'motorbike' | null
+  slotCode: string | null
+  createdAt: string
+  expiresAt: string | null
+  fulfilledAt: string | null
+  timeLeftMinutes: number | null
+  fulfilledSessionCode: string | null
+}
+
+export interface AdminReservationAudit {
+  meta: {
+    selectedDate: string
+    timezone: string
+    range: {
+      start: string
+      end: string
+    }
+  }
+  summary: {
+    currentlyReserved: number
+    expiringSoon: number
+    expiredToday: number
+    fulfilledToday: number
+  }
+  watchlist: AdminReservationAuditItem[]
+}
+
 export async function getAdminOperationsFlags() {
   const { data } = await api.get<AdminOperationsFlags>('/admin/operations/flags')
   return data
@@ -207,5 +240,12 @@ export async function getAdminOperationsFlags() {
 
 export async function getAdminPendingPayments() {
   const { data } = await api.get<AdminPendingPayments>('/admin/operations/pending-payments')
+  return data
+}
+
+export async function getAdminReservationAudit(date?: string) {
+  const { data } = await api.get<AdminReservationAudit>('/admin/reservations/audit', {
+    params: { date },
+  })
   return data
 }

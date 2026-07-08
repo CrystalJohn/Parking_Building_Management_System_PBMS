@@ -12,6 +12,25 @@ export class AdminController {
 
   @Get('summary')
   getSummary(@Query('date') dateStr?: string) {
+    return this.adminService.getSummary(this.parseAuditDate(dateStr));
+  }
+
+  @Get('reservations/audit')
+  getReservationAudit(@Query('date') dateStr?: string) {
+    return this.adminService.getReservationAudit(this.parseAuditDate(dateStr));
+  }
+
+  @Get('operations/flags')
+  getOperationsFlags() {
+    return this.adminService.getOperationsFlags();
+  }
+
+  @Get('operations/pending-payments')
+  getPendingPayments() {
+    return this.adminService.getPendingPayments();
+  }
+
+  private parseAuditDate(dateStr?: string) {
     let targetDate = new Date();
 
     if (dateStr) {
@@ -38,16 +57,6 @@ export class AdminController {
       targetDate = parsedDate;
     }
 
-    return this.adminService.getSummary(targetDate);
-  }
-
-  @Get('operations/flags')
-  getOperationsFlags() {
-    return this.adminService.getOperationsFlags();
-  }
-
-  @Get('operations/pending-payments')
-  getPendingPayments() {
-    return this.adminService.getPendingPayments();
+    return targetDate;
   }
 }

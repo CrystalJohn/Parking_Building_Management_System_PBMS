@@ -548,6 +548,102 @@ describe('AdminService', () => {
       expect(result.items[0].waitingLabel).toEqual(expect.any(String));
     });
   });
+
+  describe('getReservationAudit', () => {
+    beforeEach(() => {
+      prisma.reservation.findMany
+        .mockResolvedValueOnce([
+          makeReservationAudit({
+            id: 'reservation-active',
+            status: ReservationStatus.active,
+            expiresAt: new Date('2026-06-25T03:04:00.000Z'),
+            slot: {
+              code: 'T1-A-03',
+              status: SlotStatus.reserved,
+              floor: { floorNumber: 1, name: 'T1' },
+            },
+          }),
+        ])
+        .mockResolvedValueOnce([
+          makeReservationAudit({
+            id: 'reservation-expired',
+            status: ReservationStatus.expired,
+            expiresAt: new Date('2026-06-25T01:00:00.000Z'),
+            slot: {
+              code: 'T2-B-02',
+              status: SlotStatus.available,
+              floor: { floorNumber: 2, name: 'T2' },
+            },
+          }),
+        ])
+        .mockResolvedValueOnce([
+          makeReservationAudit({
+            id: 'reservation-fulfilled',
+            status: ReservationStatus.fulfilled,
+            session: {
+              sessionCode: 'PBMS-RSV',
+              checkInTime: new Date('2026-06-25T02:30:00.000Z'),
+            },
+          }),
+        ]);
+    });
+
+    it('counts active reservations with reserved slots in currentlyReserved', async () => {
+      const result = await service.getReservationAudit(NOW);
+
+      expect(result.summary.currentlyReserved).toBe(1);
+      expect(result.watchlist).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 'reservation-active',
+            status: ReservationStatus.active,
+            slotCode: 'T1-A-03',
+          }),
+        ]),
+      );
+    });
+
+    it('counts active reservations expiring within 5 minutes in expiringSoon', async () => {
+      const result = await service.getReservationAudit(NOW);
+
+      expect(result.summary.expiringSoon).toBe(1);
+      expect(result.watchlist[0]).toEqual(
+        expect.objectContaining({
+          id: 'reservation-active',
+          timeLeftMinutes: 4,
+        }),
+      );
+    });
+
+    it('counts expired reservations on the selected day', async () => {
+      const result = await service.getReservationAudit(NOW);
+
+      expect(result.summary.expiredToday).toBe(1);
+      expect(result.watchlist).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 'reservation-expired',
+            status: ReservationStatus.expired,
+          }),
+        ]),
+      );
+    });
+
+    it('counts fulfilled reservations by linked session check-in on the selected day', async () => {
+      const result = await service.getReservationAudit(NOW);
+
+      expect(result.summary.fulfilledToday).toBe(1);
+      expect(result.watchlist).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 'reservation-fulfilled',
+            status: ReservationStatus.fulfilled,
+            fulfilledSessionCode: 'PBMS-RSV',
+          }),
+        ]),
+      );
+    });
+  });
 });
 
 function makeSlot({
@@ -640,6 +736,31 @@ function makeMonitoringPayment(overrides: Record<string, unknown> = {}) {
         floor: { floorNumber: 1, name: 'T1' },
       },
     },
+    ...overrides,
+  };
+}
+
+function makeReservationAudit(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'reservation-uuid',
+    status: ReservationStatus.active,
+    vehicleType: VehicleType.car,
+    createdAt: new Date('2026-06-25T01:00:00.000Z'),
+    expiresAt: new Date('2026-06-25T03:30:00.000Z'),
+    driver: {
+      fullName: 'Driver One',
+      phone: '0900000000',
+    },
+    vehicle: {
+      plateNumber: '59A12345',
+      vehicleType: VehicleType.car,
+    },
+    slot: {
+      code: 'T1-A-01',
+      status: SlotStatus.reserved,
+      floor: { floorNumber: 1, name: 'T1' },
+    },
+    session: null,
     ...overrides,
   };
 }

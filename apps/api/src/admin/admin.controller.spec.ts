@@ -18,6 +18,7 @@ describe('AdminController RBAC', () => {
           provide: AdminService,
           useValue: {
             getSummary: jest.fn(),
+            getReservationAudit: jest.fn(),
             getOperationsFlags: jest.fn(),
             getPendingPayments: jest.fn(),
           },
@@ -42,12 +43,22 @@ describe('AdminController RBAC', () => {
     expect(canActivate(role, controller.getOperationsFlags, AdminController, guard)).toBe(true);
   });
 
+  it.each([Role.admin, Role.manager])('%s can access /admin/reservations/audit', (role) => {
+    expect(canActivate(role, controller.getReservationAudit, AdminController, guard)).toBe(true);
+  });
+
   it.each([Role.admin, Role.manager])('%s can access /admin/operations/pending-payments', (role) => {
     expect(canActivate(role, controller.getPendingPayments, AdminController, guard)).toBe(true);
   });
 
   it.each([Role.staff, Role.driver])('%s cannot access /admin/operations/pending-payments', (role) => {
     expect(canActivate(role, controller.getPendingPayments, AdminController, guard)).toBe(false);
+  });
+
+  it('rejects invalid reservation audit date format', () => {
+    expect(() => controller.getReservationAudit('2026/07/04')).toThrow(
+      'Invalid date format. Expected YYYY-MM-DD',
+    );
   });
 });
 

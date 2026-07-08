@@ -15,6 +15,10 @@ import type {
   PaymentMonitoringRisk,
 } from './dto/admin-pending-payments.dto';
 import type {
+  AdminReservationAuditDto,
+  AdminReservationAuditItemDto,
+} from './dto/admin-reservation-audit.dto';
+import type {
   AdminSummaryDto,
   FloorSlotMetricDto,
   SlotSummaryDto,
@@ -462,7 +466,125 @@ export class AdminService {
       items,
     };
   }
+
+  async getReservationAudit(now = new Date()): Promise<AdminReservationAuditDto> {
+    const today = getHoChiMinhDayRange(now);
+    const soonThreshold = new Date(now.getTime() + 5 * 60 * 1000);
+
+    const [activeReserved, expiredToday, fulfilledToday] = await Promise.all([
+      this.prisma.reservation.findMany({
+        where: {
+          status: ReservationStatus.active,
+          slot: { status: SlotStatus.reserved },
+        },
+        include: reservationAuditInclude,
+        orderBy: { expiresAt: 'asc' },
+      }),
+      this.prisma.reservation.findMany({
+        where: {
+          status: ReservationStatus.expired,
+          expiresAt: { gte: today.start, lt: today.end },
+        },
+        include: reservationAuditInclude,
+        orderBy: { expiresAt: 'desc' },
+      }),
+      this.prisma.reservation.findMany({
+        where: {
+          status: ReservationStatus.fulfilled,
+          session: {
+            checkInTime: { gte: today.start, lt: today.end },
+          },
+        },
+        include: reservationAuditInclude,
+        orderBy: { session: { checkInTime: 'desc' } },
+      }),
+    ]);
+
+    const expiringSoon = activeReserved.filter((reservation) => {
+      if (!reservation.expiresAt) return false;
+      return reservation.expiresAt.getTime() > now.getTime() && reservation.expiresAt.getTime() <= soonThreshold.getTime();
+    });
+
+    const watchlist = buildReservationWatchlist({
+      now,
+      activeReserved,
+      expiredToday,
+      fulfilledToday,
+    });
+
+    const reportDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(now);
+
+    return {
+      meta: {
+        selectedDate: reportDate,
+        timezone: 'Asia/Ho_Chi_Minh',
+        range: {
+          start: today.start.toISOString(),
+          end: today.end.toISOString(),
+        },
+      },
+      summary: {
+        currentlyReserved: activeReserved.length,
+        expiringSoon: expiringSoon.length,
+        expiredToday: expiredToday.length,
+        fulfilledToday: fulfilledToday.length,
+      },
+      watchlist,
+    };
+  }
 }
+
+const reservationAuditInclude = {
+  driver: {
+    select: {
+      fullName: true,
+      phone: true,
+    },
+  },
+  vehicle: {
+    select: {
+      plateNumber: true,
+      vehicleType: true,
+    },
+  },
+  slot: {
+    select: {
+      code: true,
+      status: true,
+      floor: {
+        select: {
+          floorNumber: true,
+          name: true,
+        },
+      },
+    },
+  },
+  session: {
+    select: {
+      sessionCode: true,
+      checkInTime: true,
+    },
+  },
+} as const;
+
+type ReservationAuditRecord = {
+  id: string;
+  status: ReservationStatus;
+  vehicleType: VehicleType;
+  createdAt: Date;
+  expiresAt: Date | null;
+  driver: { fullName: string | null; phone: string | null } | null;
+  vehicle: { plateNumber: string; vehicleType: VehicleType } | null;
+  slot: {
+    code: string;
+    status: SlotStatus;
+    floor: { floorNumber: number; name: string };
+  } | null;
+  session: {
+    sessionCode: string;
+    checkInTime: Date;
+  } | null;
+};
 
 function buildSlotSummary(
   slots: {
@@ -517,6 +639,96 @@ function buildSlotSummary(
     byFloor: Array.from(floorMap.values()),
     byZone: Array.from(zoneMap.values()),
   };
+}
+
+function buildReservationWatchlist({
+  now,
+  activeReserved,
+  expiredToday,
+  fulfilledToday,
+}: {
+  now: Date;
+  activeReserved: ReservationAuditRecord[];
+  expiredToday: ReservationAuditRecord[];
+  fulfilledToday: ReservationAuditRecord[];
+}): AdminReservationAuditItemDto[] {
+  const priority = new Map<string, number>();
+  const records = new Map<string, ReservationAuditRecord>();
+
+  for (const reservation of activeReserved) {
+    const isExpiringSoon =
+      reservation.expiresAt !== null &&
+      reservation.expiresAt.getTime() > now.getTime() &&
+      reservation.expiresAt.getTime() <= now.getTime() + 5 * 60 * 1000;
+    priority.set(reservation.id, isExpiringSoon ? 0 : 1);
+    records.set(reservation.id, reservation);
+  }
+
+  for (const reservation of expiredToday) {
+    priority.set(reservation.id, Math.min(priority.get(reservation.id) ?? 2, 2));
+    records.set(reservation.id, reservation);
+  }
+
+  for (const reservation of fulfilledToday) {
+    priority.set(reservation.id, Math.min(priority.get(reservation.id) ?? 3, 3));
+    records.set(reservation.id, reservation);
+  }
+
+  return Array.from(records.values())
+    .sort((left, right) => {
+      const leftPriority = priority.get(left.id) ?? 99;
+      const rightPriority = priority.get(right.id) ?? 99;
+      const priorityDiff = leftPriority - rightPriority;
+      if (priorityDiff !== 0) return priorityDiff;
+
+      const leftAnchor = getReservationWatchlistAnchor(left);
+      const rightAnchor = getReservationWatchlistAnchor(right);
+      if (leftPriority <= 1) {
+        return leftAnchor.getTime() - rightAnchor.getTime();
+      }
+      return rightAnchor.getTime() - leftAnchor.getTime();
+    })
+    .slice(0, 25)
+    .map((reservation) => mapReservationAuditItem(reservation, now));
+}
+
+function mapReservationAuditItem(
+  reservation: ReservationAuditRecord,
+  now: Date,
+): AdminReservationAuditItemDto {
+  const expiresAt = reservation.expiresAt?.toISOString() ?? null;
+  const fulfilledAt = reservation.session?.checkInTime?.toISOString() ?? null;
+  const timeLeftMinutes =
+    reservation.status === ReservationStatus.active && reservation.expiresAt
+      ? Math.ceil((reservation.expiresAt.getTime() - now.getTime()) / 60000)
+      : reservation.status === ReservationStatus.expired && reservation.expiresAt
+        ? -Math.max(0, diffMinutes(now, reservation.expiresAt))
+        : null;
+
+  return {
+    id: reservation.id,
+    status: reservation.status,
+    driverName: reservation.driver?.fullName ?? null,
+    driverPhone: reservation.driver?.phone ?? null,
+    plateNumber: reservation.vehicle?.plateNumber ?? null,
+    vehicleType: reservation.vehicle?.vehicleType ?? reservation.vehicleType ?? null,
+    slotCode: reservation.slot?.code ?? null,
+    createdAt: reservation.createdAt.toISOString(),
+    expiresAt,
+    fulfilledAt,
+    timeLeftMinutes,
+    fulfilledSessionCode: reservation.session?.sessionCode ?? null,
+  };
+}
+
+function getReservationWatchlistAnchor(reservation: ReservationAuditRecord): Date {
+  if (reservation.status === ReservationStatus.active) {
+    return reservation.expiresAt ?? reservation.createdAt;
+  }
+  if (reservation.status === ReservationStatus.fulfilled) {
+    return reservation.session?.checkInTime ?? reservation.createdAt;
+  }
+  return reservation.expiresAt ?? reservation.createdAt;
 }
 
 function buildPaymentRiskSummary(
