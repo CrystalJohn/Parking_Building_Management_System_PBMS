@@ -522,13 +522,13 @@ function ReportMetricCard({
 }) {
   return (
     <Card className="min-h-[116px]">
-      <CardContent className="p-4">
+      <CardContent className="p-5 sm:p-6">
         <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
           {icon}
           {label}
         </div>
-        <div className="mt-3 text-2xl font-black tracking-tight text-foreground">{value}</div>
-        <div className="mt-1 text-xs font-medium text-muted-foreground">{helper}</div>
+        <div className="mt-4 text-2xl font-black tracking-tight text-foreground">{value}</div>
+        <div className="mt-2 text-xs font-medium text-muted-foreground">{helper}</div>
       </CardContent>
     </Card>
   )
@@ -536,9 +536,16 @@ function ReportMetricCard({
 
 function ProgressMeter({ value }: { value: number }) {
   const width = Math.min(100, Math.max(0, value))
+  const toneClass =
+    width >= 70
+      ? 'bg-rose-500'
+      : width >= 40
+        ? 'bg-amber-400'
+        : 'bg-emerald-500'
+
   return (
     <div className="h-2 rounded-full bg-muted">
-      <div className="h-full rounded-full bg-primary" style={{ width: `${width}%` }} />
+      <div className={`h-full rounded-full ${toneClass}`} style={{ width: `${width}%` }} />
     </div>
   )
 }

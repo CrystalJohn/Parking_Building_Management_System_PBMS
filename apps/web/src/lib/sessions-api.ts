@@ -244,11 +244,13 @@ export interface PaymentInfo {
 export interface CheckoutSessionInfo {
   id: string
   sessionCode: string
+  reservationId?: string | null
   licensePlate: string
   vehicleType: VehicleType
   checkInTime: string
   checkOutTime: string | null
   status: SessionStatus
+  allocationStrategy?: string | null
   isPaid: boolean
   feeAmount: number
   penaltyAmount: number
@@ -270,6 +272,7 @@ export interface CheckInEvidence {
   imageUrl: string | null
   capturedAt: string | null
   ocrPlate: string | null
+  confirmedPlate?: string | null
   ocrConfidence: number | null
 }
 
@@ -364,11 +367,13 @@ interface BackendCheckOutResponse {
   session: {
     id: string
     sessionCode: string
+    reservationId?: string | null
     licensePlate: string
     vehicleType: VehicleType
     checkInTime: string
     checkOutTime: string | null
     status: string
+    allocationStrategy?: string | null
     driverId: string | null
     isPaid: boolean
     feeAmount: number
@@ -445,11 +450,13 @@ function mapBackendCheckout(data: BackendCheckOutResponse): CheckoutWorkflowResp
     session: {
       id: data.session.id,
       sessionCode: data.session.sessionCode,
+      reservationId: data.session.reservationId ?? null,
       licensePlate: data.session.licensePlate,
       vehicleType: data.session.vehicleType,
       checkInTime: data.session.checkInTime,
       checkOutTime: data.session.checkOutTime,
       status: data.session.status as SessionStatus,
+      allocationStrategy: data.session.allocationStrategy ?? null,
       isPaid: data.session.isPaid,
       feeAmount: data.session.feeAmount,
       penaltyAmount: data.session.penaltyAmount,

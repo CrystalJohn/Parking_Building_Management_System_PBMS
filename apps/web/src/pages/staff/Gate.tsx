@@ -53,6 +53,16 @@ import { formatPlateForDisplay, normalizePlateForApi } from '../../lib/plate-for
 import { StaffOcrCheckInPanel } from './StaffOcrCheckInPanel'
 import { StaffReservationQrCheckInPanel } from './StaffReservationQrCheckInPanel'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -67,6 +77,7 @@ import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 
 type Tab = 'check-in' | 'check-out'
+type MismatchProtectedAction = 'bankQr' | 'payment' | 'exit'
 
 const VND = (n: number) =>
   `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(Math.round(n))} VND`
@@ -609,6 +620,8 @@ function CheckOutPanel({
 
   const [entryEvidenceImage, setEntryEvidenceImage] = useState<EvidenceImageState>(EMPTY_EVIDENCE_IMAGE)
   const [exitEvidenceImage, setExitEvidenceImage] = useState<EvidenceImageState>(EMPTY_EVIDENCE_IMAGE)
+  const [plateMismatchDialogAction, setPlateMismatchDialogAction] = useState<MismatchProtectedAction | null>(null)
+  const [approvedMismatchAction, setApprovedMismatchAction] = useState<MismatchProtectedAction | null>(null)
 
   useEffect(() => {
     return loadEvidenceImage(workflow?.checkInEvidence ?? null, setEntryEvidenceImage)
@@ -726,6 +739,11 @@ function CheckOutPanel({
 
   const handleGenerateBankQr = async () => {
     if (!workflow) return
+    if (hasPlateMismatch && approvedMismatchAction !== 'bankQr') {
+      setPlateMismatchDialogAction('bankQr')
+      return
+    }
+    if (approvedMismatchAction === 'bankQr') setApprovedMismatchAction(null)
     setAction('bankQr')
     try {
       const data = await createBankQrPayment(workflow.session.id)
@@ -783,6 +801,11 @@ function CheckOutPanel({
 
   const handleConfirmPayment = async () => {
     if (!workflow) return
+    if (hasPlateMismatch && approvedMismatchAction !== 'payment') {
+      setPlateMismatchDialogAction('payment')
+      return
+    }
+    if (approvedMismatchAction === 'payment') setApprovedMismatchAction(null)
     setAction('payment')
     try {
       const response = await confirmCashPayment(workflow.session.id)
@@ -823,6 +846,11 @@ function CheckOutPanel({
 
   const handleConfirmExit = async () => {
     if (!workflow) return
+    if (hasPlateMismatch && approvedMismatchAction !== 'exit') {
+      setPlateMismatchDialogAction('exit')
+      return
+    }
+    if (approvedMismatchAction === 'exit') setApprovedMismatchAction(null)
     setAction('exit')
     try {
       const response = await confirmVehicleExited(workflow.session.id)
@@ -894,6 +922,21 @@ function CheckOutPanel({
   const paymentLabel = workflow?.payment
     ? `${readablePaymentMethod(workflow.payment.method)} · ${readablePaymentStatus(workflow.payment.status)}`
     : 'Calculated fee preview'
+  const checkInPlateNormalized = normalizePlateForApi(
+    workflow?.checkInEvidence?.confirmedPlate ??
+      workflow?.checkInEvidence?.ocrPlate ??
+      workflow?.session.licensePlate,
+  )
+  const checkOutPlateNormalized = normalizePlateForApi(
+    workflow?.exitEvidence?.confirmedPlate ?? workflow?.exitEvidence?.ocrPlate,
+  )
+  const plateMatchState: 'matched' | 'mismatch' | 'not_verified' =
+    !checkOutPlateNormalized
+      ? 'not_verified'
+      : checkInPlateNormalized === checkOutPlateNormalized
+        ? 'matched'
+        : 'mismatch'
+  const hasPlateMismatch = plateMatchState === 'mismatch'
   const showRecentHistory = !workflow
   const showInvalidState =
     workflow && !canRequestCheckout && !canConfirmPayment && !canConfirmExit && !isCompleted && !isBankQrPending && !isBankQrExpired && !isBankQrFailed
@@ -904,6 +947,17 @@ function CheckOutPanel({
   const managerReviewNote = workflow
     ? `Review checkout case for ${plateDisplay}. Session status: ${workflow.session.status}. Payment status: ${workflow.payment?.status ?? 'not_started'}.`
     : ''
+  const continuePlateMismatchAction = () => {
+    const pending = plateMismatchDialogAction
+    if (!pending) return
+    setApprovedMismatchAction(pending)
+    setPlateMismatchDialogAction(null)
+    queueMicrotask(() => {
+      if (pending === 'bankQr') void handleGenerateBankQr()
+      if (pending === 'payment') void handleConfirmPayment()
+      if (pending === 'exit') void handleConfirmExit()
+    })
+  }
 
   return (
     <div className="space-y-4">
@@ -978,7 +1032,7 @@ function CheckOutPanel({
 
       {workflow ? (
         <Card className="overflow-hidden border-primary/20 shadow-sm">
-          <CardContent className="space-y-5 p-6">
+          <CardContent className="space-y-6 p-7 sm:p-8">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
@@ -1015,6 +1069,7 @@ function CheckOutPanel({
                     paymentFact={paymentFact}
                     durationLabel={durationLabel}
                     exitTime={exitResult?.session.checkOutTime ?? workflow.session.checkOutTime}
+                    plateMatchState={plateMatchState}
                   />
                 </div>
 
@@ -1026,6 +1081,15 @@ function CheckOutPanel({
                   onEntryImageError={() => markEvidenceImageFailed(setEntryEvidenceImage)}
                   onExitImageError={() => markEvidenceImageFailed(setExitEvidenceImage)}
                 />
+                {hasPlateMismatch ? (
+                  <Alert className="border-amber-200 bg-amber-50 text-amber-950">
+                    <CircleAlert className="size-4" />
+                    <AlertTitle>Plate mismatch detected</AlertTitle>
+                    <AlertDescription className="text-amber-800">
+                      Review both captures before continuing.
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
               </div>
 
               <div className="hidden lg:block">
@@ -1035,6 +1099,7 @@ function CheckOutPanel({
                   paymentFact={paymentFact}
                   durationLabel={durationLabel}
                   exitTime={exitResult?.session.checkOutTime ?? workflow.session.checkOutTime}
+                  plateMatchState={plateMatchState}
                 />
               </div>
             </div>
@@ -1103,7 +1168,7 @@ function CheckOutPanel({
               </div>
             ) : null}
 
-            <div className="sticky bottom-0 -mx-6 border-t bg-background/95 px-6 pb-1 pt-4 backdrop-blur print:hidden">
+            <div className="sticky bottom-0 -mx-7 border-t bg-background/95 px-7 pb-2 pt-5 backdrop-blur print:hidden sm:-mx-8 sm:px-8">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex flex-col gap-2 sm:flex-row">
                   {!isCompleted ? (
@@ -1304,6 +1369,59 @@ function CheckOutPanel({
           onManualInput={handleQRScanned}
         />
       ) : null}
+
+      <AlertDialog
+        open={plateMismatchDialogAction !== null}
+        onOpenChange={(open) => !open && setPlateMismatchDialogAction(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Plate mismatch detected</AlertDialogTitle>
+            <AlertDialogDescription>
+              Review both captures before continuing with this checkout action.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-3 rounded-xl border bg-muted/35 p-3 text-sm">
+            <MismatchFact
+              label="Check-in plate"
+              value={formatPlateForDisplay(checkInPlateNormalized) || 'Not available'}
+            />
+            <MismatchFact
+              label="Check-out plate"
+              value={formatPlateForDisplay(checkOutPlateNormalized) || 'Not verified'}
+            />
+            <MismatchFact
+              label="Session code"
+              value={workflow?.session.sessionCode ?? 'Not available'}
+              mono
+            />
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            {workflow ? (
+              <RequestManagerReviewDialog
+                defaultType="ocr_mismatch"
+                defaultSeverity="warning"
+                defaultNote={`Plate mismatch detected for ${plateDisplay}. Check-in plate: ${formatPlateForDisplay(checkInPlateNormalized) || 'N/A'}. Check-out plate: ${formatPlateForDisplay(checkOutPlateNormalized) || 'N/A'}.`}
+                sessionId={workflow.session.id}
+                paymentId={workflow.payment?.id}
+                slotId={workflow.slot.id}
+                plateNumber={workflow.session.licensePlate}
+                trigger={
+                  <AlertDialogAction asChild variant="outline">
+                    <Button type="button" variant="outline">Request Manager Review</Button>
+                  </AlertDialogAction>
+                }
+              />
+            ) : null}
+            <AlertDialogAction onClick={continuePlateMismatchAction}>
+              Continue with Staff Override
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
@@ -1338,19 +1456,71 @@ function readablePaymentMethod(method: PaymentMethod) {
   return labels[method]
 }
 
+function readableVehicleType(vehicleType: 'car' | 'motorbike') {
+  return vehicleType === 'car' ? 'Car' : 'Motorbike'
+}
+
+function getTicketTypeLabel(workflow: CheckoutWorkflowResponse) {
+  if (workflow.session.isLostTicket) return 'Lost ticket'
+  if (
+    workflow.session.reservationId ||
+    workflow.session.allocationStrategy?.toLowerCase().includes('reservation')
+  ) {
+    return 'Reservation QR'
+  }
+  return 'Walk-in ticket'
+}
+
+function getPenaltyLabel(workflow: CheckoutWorkflowResponse) {
+  if (!workflow.fee.penalty) return VND(0)
+
+  const reasons = [
+    workflow.fee.isOvertime ? 'Overtime' : null,
+    workflow.fee.isLostTicket ? 'Lost ticket' : null,
+  ].filter(Boolean)
+
+  return `${VND(workflow.fee.penalty)}${reasons.length ? ` (${reasons.join(' + ')})` : ''}`
+}
+
+function PlateMatchBadge({
+  state,
+}: {
+  state: 'matched' | 'mismatch' | 'not_verified'
+}) {
+  const className =
+    state === 'matched'
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+      : state === 'mismatch'
+        ? 'border-rose-200 bg-rose-50 text-rose-700'
+        : 'border-slate-200 bg-slate-50 text-slate-600'
+  const label =
+    state === 'matched' ? 'Matched' : state === 'mismatch' ? 'Mismatch' : 'Not verified'
+
+  return (
+    <Badge variant="outline" className={className}>
+      {label}
+    </Badge>
+  )
+}
+
 function SessionSummary({
   workflow,
   paymentMethod,
   paymentFact,
   durationLabel,
   exitTime,
+  plateMatchState,
 }: {
   workflow: CheckoutWorkflowResponse
   paymentMethod: PaymentMethod | null
   paymentFact: string
   durationLabel: string
   exitTime: string | null
+  plateMatchState: 'matched' | 'mismatch' | 'not_verified'
 }) {
+  const ticketType = getTicketTypeLabel(workflow)
+  const penaltyLabel = getPenaltyLabel(workflow)
+
   return (
     <div className="rounded-2xl border bg-card p-4 text-card-foreground shadow-sm">
       <div className="flex items-center justify-between gap-3 border-b pb-3">
@@ -1364,6 +1534,9 @@ function SessionSummary({
       <div className="mt-3 space-y-2 text-sm">
         <SummaryRow label="Session code" value={workflow.session.sessionCode} mono strong />
         <SummaryRow label="Slot" value={workflow.slot.code} mono />
+        <SummaryRow label="Vehicle type" value={readableVehicleType(workflow.session.vehicleType)} />
+        <SummaryRow label="Ticket type" value={ticketType} />
+        <SummaryRow label="Plate match" value={<PlateMatchBadge state={plateMatchState} />} />
         <SummaryRow label="Duration" value={durationLabel} />
         <SummaryRow
           label="Payment status"
@@ -1381,7 +1554,7 @@ function SessionSummary({
         <SummaryRow label="Check-in time" value={formatDateTime(workflow.session.checkInTime)} />
         <SummaryRow label="Floor / Zone" value={`${workflow.slot.floor.name} / Zone ${workflow.slot.zone}`} />
         <SummaryRow label="Base fee" value={VND(workflow.fee.baseFee)} />
-        <SummaryRow label="Penalty" value={VND(workflow.fee.penalty)} />
+        <SummaryRow label="Penalty" value={penaltyLabel} />
         {workflow.payment?.paidAt ? (
           <SummaryRow label="Paid at" value={formatDateTime(workflow.payment.paidAt)} />
         ) : null}
@@ -1410,6 +1583,30 @@ function SummaryRow({
           'max-w-[60%] text-right font-medium text-foreground',
           mono && 'font-mono',
           strong && 'font-semibold',
+        )}
+      >
+        {value}
+      </span>
+    </div>
+  )
+}
+
+function MismatchFact({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string
+  value: string
+  mono?: boolean
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <span className="text-muted-foreground">{label}</span>
+      <span
+        className={cn(
+          'max-w-[60%] text-right font-medium text-foreground',
+          mono && 'font-mono',
         )}
       >
         {value}

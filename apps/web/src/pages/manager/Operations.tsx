@@ -1,11 +1,14 @@
 import { useMemo, useState } from 'react'
 import { CheckCircle2, Clock3, Eye, Radio, RefreshCw, ShieldAlert } from 'lucide-react'
 import { toast } from 'sonner'
+import { EvidenceComparisonPanel } from '@/components/evidence/EvidenceComparisonPanel'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
+import { getAdminSessionEvidence, type AdminSessionEvidence } from '@/lib/admin-api'
 import {
   useManagerOperations,
   isOpenIssueStatus,
@@ -39,6 +42,10 @@ export default function Operations() {
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [actionId, setActionId] = useState<string | null>(null)
+  const [selectedIssue, setSelectedIssue] = useState<OperationIssue | null>(null)
+  const [selectedEvidence, setSelectedEvidence] = useState<AdminSessionEvidence | null>(null)
+  const [evidenceLoading, setEvidenceLoading] = useState(false)
+  const [evidenceError, setEvidenceError] = useState<string | null>(null)
 
   const filteredIssues = useMemo(
     () =>
@@ -68,6 +75,27 @@ export default function Operations() {
       toast.error('Unable to update operation issue')
     } finally {
       setActionId(null)
+    }
+  }
+
+  const handleReviewDetails = async (issue: OperationIssue) => {
+    setSelectedIssue(issue)
+    setSelectedEvidence(null)
+    setEvidenceError(null)
+
+    if (!issue.session?.id) {
+      setEvidenceLoading(false)
+      return
+    }
+
+    setEvidenceLoading(true)
+    try {
+      const result = await getAdminSessionEvidence(issue.session.id)
+      setSelectedEvidence(result)
+    } catch {
+      setEvidenceError('Unable to load OCR evidence')
+    } finally {
+      setEvidenceLoading(false)
     }
   }
 
@@ -159,6 +187,7 @@ export default function Operations() {
                   key={issue.id}
                   issue={issue}
                   actionId={actionId}
+                  onReviewDetails={() => void handleReviewDetails(issue)}
                   onUpdate={(status) => void handleUpdate(issue, status)}
                 />
               ))}
@@ -166,6 +195,91 @@ export default function Operations() {
           )}
         </CardContent>
       </Card>
+
+      <Sheet open={selectedIssue !== null} onOpenChange={(open) => !open && setSelectedIssue(null)}>
+        <SheetContent side="right" className="w-full sm:max-w-3xl">
+          <div className="flex h-full flex-col gap-5 overflow-y-auto p-5">
+            <SheetHeader className="border-b pb-4">
+              <SheetTitle>Review details</SheetTitle>
+              <SheetDescription>
+                Issue context, linked session evidence, and manager resolution actions.
+              </SheetDescription>
+            </SheetHeader>
+
+            {selectedIssue ? (
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/60">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusPill status={selectedIssue.status} />
+                    <SeverityPill severity={selectedIssue.severity} />
+                    <Badge variant="outline">{labelize(selectedIssue.type)}</Badge>
+                  </div>
+                  <p className="mt-3 font-mono text-xl font-black text-slate-950 dark:text-white">
+                    {selectedIssue.plateNumber ?? selectedIssue.session?.licensePlate ?? 'No plate'}
+                  </p>
+                  <p className="mt-2 text-sm font-medium text-slate-600 dark:text-slate-300">
+                    {selectedIssue.session?.sessionCode ?? 'No session'} • {formatDateTime(selectedIssue.createdAt)}
+                  </p>
+                  <p className="mt-3 text-sm text-slate-700 dark:text-slate-300">{selectedIssue.note}</p>
+                </div>
+
+                {evidenceLoading ? (
+                  <div className="grid gap-3">
+                    {Array.from({ length: 2 }).map((_, index) => (
+                      <div key={index} className="h-52 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-900" />
+                    ))}
+                  </div>
+                ) : evidenceError ? (
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-100">
+                    {evidenceError}
+                  </div>
+                ) : selectedEvidence ? (
+                  <EvidenceComparisonPanel
+                    checkInEvidence={selectedEvidence.checkInEvidence}
+                    checkOutEvidence={selectedEvidence.checkOutEvidence}
+                  />
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-400">
+                    No linked session evidence.
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                  {selectedIssue.status === 'open' ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void handleUpdate(selectedIssue, 'in_review')}
+                      disabled={actionId === `${selectedIssue.id}:in_review`}
+                    >
+                      In Review
+                    </Button>
+                  ) : null}
+                  {isOpenIssueStatus(selectedIssue.status) ? (
+                    <>
+                      <Button
+                        type="button"
+                        onClick={() => void handleUpdate(selectedIssue, 'resolved')}
+                        disabled={actionId === `${selectedIssue.id}:resolved`}
+                      >
+                        Resolve
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => void handleUpdate(selectedIssue, 'dismissed')}
+                        disabled={actionId === `${selectedIssue.id}:dismissed`}
+                      >
+                        Dismiss
+                      </Button>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }
@@ -173,10 +287,12 @@ export default function Operations() {
 function IssueCard({
   issue,
   actionId,
+  onReviewDetails,
   onUpdate,
 }: {
   issue: OperationIssue
   actionId: string | null
+  onReviewDetails: () => void
   onUpdate: (status: OperationIssueStatus) => void
 }) {
   const plate = issue.plateNumber ?? issue.session?.plateNumberConfirmed ?? issue.session?.licensePlate ?? 'No plate'
@@ -212,6 +328,10 @@ function IssueCard({
         </div>
 
         <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:flex-col">
+          <Button type="button" variant="outline" onClick={onReviewDetails}>
+            <Eye className="mr-2 size-4" strokeWidth={1.8} />
+            Review details
+          </Button>
           {issue.status === 'open' ? (
             <Button
               type="button"

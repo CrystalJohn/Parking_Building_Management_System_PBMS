@@ -974,6 +974,7 @@ function buildExitEvidenceFromOcr({
     imageUrl: null,
     capturedAt: new Date().toISOString(),
     ocrPlate: plate ? normalizePlateForApi(plate) : null,
+    confirmedPlate: plate ? normalizePlateForApi(plate) : null,
     ocrConfidence: confidence ?? null,
     localImageUrl: localImageUrl ?? null,
   }

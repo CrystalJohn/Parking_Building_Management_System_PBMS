@@ -93,6 +93,7 @@ export type AdminFlagSeverity = 'critical' | 'warning' | 'info'
 export interface AdminOperationFlag {
   type: string
   severity: AdminFlagSeverity
+  sessionId: string | null
   sessionCode: string | null
   reservationCode: string | null
   paymentId: string | null
@@ -233,6 +234,37 @@ export interface AdminReservationAudit {
   watchlist: AdminReservationAuditItem[]
 }
 
+export interface AdminSessionEvidenceItem {
+  id: string
+  eventType: 'check_in' | 'check_out'
+  thumbnailUrl: string | null
+  imageUrl: string | null
+  ocrPlate: string | null
+  confirmedPlate: string | null
+  ocrConfidence: number | null
+  capturedAt: string
+  providerTimestamp: string | null
+  staffName: string | null
+  staffPhone: string | null
+  imageStatus: 'available' | 'missing' | 'expired'
+}
+
+export interface AdminSessionEvidence {
+  session: {
+    id: string
+    sessionCode: string
+    licensePlate: string
+    plateNumberConfirmed: string | null
+    vehicleType: 'car' | 'motorbike'
+    status: string
+    checkInTime: string
+    checkOutTime: string | null
+    slotCode: string | null
+  }
+  checkInEvidence: AdminSessionEvidenceItem | null
+  checkOutEvidence: AdminSessionEvidenceItem | null
+}
+
 export async function getAdminOperationsFlags() {
   const { data } = await api.get<AdminOperationsFlags>('/admin/operations/flags')
   return data
@@ -247,5 +279,73 @@ export async function getAdminReservationAudit(date?: string) {
   const { data } = await api.get<AdminReservationAudit>('/admin/reservations/audit', {
     params: { date },
   })
+  return data
+}
+
+export async function getAdminSessionEvidence(sessionId: string) {
+  const { data } = await api.get<AdminSessionEvidence>(`/admin/sessions/${sessionId}/evidence`)
+  return data
+}
+
+// ─── Slot Occupancy Map ────────────────────────────────────────────────────
+
+export type SlotOccupancyMapRiskLevel = 'normal' | 'warning' | 'critical'
+export type SlotOccupancyMapSlotStatus = 'available' | 'occupied' | 'reserved' | 'maintenance'
+export type SlotOccupancyMapSessionStatus = 'active' | 'checkout_pending' | 'exit_authorized'
+
+export interface SlotOccupancyMapThresholds {
+  longActiveSessionHours: 24
+  checkoutPendingMinutes: 30
+  exitAuthorizedMinutes: 10
+  pendingBankQrMinutes: 15
+  warningActiveHours: 12
+}
+
+export interface SlotOccupancyMapRisk {
+  level: SlotOccupancyMapRiskLevel
+  reason: string | null
+}
+
+export interface SlotOccupancyMapSession {
+  id: string
+  sessionCode: string
+  plate: string
+  checkInTime: string
+  durationMinutes: number
+  status: SlotOccupancyMapSessionStatus
+  thumbnailUrl: string | null
+}
+
+export interface SlotOccupancyMapSlot {
+  id: number
+  code: string
+  status: SlotOccupancyMapSlotStatus
+  vehicleType: 'car' | 'motorbike'
+  floorNumber: number
+  floorName: string
+  zone: 'A' | 'B'
+  session: SlotOccupancyMapSession | null
+  risk: SlotOccupancyMapRisk
+}
+
+export interface SlotOccupancyMapZone {
+  zone: 'A' | 'B'
+  slots: SlotOccupancyMapSlot[]
+}
+
+export interface SlotOccupancyMapFloor {
+  floorNumber: number
+  floorName: string
+  zones: SlotOccupancyMapZone[]
+}
+
+export interface AdminSlotOccupancyMap {
+  generatedAt: string
+  thresholds: SlotOccupancyMapThresholds
+  floors: SlotOccupancyMapFloor[]
+}
+
+export async function getAdminSlotOccupancyMap() {
+  const { data } = await api.get<AdminSlotOccupancyMap>('/admin/operations/slot-occupancy-map')
   return data
 }

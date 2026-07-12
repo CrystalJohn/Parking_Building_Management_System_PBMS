@@ -14,46 +14,45 @@ import {
   ParkingCircle,
   ShieldCheck,
   Timer,
+  AlertTriangle,
+  AlertCircle,
+  Clock,
+  Bike,
 } from 'lucide-react'
 import api from '../../lib/api'
 import { useManagerOperations } from '../../lib/ManagerOperationsContext'
 import {
   getAdminPendingPayments,
   getAdminSummary,
+  getAdminSlotOccupancyMap,
   type AdminOperationFlag,
   type AdminOperationsFlags,
   type AdminPendingPaymentItem,
   type AdminPendingPayments,
   type AdminSummary,
   type PaymentMonitoringRisk,
+  type AdminSlotOccupancyMap,
+  type SlotOccupancyMapSlot,
+  type SlotOccupancyMapSession,
+  type SlotOccupancyMapRiskLevel,
 } from '../../lib/admin-api'
-import { getActiveSessionBySlotId, type ActiveSessionDetail } from '../../lib/sessions-api'
 import { type OperationIssue } from '../../lib/operation-issues-api'
 import { formatDateTimeVN } from '../../lib/date-time'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/card'
+import { Badge } from '../../components/ui/badge'
+import { Button } from '../../components/ui/button'
+import { Tabs, TabsList, TabsTrigger } from '../../components/ui/tabs'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../components/ui/dialog'
 
-type SlotStatus = 'available' | 'occupied' | 'reserved' | 'maintenance'
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 type Zone = 'A' | 'B'
-type VehicleType = 'car' | 'motorbike'
-
-interface Slot {
-  id: number
-  code: string
-  zone: Zone
-  slotNumber: number
-  status: SlotStatus
-  vehicleType: VehicleType
-  floor: {
-    id: number
-    floorNumber: number
-    name: string
-  }
-}
 
 interface FloorGroup {
   floorNumber: number
   floorName: string
-  zoneA: Slot[]
-  zoneB: Slot[]
+  zoneA: SlotOccupancyMapSlot[]
+  zoneB: SlotOccupancyMapSlot[]
 }
 
 interface TrafficRow {
@@ -66,37 +65,102 @@ interface TodayTraffic {
   checkOuts: number | null
 }
 
-const POLL_INTERVAL_MS = 10000
+// ─── Constants ─────────────────────────────────────────────────────────────
 
-const STATUS_LABELS: Record<SlotStatus, string> = {
+const POLL_INTERVAL_MS = 10_000
+
+const STATUS_LABELS: Record<string, string> = {
   available: 'Available',
   occupied: 'Occupied',
   reserved: 'Reserved',
   maintenance: 'Maintenance',
 }
 
-const STATUS_STYLES: Record<SlotStatus, string> = {
-  available:
-    'border-emerald-200 bg-emerald-50 text-emerald-800 ring-emerald-100 dark:border-emerald-400/30 dark:bg-emerald-500/10 dark:text-emerald-100 dark:ring-emerald-400/20',
-  occupied:
-    'border-rose-200 bg-rose-50 text-rose-800 ring-rose-100 dark:border-rose-400/30 dark:bg-rose-500/15 dark:text-rose-100 dark:ring-rose-400/20',
-  reserved:
-    'border-amber-200 bg-amber-50 text-amber-900 ring-amber-100 dark:border-amber-400/30 dark:bg-amber-500/15 dark:text-amber-100 dark:ring-amber-400/20',
-  maintenance:
-    'border-slate-300 bg-slate-100 text-slate-600 ring-slate-200 dark:border-slate-500/40 dark:bg-slate-800/80 dark:text-slate-300 dark:ring-slate-500/30',
-}
-
-const STATUS_DOT: Record<SlotStatus, string> = {
+const STATUS_DOT: Record<string, string> = {
   available: 'bg-emerald-400',
   occupied: 'bg-rose-400',
   reserved: 'bg-amber-400',
   maintenance: 'bg-slate-500',
 }
 
+const RISK_BORDER: Record<SlotOccupancyMapRiskLevel, string> = {
+  normal: 'border-l-emerald-400',
+  warning: 'border-l-amber-400',
+  critical: 'border-l-rose-500',
+}
+
+const RISK_BADGE_CLASS: Record<SlotOccupancyMapRiskLevel, string> = {
+  normal: 'bg-emerald-400/10 text-emerald-700 dark:text-emerald-300 ring-emerald-400/20',
+  warning: 'bg-amber-400/10 text-amber-700 dark:text-amber-300 ring-amber-400/20',
+  critical: 'bg-rose-500/10 text-rose-700 dark:text-rose-300 ring-rose-500/20',
+}
+
 export const todayIsoDate = () => new Date().toISOString().slice(0, 10)
 
+// ─── LiveClock ────────────────────────────────────────────────────────────────
+function LiveClock() {
+  const [now, setNow] = useState(new Date())
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  const dateStr = now.toLocaleDateString('en-GB', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+
+  const timeStr = now.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
+
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm dark:border-white/10 dark:bg-white/[0.02]">
+      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-50 text-cyan-600 dark:bg-cyan-400/10 dark:text-cyan-400">
+        <Clock className="h-4 w-4" strokeWidth={2.5} />
+      </div>
+      <div className="flex flex-col">
+        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{dateStr}</span>
+        <span className="text-sm font-black text-slate-950 dark:text-white tabular-nums leading-tight">{timeStr}</span>
+      </div>
+    </div>
+  )
+}
+
+// ─── LiveDuration ─────────────────────────────────────────────────────────────
+/**
+ * Ticks every minute and formats as "Xh Ym" or "Ym".
+ * Uses a stable container width to prevent layout shift.
+ */
+function LiveDuration({ checkInTime }: { checkInTime: string }) {
+  const calcDuration = () => {
+    const mins = Math.floor((Date.now() - new Date(checkInTime).getTime()) / 60_000)
+    if (mins < 60) return `${mins}m`
+    const h = Math.floor(mins / 60)
+    const m = mins % 60
+    return m > 0 ? `${h}h ${m}m` : `${h}h`
+  }
+
+  const [label, setLabel] = useState(calcDuration)
+
+  useEffect(() => {
+    const id = window.setInterval(() => setLabel(calcDuration()), 60_000)
+    return () => clearInterval(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkInTime])
+
+  return <span className="tabular-nums">{label}</span>
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
 export default function Dashboard() {
-  const [floors, setFloors] = useState<FloorGroup[]>([])
+  const [occupancyMap, setOccupancyMap] = useState<AdminSlotOccupancyMap | null>(null)
   const [summary, setSummary] = useState<AdminSummary | null>(null)
   const [pendingPayments, setPendingPayments] = useState<AdminPendingPayments | null>(null)
 
@@ -104,38 +168,20 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null)
   const [selectedFloorNumber, setSelectedFloorNumber] = useState<number | null>(null)
   const [selectedZone, setSelectedZone] = useState<Zone>('A')
-  const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null)
-  const [sessionDetail, setSessionDetail] = useState<ActiveSessionDetail | null>(null)
-  const [sessionLoading, setSessionLoading] = useState(false)
+  const [selectedSlot, setSelectedSlot] = useState<SlotOccupancyMapSlot | null>(null)
   const { issues: operationIssues, summary: operationIssueSummary, connected: issueStreamConnected } = useManagerOperations()
-
-  const handleSlotSelect = useCallback(async (slot: Slot) => {
-    setSelectedSlot(slot)
-    setSessionDetail(null)
-    if (slot.status !== 'occupied') return
-    setSessionLoading(true)
-    try {
-      const detail = await getActiveSessionBySlotId(slot.id)
-      setSessionDetail(detail)
-    } catch {
-      setSessionDetail(null)
-    } finally {
-      setSessionLoading(false)
-    }
-  }, [])
 
   const loadDashboard = useCallback(async () => {
     try {
-      const [slotData, summaryData, paymentData] = await Promise.all([
-        api.get<Slot[]>('/slots'),
+      const [mapData, summaryData, paymentData] = await Promise.all([
+        getAdminSlotOccupancyMap(),
         getAdminSummary(),
         getAdminPendingPayments(),
       ])
 
-      setFloors(groupByFloor(slotData.data))
+      setOccupancyMap(mapData)
       setSummary(summaryData)
       setPendingPayments(paymentData)
-
       setError(null)
     } catch {
       setError('Unable to load manager operations telemetry')
@@ -150,29 +196,49 @@ export default function Dashboard() {
     return () => window.clearInterval(interval)
   }, [loadDashboard])
 
-  useEffect(() => {
-    if (floors.length === 0) {
-      setSelectedFloorNumber(null)
-      return
-    }
+  // Build flat floor groups from occupancy map
+  const floors = useMemo<FloorGroup[]>(() => {
+    if (!occupancyMap) return []
+    return occupancyMap.floors.map((floor) => {
+      const zoneA: SlotOccupancyMapSlot[] = []
+      const zoneB: SlotOccupancyMapSlot[] = []
+      for (const zone of floor.zones) {
+        if (zone.zone === 'A') zoneA.push(...zone.slots)
+        else zoneB.push(...zone.slots)
+      }
+      return { floorNumber: floor.floorNumber, floorName: floor.floorName, zoneA, zoneB }
+    })
+  }, [occupancyMap])
 
-    const hasSelectedFloor = floors.some((floor) => floor.floorNumber === selectedFloorNumber)
-    if (!hasSelectedFloor) setSelectedFloorNumber(floors[0].floorNumber)
+  // Auto-select first floor if none selected or current is gone
+  useEffect(() => {
+    if (floors.length === 0) { setSelectedFloorNumber(null); return }
+    const hasSelected = floors.some((f) => f.floorNumber === selectedFloorNumber)
+    if (!hasSelected) setSelectedFloorNumber(floors[0].floorNumber)
   }, [floors, selectedFloorNumber])
 
+  // Keep selectedSlot fresh after each poll
+  useEffect(() => {
+    if (!selectedSlot) return
+    const allSlots = floors.flatMap((f) => [...f.zoneA, ...f.zoneB])
+    const updated = allSlots.find((s) => s.id === selectedSlot.id)
+    if (updated) setSelectedSlot(updated)
+    else setSelectedSlot(null)
+  }, [floors]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const slotTotals = useMemo(() => {
-    const slots = floors.flatMap((floor) => [...floor.zoneA, ...floor.zoneB])
+    const slots = floors.flatMap((f) => [...f.zoneA, ...f.zoneB])
     const total = slots.length
-    const available = countByStatus(slots, 'available')
-    const occupied = countByStatus(slots, 'occupied')
-    const reserved = countByStatus(slots, 'reserved')
-    const maintenance = countByStatus(slots, 'maintenance')
+    const available = slots.filter((s) => s.status === 'available').length
+    const occupied = slots.filter((s) => s.status === 'occupied').length
+    const reserved = slots.filter((s) => s.status === 'reserved').length
+    const maintenance = slots.filter((s) => s.status === 'maintenance').length
     const occupancyRate = total > 0 ? Math.round((occupied / total) * 100) : 0
     return { total, available, occupied, reserved, maintenance, occupancyRate }
   }, [floors])
 
   const selectedFloor = useMemo(
-    () => floors.find((floor) => floor.floorNumber === selectedFloorNumber) ?? null,
+    () => floors.find((f) => f.floorNumber === selectedFloorNumber) ?? null,
     [floors, selectedFloorNumber],
   )
 
@@ -181,29 +247,21 @@ export default function Dashboard() {
     return selectedZone === 'A' ? selectedFloor.zoneA : selectedFloor.zoneB
   }, [selectedFloor, selectedZone])
 
-  useEffect(() => {
-    if (!selectedSlot) return
-    const updatedSlot = floors
-      .flatMap((floor) => [...floor.zoneA, ...floor.zoneB])
-      .find((slot) => slot.id === selectedSlot.id)
-    if (updatedSlot) {
-      setSelectedSlot(updatedSlot)
-      // Re-fetch session if slot is still occupied after poll
-      if (updatedSlot.status === 'occupied') {
-        void getActiveSessionBySlotId(updatedSlot.id).then(setSessionDetail).catch(() => setSessionDetail(null))
-      } else {
-        setSessionDetail(null)
-      }
-    }
-  }, [floors, selectedSlot])
-
-
-
   const kpis = buildKpis(summary, pendingPayments, slotTotals)
 
   return (
     <div className="min-h-screen bg-slate-100 px-4 py-5 text-slate-950 transition-colors duration-300 dark:bg-slate-950 dark:text-slate-100 lg:px-6">
       <div className="mx-auto max-w-[1500px] space-y-5">
+        
+        {/* Header with Live Clock */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-black tracking-tight text-slate-950 dark:text-white">Manager Dashboard</h1>
+            <p className="mt-1 text-sm font-medium text-slate-500">Live operational telemetry and facility overview.</p>
+          </div>
+          <LiveClock />
+        </div>
+
         {error ? (
           <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-700 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-100">
             {error}
@@ -226,187 +284,296 @@ export default function Dashboard() {
               connected={issueStreamConnected}
             />
 
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-200/60 transition-colors dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                  <div>
-                    <h2 className="text-lg font-black tracking-tight text-slate-950 dark:text-white">
-                      Slot occupancy map
-                    </h2>
-                    <p className="mt-1 text-sm font-medium text-slate-600 dark:text-slate-400">
-                      Floor and zone snapshot from the slot source of truth. Select a slot to inspect available session context.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <SlotLegend status="available" count={slotTotals.available} />
-                    <SlotLegend status="occupied" count={slotTotals.occupied} />
-                    <SlotLegend status="reserved" count={slotTotals.reserved} />
-                    {slotTotals.maintenance > 0 ? <SlotLegend status="maintenance" count={slotTotals.maintenance} /> : null}
-                  </div>
+            {/* ─── Slot Occupancy Map ─────────────────────────────────────── */}
+            <Card className="shadow-sm">
+              <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between pb-4">
+                <div>
+                  <CardTitle className="text-lg font-black tracking-tight text-slate-950 dark:text-white">
+                    Slot occupancy map
+                  </CardTitle>
+                  <CardDescription className="mt-1 font-medium">
+                    Operational view · occupied tiles include live session details and risk indicators.
+                  </CardDescription>
                 </div>
-
-                {floors.length > 0 ? (
-                  <div className="mt-5 flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <SlotLegend status="available" count={slotTotals.available} />
+                  <SlotLegend status="occupied" count={slotTotals.occupied} />
+                  <SlotLegend status="reserved" count={slotTotals.reserved} />
+                  {slotTotals.maintenance > 0 ? <SlotLegend status="maintenance" count={slotTotals.maintenance} /> : null}
+                  
+                  {/* Risk legend */}
+                  <Badge variant="secondary" className="gap-1.5 px-2.5 py-0.5">
+                    <span className="h-2 w-2 rounded-full bg-amber-400" />warning
+                  </Badge>
+                  <Badge variant="secondary" className="gap-1.5 px-2.5 py-0.5">
+                    <span className="h-2 w-2 rounded-full bg-rose-500" />critical
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+              {/* Floor tabs */}
+              {floors.length > 0 ? (
+                <Tabs 
+                  value={String(selectedFloorNumber)} 
+                  onValueChange={(v) => setSelectedFloorNumber(Number(v))}
+                  className="mb-4"
+                >
+                  <TabsList>
                     {floors.map((floor) => (
-                      <button
-                        key={floor.floorNumber}
-                        type="button"
-                        onClick={() => setSelectedFloorNumber(floor.floorNumber)}
-                        className={`min-h-11 rounded-xl px-4 text-sm font-black transition focus:outline-none focus:ring-2 focus:ring-cyan-300 ${floor.floorNumber === selectedFloorNumber
-                            ? 'bg-cyan-300 text-slate-950 dark:bg-cyan-400 dark:text-slate-950'
-                            : 'border border-slate-200 bg-slate-50 text-slate-700 hover:border-cyan-400 hover:text-slate-950 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-cyan-300/40 dark:hover:text-white'
-                          }`}
-                      >
-                        {floor.floorName}
-                      </button>
+                      <TabsTrigger key={floor.floorNumber} value={String(floor.floorNumber)}>
+                        Floor {floor.floorNumber}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+              ) : null}
+
+              {/* Zone tabs */}
+              <Tabs
+                value={selectedZone}
+                onValueChange={(v) => setSelectedZone(v as Zone)}
+                className="mb-5"
+              >
+                <TabsList>
+                  {(['A', 'B'] as Zone[]).map((zone) => (
+                    <TabsTrigger key={zone} value={zone}>
+                      Zone {zone} <span className="ml-1 opacity-70">({zone === 'A' ? 'Car' : 'Motorbike'})</span>
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
+
+              {/* Slot grid */}
+              <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 transition-colors dark:border-white/10 dark:bg-slate-950/70">
+                {currentSlots.length === 0 ? (
+                  <EmptyPanel
+                    title="No slots configured for this zone."
+                    description="The backend did not return any slot records for the selected floor and zone."
+                  />
+                ) : (
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
+                    {currentSlots.map((slot) => (
+                      <OccupancySlotTile
+                        key={slot.id}
+                        slot={slot}
+                        selected={selectedSlot?.id === slot.id}
+                        onSelect={() => setSelectedSlot(slot)}
+                      />
                     ))}
                   </div>
-                ) : null}
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {(['A', 'B'] as Zone[]).map((zone) => (
-                    <button
-                      key={zone}
-                      type="button"
-                      onClick={() => setSelectedZone(zone)}
-                      className={`min-h-11 rounded-xl px-4 text-sm font-black transition focus:outline-none focus:ring-2 focus:ring-cyan-300 ${selectedZone === zone
-                          ? 'bg-white text-slate-950'
-                          : 'border border-slate-200 bg-slate-50 text-slate-700 hover:text-slate-950 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300 dark:hover:text-white'
-                        }`}
-                    >
-                      Zone {zone}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 transition-colors dark:border-white/10 dark:bg-slate-950/70">
-                  {currentSlots.length === 0 ? (
-                    <EmptyPanel
-                      title="No slots configured for this zone."
-                      description="The backend did not return any slot records for the selected floor and zone."
-                    />
-                  ) : (
-                    <div className="grid grid-cols-3 gap-3 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-9 2xl:grid-cols-10">
-                      {currentSlots.map((slot) => (
-                        <SlotButton
-                          key={slot.id}
-                          slot={slot}
-                          selected={selectedSlot?.id === slot.id}
-                          onSelect={() => void handleSlotSelect(slot)}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </section>
-
+                )}
+              </div>
+              </CardContent>
+            </Card>
           </>
         ) : null}
       </div>
 
       {/* Slot Inspect Modal */}
-      {selectedSlot ? (
-        <SlotInspectModal
-          slot={selectedSlot}
-          session={sessionDetail}
-          loading={sessionLoading}
-          onClose={() => {
-            setSelectedSlot(null)
-            setSessionDetail(null)
-          }}
-        />
-      ) : null}
+      <Dialog open={!!selectedSlot} onOpenChange={(open) => { if (!open) setSelectedSlot(null) }}>
+        {selectedSlot ? <SlotInspectModal slot={selectedSlot} /> : null}
+      </Dialog>
     </div>
+  )
+}
+
+// ─── OccupancySlotTile ────────────────────────────────────────────────────────
+
+function OccupancySlotTile({
+  slot,
+  selected,
+  onSelect,
+}: {
+  slot: SlotOccupancyMapSlot
+  selected: boolean
+  onSelect: () => void
+}) {
+  const isOccupied = slot.status === 'occupied' && slot.session !== null
+
+  if (selected) {
+    return (
+      <button
+        type="button"
+        onClick={onSelect}
+        className="flex aspect-[3/2] flex-col items-center justify-center rounded-xl bg-[#2563eb] text-white transition hover:-translate-y-0.5 shadow-lg shadow-blue-500/30 ring-2 ring-white/20"
+      >
+        <span className="text-[10px] md:text-xs font-medium">Selected</span>
+        <span className="font-bold text-sm">{slot.code}</span>
+      </button>
+    )
+  }
+
+  if (isOccupied && slot.session) {
+    return <OccupiedSlotTile slot={slot} session={slot.session} onSelect={onSelect} />
+  }
+
+  // Available / reserved / maintenance — compact
+  const styleClass =
+    slot.status === 'available'
+      ? 'bg-white text-slate-950 dark:bg-white dark:text-slate-950 ring-1 ring-black/5'
+      : slot.status === 'reserved'
+        ? 'border border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-400/30 dark:bg-amber-500/15 dark:text-amber-100'
+        : 'border border-slate-300 bg-slate-100 text-slate-600 dark:border-slate-500/40 dark:bg-slate-800/80 dark:text-slate-300'
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`flex aspect-[3/2] flex-col items-center justify-center rounded-xl transition hover:-translate-y-0.5 shadow-sm ${styleClass}`}
+    >
+      <span className="text-[10px] md:text-xs font-medium capitalize opacity-70">
+        {STATUS_LABELS[slot.status]}
+      </span>
+      <span className="font-bold text-sm">{slot.code}</span>
+    </button>
+  )
+}
+
+// ─── OccupiedSlotTile ─────────────────────────────────────────────────────────
+/**
+ * Larger tile for occupied slots — shows thumbnail, plate, check-in, duration, risk badge.
+ */
+function OccupiedSlotTile({
+  slot,
+  session,
+  onSelect,
+}: {
+  slot: SlotOccupancyMapSlot
+  session: SlotOccupancyMapSession
+  onSelect: () => void
+}) {
+  const risk = slot.risk.level
+  const [imgError, setImgError] = useState(false)
+  const hasThumbnail = !!session.thumbnailUrl && !imgError
+
+  const borderColor = RISK_BORDER[risk]
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`group relative flex flex-col overflow-hidden rounded-xl border border-l-4 ${borderColor} border-slate-200/60 bg-white dark:border-slate-700/60 dark:bg-slate-900 text-left transition hover:-translate-y-0.5 hover:shadow-lg shadow-sm`}
+    >
+      {/* Thumbnail strip */}
+      <div className="relative h-[72px] w-full overflow-hidden bg-slate-900">
+        {hasThumbnail ? (
+          <img
+            src={session.thumbnailUrl!}
+            alt={`Check-in ${session.plate}`}
+            className="h-full w-full object-cover opacity-90 group-hover:opacity-100 transition-opacity"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <img
+            src={slot.vehicleType === 'motorbike' ? '/motor.jpg' : '/car.jpg'}
+            alt={`Placeholder for ${slot.vehicleType}`}
+            className="h-full w-full object-cover opacity-60 grayscale group-hover:opacity-80 transition-opacity"
+          />
+        )}
+        {/* Risk badge overlay */}
+        {risk !== 'normal' && (
+          <span className={`absolute right-1.5 top-1.5 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-black ring-1 ${RISK_BADGE_CLASS[risk]}`}>
+            {risk === 'critical' ? <AlertCircle className="h-2.5 w-2.5" /> : <AlertTriangle className="h-2.5 w-2.5" />}
+            {risk}
+          </span>
+        )}
+      </div>
+
+      {/* Info section */}
+      <div className="flex flex-col gap-0.5 px-2 py-1.5">
+        {/* Plate */}
+        <span className="font-mono text-[11px] font-black leading-tight text-slate-950 dark:text-white truncate">
+          {session.plate}
+        </span>
+        {/* Slot code */}
+        <span className="text-[10px] font-semibold text-slate-400 leading-tight">{slot.code}</span>
+        
+        {/* Check-in time & Duration */}
+        <div className="mt-0.5 flex items-center justify-between text-[10px] font-bold leading-tight">
+          <span className="text-slate-400">
+            {new Date(session.checkInTime).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' })}
+          </span>
+          <span className="flex items-center gap-1 text-slate-600 dark:text-slate-400">
+            <Clock className="h-2.5 w-2.5 shrink-0" />
+            <LiveDuration checkInTime={session.checkInTime} />
+          </span>
+        </div>
+      </div>
+    </button>
   )
 }
 
 // ─── SlotInspectModal ─────────────────────────────────────────────────────────
 
-function SlotInspectModal({
-  slot,
-  session,
-  loading,
-  onClose,
-}: {
-  slot: Slot
-  session: ActiveSessionDetail | null
-  loading: boolean
-  onClose: () => void
-}) {
-  // Close on Escape key
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [onClose])
-
-  const durationLabel = useMemo(() => {
-    if (!session) return null
-    const mins = Math.floor((Date.now() - new Date(session.checkInTime).getTime()) / 60_000)
-    if (mins < 60) return `${mins}m`
-    const h = Math.floor(mins / 60)
-    const m = mins % 60
-    return m > 0 ? `${h}h ${m}m` : `${h}h`
-  }, [session])
+function SlotInspectModal({ slot }: { slot: SlotOccupancyMapSlot }) {
+  const session = slot.session
+  const [imgError, setImgError] = useState(false)
+  const hasThumbnail = session?.thumbnailUrl && !imgError
+  const risk = slot.risk
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-slate-900"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3 p-5 border-b border-slate-100 dark:border-white/10">
-          <div>
-            <div className="flex items-center gap-3">
-              <span className="font-mono text-2xl font-black text-slate-950 dark:text-white">{slot.code}</span>
-              <StatusBadge tone={slotTone(slot.status)} label={STATUS_LABELS[slot.status]} />
-            </div>
-            <p className="mt-1 text-sm text-slate-500">{slot.floor.name} · Zone {slot.zone} · {titleCase(slot.vehicleType)}</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-slate-200 transition"
-            aria-label="Close"
-          >
-            ✕
-          </button>
+    <DialogContent className="sm:max-w-md p-0 overflow-hidden border-slate-200 dark:border-white/10 shadow-2xl bg-white dark:bg-slate-900 gap-0">
+      <DialogHeader className="p-5 border-b border-slate-100 dark:border-white/10 text-left">
+        <div className="flex items-center gap-3">
+          <DialogTitle className="font-mono text-2xl font-black text-slate-950 dark:text-white">{slot.code}</DialogTitle>
+          <StatusBadge tone={slotStatusTone(slot.status)} label={STATUS_LABELS[slot.status]} />
+          {risk.level !== 'normal' && (
+            <RiskBadge level={risk.level} />
+          )}
         </div>
+        <p className="mt-1 text-sm text-slate-500">
+          {slot.floorName} · Zone {slot.zone} · {titleCase(slot.vehicleType)}
+        </p>
+      </DialogHeader>
 
         {/* Body */}
         <div className="p-5">
-          {slot.status !== 'occupied' ? (
+          {slot.status !== 'occupied' || !session ? (
             <div className="rounded-xl border border-dashed border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-slate-950/50 p-6 text-sm font-semibold text-slate-500 text-center">
               {slot.status === 'available' && 'Slot is available — no active session.'}
               {slot.status === 'reserved' && 'Slot is reserved — vehicle has not checked in yet.'}
               {slot.status === 'maintenance' && 'Slot is under maintenance.'}
+              {slot.status === 'occupied' && !session && 'Slot is occupied but session data is unavailable.'}
             </div>
-          ) : loading ? (
-            <div className="animate-pulse space-y-2">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="h-10 rounded-xl bg-slate-100 dark:bg-slate-800/60" />
-              ))}
-            </div>
-          ) : session ? (
-            <dl className="space-y-2">
-              <InspectRow label="Session code" value={session.sessionCode} mono />
-              <InspectRow label="License plate" value={session.licensePlate} mono />
-              <InspectRow label="Vehicle type" value={titleCase(session.vehicleType)} />
-              <InspectRow label="Check-in time" value={formatDateTimeVN(session.checkInTime)} />
-              <InspectRow label="Duration" value={durationLabel ?? '—'} />
-              <InspectRow label="Session status" value={session.status.replace(/_/g, ' ')} />
-              {session.isOvertime ? (
-                <div className="rounded-xl border border-amber-300/40 bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-700 dark:text-amber-200">
-                  ⚠ Overtime — vehicle has exceeded the standard parking threshold.
+          ) : (
+            <div className="space-y-3">
+              {/* Thumbnail */}
+              {hasThumbnail ? (
+                <div className="overflow-hidden rounded-xl">
+                  <img
+                    src={session.thumbnailUrl!}
+                    alt={`Check-in evidence — ${session.plate}`}
+                    className="w-full object-cover max-h-44"
+                    onError={() => setImgError(true)}
+                  />
                 </div>
               ) : null}
-            </dl>
-          ) : (
-            <div className="rounded-xl border border-dashed border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-slate-950/50 p-6 text-sm font-semibold text-slate-500 text-center">
-              No active session found for this slot.
+
+              {/* Risk reason banner */}
+              {risk.level !== 'normal' && risk.reason ? (
+                <div className={`flex items-start gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold ${
+                  risk.level === 'critical'
+                    ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-200/60 dark:border-rose-400/20'
+                    : 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-400/20'
+                }`}>
+                  {risk.level === 'critical'
+                    ? <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    : <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+                  {risk.reason}
+                </div>
+              ) : null}
+
+              <dl className="space-y-2">
+                <InspectRow label="Session code" value={session.sessionCode} mono />
+                <InspectRow label="License plate" value={session.plate} mono />
+                <InspectRow label="Vehicle type" value={titleCase(slot.vehicleType)} />
+                <InspectRow label="Check-in time" value={formatDateTimeVN(session.checkInTime)} />
+                <InspectRow
+                  label="Duration"
+                  valueNode={<span className="text-right text-xs font-black text-slate-800 dark:text-slate-200 tabular-nums"><LiveDuration checkInTime={session.checkInTime} /></span>}
+                />
+                <InspectRow label="Session status" value={session.status.replace(/_/g, ' ')} />
+              </dl>
             </div>
           )}
         </div>
@@ -417,19 +584,34 @@ function SlotInspectModal({
             Read-only view · No checkout or payment actions available here
           </p>
         </div>
-      </div>
+    </DialogContent>
+  )
+}
+
+function InspectRow({
+  label,
+  value,
+  mono = false,
+  valueNode,
+}: {
+  label: string
+  value?: string
+  mono?: boolean
+  valueNode?: ReactNode
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-slate-950/50 px-3 py-2">
+      <dt className="text-xs font-semibold text-slate-500">{label}</dt>
+      {valueNode ?? (
+        <dd className={`text-right text-xs font-black text-slate-800 dark:text-slate-200 ${mono ? 'font-mono' : ''}`}>
+          {value}
+        </dd>
+      )}
     </div>
   )
 }
 
-function InspectRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-slate-950/50 px-3 py-2">
-      <dt className="text-xs font-semibold text-slate-500">{label}</dt>
-      <dd className={`text-right text-xs font-black text-slate-800 dark:text-slate-200 ${mono ? 'font-mono' : ''}`}>{value}</dd>
-    </div>
-  )
-}
+// ─── KPI Cards ────────────────────────────────────────────────────────────────
 
 function buildKpis(
   summary: AdminSummary | null,
@@ -452,58 +634,62 @@ function buildKpis(
 
   return [
     {
-      label: 'Total slots',
+      label: 'Total Capacity',
       value: totalSlots,
-      helper: `${availableSlots} available - ${reservedSlots} reserved - ${occupiedSlots} occupied`,
-      note: maintenanceSlots > 0 ? `${maintenanceSlots} under maintenance` : 'Source-of-truth slot inventory',
+      helper: 'Total parking slots configured in facility',
+      note: `${availableSlots} available · ${occupiedSlots} occupied · ${reservedSlots} reserved${maintenanceSlots > 0 ? ` · ${maintenanceSlots} under maintenance` : ''}`,
       icon: <ParkingCircle className="h-5 w-5" strokeWidth={1.8} />,
     },
     {
-      label: 'Available slots',
+      label: 'Available Slots',
       value: `${availableSlots}/${totalSlots}`,
-      helper: 'Free now and ready for allocation',
-      note: `${reservedSlots} held by reservations, ${occupiedSlots} physically occupied`,
+      helper: 'Ready for incoming vehicles',
+      note: 'Excludes occupied slots and reserved holds',
       icon: <CheckCircle2 className="h-5 w-5" strokeWidth={1.8} />,
     },
     {
-      label: 'Occupied slots',
+      label: 'Occupied Slots',
       value: `${occupiedSlots}/${totalSlots}`,
-      helper: 'Vehicles physically parked now',
-      note: reservedSlots > 0 ? `${reservedSlots} reserved holds are tracked separately` : 'Reserved holds are not counted as occupied',
+      helper: 'Vehicles currently parked in facility',
+      note: 'Does not include reservations or maintenance',
       icon: <Car className="h-5 w-5" strokeWidth={1.8} />,
     },
     {
-      label: 'Occupancy rate',
+      label: 'Occupancy Rate',
       value: `${occupancyRate}%`,
-      helper: `${occupiedSlots} occupied / ${totalSlots} total slots`,
-      note: 'Formula excludes reserved holds and maintenance slots from occupied count',
+      helper: 'Space utilization percentage',
+      note: 'Excludes reserved and maintenance slots',
       icon: <Gauge className="h-5 w-5" strokeWidth={1.8} />,
     },
     {
-      label: 'Active sessions',
+      label: 'Active Sessions',
       value: summary?.sessions.active ?? 'Unavailable',
-      helper: `${summary?.sessions.checkoutPending ?? 0} checkout pending`,
+      helper: `${summary?.sessions.checkoutPending ?? 0} checking out now`,
+      note: 'Vehicles currently checked in',
       icon: <Timer className="h-5 w-5" strokeWidth={1.8} />,
       unavailable: !summary,
     },
     {
-      label: 'Today revenue',
+      label: "Today's Revenue",
       value: summary ? formatVnd(summary.payments.revenueToday) : 'Unavailable',
-      helper: `${formatVnd(summary?.payments.byMethod.bankQr ?? 0)} via Bank QR`,
+      helper: `${formatVnd(summary?.payments.byMethod.bankQr ?? 0)} Bank QR · ${formatVnd(summary?.payments.byMethod.cash ?? 0)} Cash`,
+      note: 'Total collected since midnight today',
       icon: <CircleDollarSign className="h-5 w-5" strokeWidth={1.8} />,
       unavailable: !summary,
     },
     {
-      label: 'Pending payments',
+      label: 'Pending Payments',
       value: pendingPayments?.summary.total ?? summary?.payments.pending ?? 'Unavailable',
-      helper: `${pendingPayments?.summary.overdue ?? 0} overdue`,
+      helper: `${pendingPayments?.summary.overdue ?? 0} overdue payments`,
+      note: 'Awaiting customer payment or bank confirmation',
       icon: <CreditCard className="h-5 w-5" strokeWidth={1.8} />,
       unavailable: !summary && !pendingPayments,
     },
     {
-      label: 'Active reservations',
+      label: 'Active Reservations',
       value: summary?.reservations.active ?? 'Unavailable',
       helper: `${summary?.reservations.expiredToday ?? 0} expired today`,
+      note: 'Held spots booked in advance by drivers',
       icon: <CalendarClock className="h-5 w-5" strokeWidth={1.8} />,
       unavailable: !summary,
     },
@@ -526,81 +712,84 @@ function KpiCard({
   unavailable?: boolean
 }) {
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xl shadow-slate-200/60 dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-sm font-bold text-slate-600 dark:text-slate-400">{label}</p>
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200 dark:bg-cyan-300/10 dark:text-cyan-200 dark:ring-cyan-300/20">
-          {icon}
+    <Card className="shadow-sm">
+      <CardHeader className="pb-2">
+        <div className="flex items-start justify-between">
+          <CardTitle className="text-sm font-medium text-slate-600 dark:text-slate-400">
+            {label}
+          </CardTitle>
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200 dark:bg-cyan-300/10 dark:text-cyan-200 dark:ring-cyan-300/20">
+            {icon}
+          </div>
         </div>
-      </div>
-      <p
-        className={`mt-4 text-2xl font-black tracking-tight ${unavailable ? 'text-slate-500' : 'text-slate-950 dark:text-white'
-          }`}
-      >
-        {value}
-      </p>
-      <p className="mt-2 text-xs font-semibold text-slate-500">{helper}</p>
-      {note ? (
-        <p className="mt-1 text-[11px] font-medium leading-4 text-slate-400 dark:text-slate-500">
-          {note}
+      </CardHeader>
+      <CardContent>
+        <p className={`text-2xl font-black tracking-tight ${unavailable ? 'text-slate-500' : 'text-slate-950 dark:text-white'}`}>
+          {value}
         </p>
-      ) : null}
-    </article>
+        <p className="mt-2 text-xs font-semibold text-slate-500">{helper}</p>
+        {note ? (
+          <p className="mt-1 text-[11px] font-medium leading-4 text-slate-400 dark:text-slate-500">
+            {note}
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
   )
 }
 
-export function SlotButton({
-  slot,
-  selected,
-  onSelect,
+// ─── Operations Queue Card ────────────────────────────────────────────────────
+
+export function OperationsQueueCard({
+  issues,
+  openTotal,
+  connected,
 }: {
-  slot: Slot
-  selected: boolean
-  onSelect: () => void
+  issues: OperationIssue[]
+  openTotal: number
+  connected: boolean
 }) {
-  const isOccupied = slot.status === 'occupied';
-
-  if (selected) {
-    return (
-      <button
-        type="button"
-        onClick={onSelect}
-        className="flex aspect-[3/2] flex-col items-center justify-center rounded-xl bg-[#2563eb] text-white transition hover:-translate-y-0.5 shadow-lg shadow-blue-500/30 ring-2 ring-white/20"
-      >
-        <span className="text-[10px] md:text-xs font-medium">Selected</span>
-        <span className="font-bold text-sm">{slot.code}</span>
-      </button>
-    );
-  }
-
-  if (isOccupied) {
-    const imgSrc = slot.vehicleType === 'motorbike' ? '/motor.jpg' : '/car.jpg';
-    return (
-      <button
-        type="button"
-        onClick={onSelect}
-        className="flex aspect-[3/2] items-center justify-center rounded-xl bg-[#262626] transition hover:-translate-y-0.5 overflow-hidden ring-1 ring-white/5"
-      >
-        <img src={imgSrc} alt="Occupied vehicle" className="w-full h-full object-cover" />
-      </button>
-    );
-  }
-
-  // Available, Maintenance, Reserved
-  const styleClass = slot.status === 'available'
-    ? "bg-white text-slate-950 dark:bg-white dark:text-slate-950 ring-1 ring-black/5"
-    : STATUS_STYLES[slot.status];
+  const activeIssues = issues
+    .filter((issue) => issue.status === 'open' || issue.status === 'in_review')
+    .slice(0, 3)
 
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`flex aspect-[3/2] flex-col items-center justify-center rounded-xl transition hover:-translate-y-0.5 shadow-sm ${styleClass}`}
+    <InfoCard
+      title="Operations Queue"
+      icon={<ClipboardList className="h-4 w-4" strokeWidth={1.8} />}
+      action={<LinkButton to="/manager/operations" label="Open Queue" />}
     >
-      <span className="text-[10px] md:text-xs font-medium capitalize opacity-70">{STATUS_LABELS[slot.status]}</span>
-      <span className="font-bold text-sm">{slot.code}</span>
-    </button>
-  );
+      <div className="grid gap-2 sm:grid-cols-[160px_minmax(0,1fr)]">
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-white/10 dark:bg-slate-950/60">
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Open reviews</p>
+          <p className="mt-2 text-3xl font-black text-cyan-700 dark:text-cyan-100">{openTotal}</p>
+          <p className="mt-1 text-xs font-semibold text-slate-500">{connected ? 'Live stream' : 'Fallback refresh'}</p>
+        </div>
+        {activeIssues.length === 0 ? (
+          <EmptyInline title="No staff review requests waiting." />
+        ) : (
+          <ul className="grid gap-2">
+            {activeIssues.map((issue) => (
+              <li
+                key={issue.id}
+                className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-white/10 dark:bg-slate-950/60"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-black text-slate-950 dark:text-white">
+                    {issue.plateNumber ?? issue.session?.plateNumberConfirmed ?? issue.session?.licensePlate ?? 'Manual review'}
+                  </p>
+                  <p className="mt-0.5 truncate text-xs font-semibold text-slate-500">
+                    {titleCase(issue.type.replace(/_/g, ' '))} · {issue.status.replace(/_/g, ' ')}
+                  </p>
+                </div>
+                <StatusBadge tone={issue.severity === 'critical' ? 'critical' : issue.severity === 'warning' ? 'warning' : 'normal'} label={issue.severity} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </InfoCard>
+  )
 }
 
 export function OperationalFlagsCard({
@@ -651,58 +840,6 @@ export function OperationalFlagsCard({
           ))}
         </ul>
       ) : null}
-    </InfoCard>
-  )
-}
-
-export function OperationsQueueCard({
-  issues,
-  openTotal,
-  connected,
-}: {
-  issues: OperationIssue[]
-  openTotal: number
-  connected: boolean
-}) {
-  const activeIssues = issues
-    .filter((issue) => issue.status === 'open' || issue.status === 'in_review')
-    .slice(0, 3)
-
-  return (
-    <InfoCard
-      title="Operations Queue"
-      icon={<ClipboardList className="h-4 w-4" strokeWidth={1.8} />}
-      action={<LinkButton to="/manager/operations" label="Open Queue" />}
-    >
-      <div className="grid gap-2 sm:grid-cols-[160px_minmax(0,1fr)]">
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-white/10 dark:bg-slate-950/60">
-          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Open reviews</p>
-          <p className="mt-2 text-3xl font-black text-cyan-700 dark:text-cyan-100">{openTotal}</p>
-          <p className="mt-1 text-xs font-semibold text-slate-500">{connected ? 'Live stream' : 'Fallback refresh'}</p>
-        </div>
-        {activeIssues.length === 0 ? (
-          <EmptyInline title="No staff review requests waiting." />
-        ) : (
-          <ul className="grid gap-2">
-            {activeIssues.map((issue) => (
-              <li
-                key={issue.id}
-                className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-white/10 dark:bg-slate-950/60"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-black text-slate-950 dark:text-white">
-                    {issue.plateNumber ?? issue.session?.plateNumberConfirmed ?? issue.session?.licensePlate ?? 'Manual review'}
-                  </p>
-                  <p className="mt-0.5 truncate text-xs font-semibold text-slate-500">
-                    {titleCase(issue.type.replace(/_/g, ' '))} · {issue.status.replace(/_/g, ' ')}
-                  </p>
-                </div>
-                <StatusBadge tone={issue.severity === 'critical' ? 'critical' : issue.severity === 'warning' ? 'warning' : 'normal'} label={issue.severity} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
     </InfoCard>
   )
 }
@@ -777,20 +914,21 @@ export function CurrentParkedCard({
   slot,
   paymentIssue,
 }: {
-  slot: Slot | null
+  slot: SlotOccupancyMapSlot | null
   paymentIssue: AdminPendingPaymentItem | null
 }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-200/60 dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none">
-      <div className="flex items-start justify-between gap-3">
+    <Card className="shadow-sm">
+      <CardHeader className="flex flex-row items-start justify-between pb-2 space-y-0">
         <div>
-          <h2 className="text-base font-black text-slate-950 dark:text-white">Current Parked</h2>
-          <p className="mt-1 text-sm font-medium text-slate-600 dark:text-slate-400">
+          <CardTitle className="text-base font-black text-slate-950 dark:text-white">Current Parked</CardTitle>
+          <CardDescription className="mt-1">
             Read-only slot inspection.
-          </p>
+          </CardDescription>
         </div>
         <Layers3 className="h-5 w-5 text-cyan-700 dark:text-cyan-200" strokeWidth={1.8} />
-      </div>
+      </CardHeader>
+      <CardContent>
 
       {!slot ? (
         <EmptyPanel
@@ -804,29 +942,38 @@ export function CurrentParkedCard({
               <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Slot code</p>
               <p className="mt-1 font-mono text-lg font-black text-slate-950 dark:text-white">{slot.code}</p>
             </div>
-            <StatusBadge tone={slotTone(slot.status)} label={STATUS_LABELS[slot.status]} />
+            <StatusBadge tone={slotStatusTone(slot.status)} label={STATUS_LABELS[slot.status]} />
           </div>
 
           <DetailGrid
             rows={[
-              ['Plate number', paymentIssue?.plateNumber ?? 'Unavailable'],
+              ['Plate number', paymentIssue?.plateNumber ?? slot.session?.plate ?? 'Unavailable'],
               ['Vehicle type', titleCase(slot.vehicleType)],
-              ['Session code', paymentIssue?.sessionCode ?? 'Unavailable'],
-              ['Check-in time', paymentIssue ? formatDateTimeVN(paymentIssue.createdAt) : 'Unavailable'],
-              ['Billed duration', paymentIssue?.waitingLabel ?? 'Unavailable'],
-              ['Session status', paymentIssue?.sessionStatus ?? slot.status],
-              ['Staff check-in / owner', paymentIssue?.responsibleStaff.name ?? 'Unavailable'],
+              ['Session code', paymentIssue?.sessionCode ?? slot.session?.sessionCode ?? 'Unavailable'],
+              ['Check-in time', slot.session ? formatDateTimeVN(slot.session.checkInTime) : 'Unavailable'],
+              ['Session status', slot.session?.status?.replace(/_/g, ' ') ?? slot.status],
             ]}
           />
 
-          {!paymentIssue ? (
+          {slot.session?.thumbnailUrl ? (
+            <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
+              <img
+                src={slot.session.thumbnailUrl}
+                alt={`Check-in ${slot.session.plate}`}
+                className="w-full h-32 object-cover bg-slate-100 dark:bg-slate-900"
+              />
+            </div>
+          ) : null}
+
+          {!slot.session ? (
             <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 dark:border-white/10 dark:bg-slate-950/50 p-3 text-xs font-semibold leading-5 text-slate-500">
               Vehicle and session fields require an active session detail endpoint for managers. This view does not fabricate plate numbers or timers.
             </p>
           ) : null}
         </div>
       )}
-    </section>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -839,19 +986,20 @@ export function DailyOperationsCard({
   traffic: TodayTraffic
   selectedDate: string
 }) {
-  const isToday = selectedDate === todayIsoDate();
-  const cardTitle = isToday ? `Operations for Today · ${selectedDate}` : `Operations for ${selectedDate}`;
+  const isToday = selectedDate === todayIsoDate()
+  const cardTitle = isToday ? `Operations for Today · ${selectedDate}` : `Operations for ${selectedDate}`
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-200/60 dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none">
-      <div className="flex items-start justify-between gap-3">
+    <Card className="shadow-sm">
+      <CardHeader className="flex flex-row items-start justify-between pb-2 space-y-0">
         <div>
-          <h2 className="text-base font-black text-slate-950 dark:text-white">{cardTitle}</h2>
-          <p className="mt-1 text-sm font-medium text-slate-600 dark:text-slate-400">Movement and session status.</p>
+          <CardTitle className="text-base font-black text-slate-950 dark:text-white">{cardTitle}</CardTitle>
+          <CardDescription className="mt-1">Movement and session status.</CardDescription>
         </div>
         <ClipboardList className="h-5 w-5 text-cyan-700 dark:text-cyan-200" strokeWidth={1.8} />
-      </div>
-      <div className="mt-5 grid grid-cols-2 gap-2">
+      </CardHeader>
+      <CardContent>
+      <div className="grid grid-cols-2 gap-2">
         <MiniMetric label="Daily Check-ins" value={traffic.checkIns ?? 'Unavailable'} tone="normal" />
         <MiniMetric label="Daily Checkouts" value={traffic.checkOuts ?? 'Unavailable'} tone="normal" />
         <MiniMetric label="Daily Completed" value={summary?.sessions.completedToday ?? 0} tone="normal" />
@@ -859,21 +1007,23 @@ export function DailyOperationsCard({
         <MiniMetric label="Current Pending" value={summary?.sessions.checkoutPending ?? 0} tone="warning" />
         <MiniMetric label="Current Auth'd" value={summary?.sessions.exitAuthorized ?? 0} tone="normal" />
       </div>
-    </section>
+      </CardContent>
+    </Card>
   )
 }
 
 export function RevenueSummaryCard({ summary }: { summary: AdminSummary | null }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-200/60 dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none">
-      <div className="flex items-start justify-between gap-3">
+    <Card className="shadow-sm">
+      <CardHeader className="flex flex-row items-start justify-between pb-2 space-y-0">
         <div>
-          <h2 className="text-base font-black text-slate-950 dark:text-white">Revenue Summary</h2>
-          <p className="mt-1 text-sm font-medium text-slate-600 dark:text-slate-400">Payments collected today.</p>
+          <CardTitle className="text-base font-black text-slate-950 dark:text-white">Revenue Summary</CardTitle>
+          <CardDescription className="mt-1">Payments collected today.</CardDescription>
         </div>
         <Banknote className="h-5 w-5 text-cyan-700 dark:text-cyan-200" strokeWidth={1.8} />
-      </div>
-      <div className="mt-5 space-y-3">
+      </CardHeader>
+      <CardContent>
+      <div className="space-y-3">
         <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 p-4">
           <p className="text-xs font-bold uppercase tracking-wider text-cyan-700 dark:text-cyan-200">Today revenue</p>
           <p className="mt-2 text-2xl font-black text-slate-950 dark:text-white">
@@ -890,9 +1040,12 @@ export function RevenueSummaryCard({ summary }: { summary: AdminSummary | null }
           ]}
         />
       </div>
-    </section>
+      </CardContent>
+    </Card>
   )
 }
+
+// ─── Shared UI Components ─────────────────────────────────────────────────────
 
 export function InfoCard({
   title,
@@ -906,18 +1059,18 @@ export function InfoCard({
   children: ReactNode
 }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-200/60 dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none">
-      <div className="flex items-start justify-between gap-3">
+    <Card className="shadow-sm">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <div className="flex items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200 dark:bg-cyan-300/10 dark:text-cyan-200 dark:ring-cyan-300/20">
             {icon}
           </span>
-          <h2 className="text-base font-black text-slate-950 dark:text-white">{title}</h2>
+          <CardTitle className="text-base font-black text-slate-950 dark:text-white">{title}</CardTitle>
         </div>
         {action}
-      </div>
-      <div className="mt-4">{children}</div>
-    </section>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
   )
 }
 
@@ -982,23 +1135,32 @@ export function StatusBadge({
   )
 }
 
-export function SlotLegend({ status, count }: { status: SlotStatus; count: number }) {
+function RiskBadge({ level }: { level: SlotOccupancyMapRiskLevel }) {
+  const cls = RISK_BADGE_CLASS[level]
   return (
-    <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:ring-white/10">
-      <span className={`h-2 w-2 rounded-full ${STATUS_DOT[status]}`} />
-      {count} {STATUS_LABELS[status].toLowerCase()}
+    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-black capitalize ring-1 ${cls}`}>
+      {level === 'critical' ? <AlertCircle className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+      {level}
     </span>
+  )
+}
+
+export function SlotLegend({ status, count }: { status: string; count: number }) {
+  return (
+    <Badge variant="secondary" className="gap-1.5 px-2.5 py-0.5">
+      <span className={`h-2 w-2 rounded-full ${STATUS_DOT[status] ?? 'bg-slate-400'}`} />
+      {count} {STATUS_LABELS[status]?.toLowerCase() ?? status}
+    </Badge>
   )
 }
 
 export function LinkButton({ to, label }: { to: string; label: string }) {
   return (
-    <Link
-      to={to}
-      className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-700 transition hover:border-cyan-400 hover:text-slate-950 focus:outline-none focus:ring-2 focus:ring-cyan-300 dark:border-white/10 dark:text-slate-300 dark:hover:border-cyan-300/40 dark:hover:text-white"
-    >
-      {label}
-    </Link>
+    <Button variant="outline" size="sm" asChild>
+      <Link to={to} className="text-xs font-black">
+        {label}
+      </Link>
+    </Button>
   )
 }
 
@@ -1038,43 +1200,14 @@ function DashboardSkeleton() {
   )
 }
 
-function countByStatus(slots: Slot[], status: SlotStatus) {
-  return slots.filter((slot) => slot.status === status).length
-}
-
-function groupByFloor(slots: Slot[]): FloorGroup[] {
-  const map = new Map<number, FloorGroup>()
-
-  for (const slot of slots) {
-    if (!map.has(slot.floor.floorNumber)) {
-      map.set(slot.floor.floorNumber, {
-        floorNumber: slot.floor.floorNumber,
-        floorName: slot.floor.name || `T${slot.floor.floorNumber}`,
-        zoneA: [],
-        zoneB: [],
-      })
-    }
-
-    const group = map.get(slot.floor.floorNumber)!
-    if (slot.zone === 'A') group.zoneA.push(slot)
-    else group.zoneB.push(slot)
-  }
-
-  for (const group of map.values()) {
-    group.zoneA.sort((a, b) => a.slotNumber - b.slotNumber)
-    group.zoneB.sort((a, b) => a.slotNumber - b.slotNumber)
-  }
-
-  return Array.from(map.values()).sort((a, b) => a.floorNumber - b.floorNumber)
-}
+// ─── Utility Functions ────────────────────────────────────────────────────────
 
 export async function getTodayTraffic(date?: string): Promise<TodayTraffic> {
   try {
-    const targetDate = date || todayIsoDate();
+    const targetDate = date || todayIsoDate()
     const { data } = await api.get<TrafficRow[]>('/reports/traffic', {
       params: { period: 'daily', date: targetDate },
     })
-
     return {
       checkIns: data.reduce((total, row) => total + Number(row.entryCount || 0), 0),
       checkOuts: data.reduce((total, row) => total + Number(row.exitCount || 0), 0),
@@ -1098,7 +1231,7 @@ export function titleCase(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1)
 }
 
-export function slotTone(status: SlotStatus): 'normal' | 'warning' | 'critical' | 'muted' {
+export function slotStatusTone(status: string): 'normal' | 'warning' | 'critical' | 'muted' {
   if (status === 'available') return 'normal'
   if (status === 'reserved') return 'warning'
   if (status === 'occupied') return 'critical'
@@ -1122,3 +1255,6 @@ export function flagDot(severity: AdminOperationFlag['severity']) {
   if (severity === 'warning') return 'bg-amber-400'
   return 'bg-cyan-300'
 }
+
+// Keep legacy export name for any existing imports
+export { OccupancySlotTile as SlotButton }

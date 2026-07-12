@@ -42,7 +42,10 @@ export default function AppHeader() {
   const { pathname } = useLocation()
   const [section = '', page = ''] = pathname.split('/').filter(Boolean)
   const sectionLabel = SECTION_LABELS[section] ?? 'PBMS'
-  const pageLabel = PAGE_LABELS[page] ?? sectionLabel
+  const pageLabel =
+    pathname === '/admin/reports'
+      ? 'Reports & Flags'
+      : PAGE_LABELS[page] ?? sectionLabel
   const sectionHome = SECTION_HOME[section] ?? '/'
 
   return (
