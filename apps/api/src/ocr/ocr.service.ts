@@ -173,6 +173,7 @@ export class OcrService {
         imageKey: true,
         capturedAt: true,
         ocrPlate: true,
+        confirmedPlate: true,
         ocrConfidence: true,
         providerFilename: true,
       },

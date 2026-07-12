@@ -21,6 +21,8 @@ describe('AdminController RBAC', () => {
             getReservationAudit: jest.fn(),
             getOperationsFlags: jest.fn(),
             getPendingPayments: jest.fn(),
+            getSessionEvidence: jest.fn(),
+            getSlotOccupancyMap: jest.fn(),
           },
         },
         Reflector,
@@ -51,8 +53,20 @@ describe('AdminController RBAC', () => {
     expect(canActivate(role, controller.getPendingPayments, AdminController, guard)).toBe(true);
   });
 
+  it.each([Role.admin, Role.manager])('%s can access /admin/sessions/:sessionId/evidence', (role) => {
+    expect(canActivate(role, controller.getSessionEvidence, AdminController, guard)).toBe(true);
+  });
+
   it.each([Role.staff, Role.driver])('%s cannot access /admin/operations/pending-payments', (role) => {
     expect(canActivate(role, controller.getPendingPayments, AdminController, guard)).toBe(false);
+  });
+
+  it.each([Role.admin, Role.manager])('%s can access /admin/operations/slot-occupancy-map', (role) => {
+    expect(canActivate(role, controller.getSlotOccupancyMap, AdminController, guard)).toBe(true);
+  });
+
+  it.each([Role.staff, Role.driver])('%s cannot access /admin/operations/slot-occupancy-map', (role) => {
+    expect(canActivate(role, controller.getSlotOccupancyMap, AdminController, guard)).toBe(false);
   });
 
   it('rejects invalid reservation audit date format', () => {

@@ -1,4 +1,12 @@
-import { Controller, Get, UseGuards, Query, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  UseGuards,
+  Query,
+  BadRequestException,
+  Param,
+  ParseUUIDPipe,
+} from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { Roles } from '../auth/decorators';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
@@ -28,6 +36,16 @@ export class AdminController {
   @Get('operations/pending-payments')
   getPendingPayments() {
     return this.adminService.getPendingPayments();
+  }
+
+  @Get('operations/slot-occupancy-map')
+  getSlotOccupancyMap() {
+    return this.adminService.getSlotOccupancyMap();
+  }
+
+  @Get('sessions/:sessionId/evidence')
+  getSessionEvidence(@Param('sessionId', ParseUUIDPipe) sessionId: string) {
+    return this.adminService.getSessionEvidence(sessionId);
   }
 
   private parseAuditDate(dateStr?: string) {

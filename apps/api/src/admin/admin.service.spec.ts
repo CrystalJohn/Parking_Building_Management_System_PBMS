@@ -18,19 +18,23 @@ describe('AdminService', () => {
   let service: AdminService;
   let prisma: {
     user: { findMany: jest.Mock };
+    floor: { findMany: jest.Mock };
     slot: { findMany: jest.Mock };
-    parkingSession: { findMany: jest.Mock };
+    parkingSession: { findMany: jest.Mock; findUnique: jest.Mock };
     reservation: { findMany: jest.Mock };
     payment: { findMany: jest.Mock };
+    ocrEvidence: { findMany: jest.Mock };
   };
 
   beforeEach(() => {
     prisma = {
       user: { findMany: jest.fn() },
+      floor: { findMany: jest.fn() },
       slot: { findMany: jest.fn() },
-      parkingSession: { findMany: jest.fn() },
+      parkingSession: { findMany: jest.fn(), findUnique: jest.fn() },
       reservation: { findMany: jest.fn() },
       payment: { findMany: jest.fn() },
+      ocrEvidence: { findMany: jest.fn() },
     };
 
     service = new AdminService(prisma as unknown as PrismaService);
@@ -265,6 +269,7 @@ describe('AdminService', () => {
           paidAt: null,
           expiredAt: new Date('2026-06-25T02:50:00.000Z'),
           session: {
+            id: 'session-pending-bank-qr',
             sessionCode: 'PBMS-QR',
             licensePlate: '59A-11111',
             checkInTime: new Date('2026-06-25T01:00:00.000Z'),
@@ -277,6 +282,7 @@ describe('AdminService', () => {
           paidAt: null,
           expiredAt: new Date('2026-06-25T02:00:00.000Z'),
           session: {
+            id: 'session-failed-payment',
             sessionCode: 'PBMS-FAILED',
             licensePlate: '59A-22222',
             checkInTime: new Date('2026-06-25T01:00:00.000Z'),
@@ -300,7 +306,11 @@ describe('AdminService', () => {
 
       expect(result.flags).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ type: 'long_active_session', severity: 'warning' }),
+          expect.objectContaining({
+            type: 'long_active_session',
+            severity: 'warning',
+            sessionId: SESSION_UUID,
+          }),
         ]),
       );
     });
@@ -310,7 +320,11 @@ describe('AdminService', () => {
 
       expect(result.flags).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ type: 'checkout_pending_too_long', severity: 'warning' }),
+          expect.objectContaining({
+            type: 'checkout_pending_too_long',
+            severity: 'warning',
+            sessionId: SESSION_UUID,
+          }),
         ]),
       );
     });
@@ -322,6 +336,7 @@ describe('AdminService', () => {
         expect.objectContaining({
           type: 'exit_authorized_not_exited',
           severity: 'critical',
+          sessionId: SESSION_UUID,
         }),
       );
     });
@@ -331,7 +346,11 @@ describe('AdminService', () => {
 
       expect(result.flags).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ type: 'pending_bank_qr_too_long', severity: 'warning' }),
+          expect.objectContaining({
+            type: 'pending_bank_qr_too_long',
+            severity: 'warning',
+            sessionId: 'session-pending-bank-qr',
+          }),
         ]),
       );
     });
@@ -341,7 +360,11 @@ describe('AdminService', () => {
 
       expect(result.flags).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ type: 'failed_payment', severity: 'warning' }),
+          expect.objectContaining({
+            type: 'failed_payment',
+            severity: 'warning',
+            sessionId: 'session-failed-payment',
+          }),
         ]),
       );
     });
@@ -356,11 +379,11 @@ describe('AdminService', () => {
       );
     });
 
-    it('flags do not expose raw session UUID when sessionCode exists', async () => {
+    it('flags expose sessionId alongside sessionCode for evidence drill-down', async () => {
       const result = await service.getOperationsFlags(NOW);
       const serialized = JSON.stringify(result.flags);
 
-      expect(serialized).not.toContain(SESSION_UUID);
+      expect(serialized).toContain(SESSION_UUID);
       expect(serialized).toContain('PBMS-ACTIVE');
     });
   });
@@ -644,6 +667,238 @@ describe('AdminService', () => {
       );
     });
   });
+
+  describe('getSessionEvidence', () => {
+    beforeEach(() => {
+      prisma.parkingSession.findUnique = jest.fn().mockResolvedValue({
+        id: SESSION_UUID,
+        sessionCode: 'PBMS-EVIDENCE',
+        licensePlate: '59A12345',
+        plateNumberConfirmed: '59A12345',
+        vehicleType: VehicleType.car,
+        status: SessionStatus.active,
+        checkInTime: new Date('2026-06-25T01:00:00.000Z'),
+        checkOutTime: null,
+        slot: { code: 'T1-A-01' },
+      });
+      prisma.ocrEvidence.findMany.mockResolvedValue([
+        {
+          id: 'evidence-check-in-new',
+          eventType: 'check_in',
+          thumbnailKey: 'thumb-check-in',
+          imageKey: 'image-check-in',
+          imageExpiresAt: null,
+          imageDeletedAt: null,
+          thumbnailExpiresAt: null,
+          thumbnailDeletedAt: null,
+          ocrPlate: '59A12345',
+          confirmedPlate: '59A12345',
+          ocrConfidence: 0.92,
+          capturedAt: new Date('2026-06-25T01:01:00.000Z'),
+          providerTimestamp: new Date('2026-06-25T01:01:05.000Z'),
+          staff: { fullName: 'Staff One', phone: '0900000001' },
+        },
+        {
+          id: 'evidence-check-out',
+          eventType: 'check_out',
+          thumbnailKey: null,
+          imageKey: null,
+          imageExpiresAt: new Date('2026-06-24T01:00:00.000Z'),
+          imageDeletedAt: new Date('2026-06-25T03:00:00.000Z'),
+          thumbnailExpiresAt: null,
+          thumbnailDeletedAt: null,
+          ocrPlate: '59A12345',
+          confirmedPlate: '59A12345',
+          ocrConfidence: 0.88,
+          capturedAt: new Date('2026-06-25T02:01:00.000Z'),
+          providerTimestamp: null,
+          staff: { fullName: null, phone: '0900000002' },
+        },
+      ]);
+    });
+
+    it('returns latest check-in and check-out evidence with image status', async () => {
+      const result = await service.getSessionEvidence(SESSION_UUID);
+
+      expect(result.session).toEqual(
+        expect.objectContaining({
+          id: SESSION_UUID,
+          sessionCode: 'PBMS-EVIDENCE',
+          slotCode: 'T1-A-01',
+        }),
+      );
+      expect(result.checkInEvidence).toEqual(
+        expect.objectContaining({
+          id: 'evidence-check-in-new',
+          eventType: 'check_in',
+          imageStatus: 'available',
+          thumbnailUrl: '/api/ocr-evidences/evidence-check-in-new/thumbnail',
+          imageUrl: '/api/ocr-evidences/evidence-check-in-new/image',
+          staffName: 'Staff One',
+        }),
+      );
+      expect(result.checkOutEvidence).toEqual(
+        expect.objectContaining({
+          id: 'evidence-check-out',
+          eventType: 'check_out',
+          imageStatus: 'expired',
+          staffPhone: '0900000002',
+        }),
+      );
+    });
+  });
+
+  // â”€â”€â”€ getSlotOccupancyMap â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  describe('getSlotOccupancyMap', () => {
+    const FLOOR = { floorNumber: 1, name: 'T1', slots: [] };
+
+    beforeEach(() => {
+      prisma.slot.findMany.mockResolvedValue([]);
+      prisma.parkingSession.findMany.mockResolvedValue([]);
+      prisma.payment.findMany.mockResolvedValue([]);
+      prisma.reservation.findMany.mockResolvedValue([]);
+    });
+
+    it('returns metadata (generatedAt, thresholds, floors)', async () => {
+      prisma.floor.findMany.mockResolvedValue([]);
+      const result = await service.getSlotOccupancyMap(NOW);
+      expect(result.generatedAt).toBe(NOW.toISOString());
+      expect(result.thresholds.longActiveSessionHours).toBe(24);
+      expect(result.thresholds.warningActiveHours).toBe(12);
+      expect(result.floors).toEqual([]);
+    });
+
+    it('slot with no open session has session=null and risk=normal', async () => {
+      prisma.floor.findMany.mockResolvedValue([{ ...FLOOR, slots: [makeMapSlot({ status: SlotStatus.available })] }]);
+      prisma.parkingSession.findMany.mockResolvedValue([]);
+
+      const result = await service.getSlotOccupancyMap(NOW);
+      const slot = result.floors[0].zones[0].slots[0];
+      expect(slot.session).toBeNull();
+      expect(slot.risk.level).toBe('normal');
+    });
+
+    it('assigns risk=normal for a session under 12h', async () => {
+      const checkInTime = new Date(NOW.getTime() - 5 * 60 * 60 * 1000);
+      prisma.floor.findMany.mockResolvedValue([{ ...FLOOR, slots: [makeMapSlot({ id: 1, status: SlotStatus.occupied })] }]);
+      prisma.parkingSession.findMany.mockResolvedValue([makeMapSession({ checkInTime, slotId: 1 })]);
+
+      const result = await service.getSlotOccupancyMap(NOW);
+      const slot = result.floors[0].zones[0].slots[0];
+      expect(slot.risk.level).toBe('normal');
+      expect(slot.session?.plate).toBe('59A-12345');
+      expect(slot.session?.durationMinutes).toBe(300);
+    });
+
+    it('assigns risk=warning for a session between 12h and 24h', async () => {
+      const checkInTime = new Date(NOW.getTime() - 13 * 60 * 60 * 1000);
+      prisma.floor.findMany.mockResolvedValue([{ ...FLOOR, slots: [makeMapSlot({ id: 1, status: SlotStatus.occupied })] }]);
+      prisma.parkingSession.findMany.mockResolvedValue([makeMapSession({ checkInTime, slotId: 1 })]);
+
+      const result = await service.getSlotOccupancyMap(NOW);
+      expect(result.floors[0].zones[0].slots[0].risk.level).toBe('warning');
+    });
+
+    it('assigns risk=critical for a session >= 24h', async () => {
+      const checkInTime = new Date(NOW.getTime() - 25 * 60 * 60 * 1000);
+      prisma.floor.findMany.mockResolvedValue([{ ...FLOOR, slots: [makeMapSlot({ id: 1, status: SlotStatus.occupied })] }]);
+      prisma.parkingSession.findMany.mockResolvedValue([makeMapSession({ checkInTime, slotId: 1 })]);
+
+      const result = await service.getSlotOccupancyMap(NOW);
+      expect(result.floors[0].zones[0].slots[0].risk.level).toBe('critical');
+    });
+
+    it('assigns risk=critical for checkout_pending > 30m', async () => {
+      const checkInTime = new Date(NOW.getTime() - 60 * 60 * 1000);
+      prisma.floor.findMany.mockResolvedValue([{ ...FLOOR, slots: [makeMapSlot({ id: 1, status: SlotStatus.occupied })] }]);
+      prisma.parkingSession.findMany.mockResolvedValue([
+        makeMapSession({ checkInTime, slotId: 1, status: SessionStatus.checkout_pending }),
+      ]);
+
+      const result = await service.getSlotOccupancyMap(NOW);
+      expect(result.floors[0].zones[0].slots[0].risk.level).toBe('critical');
+    });
+
+    it('assigns risk=critical for exit_authorized > 10m', async () => {
+      const checkInTime = new Date(NOW.getTime() - 2 * 60 * 60 * 1000);
+      const paidAt = new Date(NOW.getTime() - 20 * 60 * 1000);
+      prisma.floor.findMany.mockResolvedValue([{ ...FLOOR, slots: [makeMapSlot({ id: 1, status: SlotStatus.occupied })] }]);
+      prisma.parkingSession.findMany.mockResolvedValue([
+        makeMapSession({
+          checkInTime,
+          slotId: 1,
+          status: SessionStatus.exit_authorized,
+          payment: { method: PaymentMethod.cash, status: PaymentStatus.paid, paidAt, expiredAt: null },
+        }),
+      ]);
+
+      const result = await service.getSlotOccupancyMap(NOW);
+      expect(result.floors[0].zones[0].slots[0].risk.level).toBe('critical');
+    });
+
+    it('assigns risk=critical for Bank QR payment pending > 15m', async () => {
+      const checkInTime = new Date(NOW.getTime() - 2 * 60 * 60 * 1000);
+      const expiredAt = new Date(NOW.getTime() - 5 * 60 * 1000);
+      prisma.floor.findMany.mockResolvedValue([{ ...FLOOR, slots: [makeMapSlot({ id: 1, status: SlotStatus.occupied })] }]);
+      prisma.parkingSession.findMany.mockResolvedValue([
+        makeMapSession({
+          checkInTime,
+          slotId: 1,
+          status: SessionStatus.checkout_pending,
+          payment: { method: PaymentMethod.bank_qr, status: PaymentStatus.pending, paidAt: null, expiredAt },
+        }),
+      ]);
+
+      const result = await service.getSlotOccupancyMap(NOW);
+      expect(result.floors[0].zones[0].slots[0].risk.level).toBe('critical');
+    });
+
+    it('includes thumbnailUrl when check-in OCR evidence has thumbnailKey', async () => {
+      const EVI_ID = 'evi-uuid-1234';
+      prisma.floor.findMany.mockResolvedValue([{ ...FLOOR, slots: [makeMapSlot({ id: 1, status: SlotStatus.occupied })] }]);
+      prisma.parkingSession.findMany.mockResolvedValue([
+        makeMapSession({
+          slotId: 1,
+          ocrEvidences: [{ id: EVI_ID, thumbnailKey: 'uploads/thumb/abc.jpg', thumbnailDeletedAt: null, thumbnailExpiresAt: null }],
+        }),
+      ]);
+
+      const result = await service.getSlotOccupancyMap(NOW);
+      expect(result.floors[0].zones[0].slots[0].session?.thumbnailUrl).toBe(`/api/ocr-evidences/${EVI_ID}/thumbnail`);
+    });
+
+    it('returns thumbnailUrl=null when evidence has no thumbnailKey', async () => {
+      prisma.floor.findMany.mockResolvedValue([{ ...FLOOR, slots: [makeMapSlot({ id: 1, status: SlotStatus.occupied })] }]);
+      prisma.parkingSession.findMany.mockResolvedValue([
+        makeMapSession({
+          slotId: 1,
+          ocrEvidences: [{ id: 'evi-no-thumb', thumbnailKey: null, thumbnailDeletedAt: null, thumbnailExpiresAt: null }],
+        }),
+      ]);
+
+      const result = await service.getSlotOccupancyMap(NOW);
+      expect(result.floors[0].zones[0].slots[0].session?.thumbnailUrl).toBeNull();
+    });
+
+    it('returns thumbnailUrl=null when thumbnail has been deleted', async () => {
+      prisma.floor.findMany.mockResolvedValue([{ ...FLOOR, slots: [makeMapSlot({ id: 1, status: SlotStatus.occupied })] }]);
+      prisma.parkingSession.findMany.mockResolvedValue([
+        makeMapSession({
+          slotId: 1,
+          ocrEvidences: [{
+            id: 'evi-deleted',
+            thumbnailKey: 'uploads/thumb/deleted.jpg',
+            thumbnailDeletedAt: new Date('2026-06-20T00:00:00.000Z'),
+            thumbnailExpiresAt: null,
+          }],
+        }),
+      ]);
+
+      const result = await service.getSlotOccupancyMap(NOW);
+      expect(result.floors[0].zones[0].slots[0].session?.thumbnailUrl).toBeNull();
+    });
+  });
 });
 
 function makeSlot({
@@ -764,3 +1019,34 @@ function makeReservationAudit(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+function makeMapSlot(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 1,
+    code: 'T1-A-01',
+    status: SlotStatus.available,
+    vehicleType: VehicleType.car,
+    zone: Zone.A,
+    slotNumber: 1,
+    ...overrides,
+  };
+}
+
+function makeMapSession(overrides: Record<string, unknown> = {}) {
+  return {
+    id: SESSION_UUID,
+    sessionCode: 'PBMS-MAP-001',
+    licensePlate: '59A-12345',
+    status: SessionStatus.active,
+    checkInTime: NOW,
+    slotId: 1,
+    payment: null,
+    ocrEvidences: [],
+    ...overrides,
+  };
+}
+
+
+
+
+

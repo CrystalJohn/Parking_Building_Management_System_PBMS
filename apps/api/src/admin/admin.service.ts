@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import {
   PaymentMethod,
   PaymentStatus,
@@ -19,18 +19,40 @@ import type {
   AdminReservationAuditItemDto,
 } from './dto/admin-reservation-audit.dto';
 import type {
+  AdminSessionEvidenceDto,
+  AdminSessionEvidenceItemDto,
+} from './dto/admin-session-evidence.dto';
+import type {
   AdminSummaryDto,
   FloorSlotMetricDto,
   SlotSummaryDto,
   SlotMetricDto,
   ZoneSlotMetricDto,
 } from './dto/admin-summary.dto';
+import type {
+  AdminSlotOccupancyMapDto,
+  SlotOccupancyMapFloorDto,
+  SlotOccupancyMapZoneDto,
+  SlotOccupancyMapSlotDto,
+  SlotOccupancyMapRiskDto,
+  SlotOccupancyMapRiskLevel,
+} from './dto/admin-slot-occupancy-map.dto';
 
 const FLAG_THRESHOLDS = {
+  longActiveSessionHours: 24,
+  checkoutPendingMinutes: 10,
+  exitAuthorizedMinutes: 10,
+  pendingBankQrMinutes: 15,
+  warningActiveHours: 12,
+} as const;
+
+/** Thresholds exposed on the slot-occupancy-map response (plan spec: checkoutPendingMinutes = 30) */
+const MAP_THRESHOLDS = {
   longActiveSessionHours: 24,
   checkoutPendingMinutes: 30,
   exitAuthorizedMinutes: 10,
   pendingBankQrMinutes: 15,
+  warningActiveHours: 12,
 } as const;
 
 @Injectable()
@@ -180,6 +202,7 @@ export class AdminService {
           expiredAt: true,
           session: {
             select: {
+              id: true,
               sessionCode: true,
               licensePlate: true,
               checkInTime: true,
@@ -202,6 +225,7 @@ export class AdminService {
           expiresAt: true,
           session: {
             select: {
+              id: true,
               sessionCode: true,
               licensePlate: true,
             },
@@ -218,6 +242,7 @@ export class AdminService {
             buildFlag({
               type: 'long_active_session',
               severity: 'warning',
+              sessionId: session.id,
               sessionCode: session.sessionCode,
               plateNumber: session.licensePlate,
               createdAt: session.checkInTime,
@@ -245,12 +270,13 @@ export class AdminService {
             buildFlag({
               type: 'checkout_pending_too_long',
               severity: 'warning',
+              sessionId: session.id,
               sessionCode: session.sessionCode,
               paymentId: session.payment?.id ?? null,
               plateNumber: session.licensePlate,
               createdAt: anchor,
               ageMinutes,
-              message: 'Checkout has been pending for more than 30 minutes.',
+              message: 'Checkout has been pending for more than 10 minutes.',
             }),
           );
         }
@@ -264,6 +290,7 @@ export class AdminService {
             buildFlag({
               type: 'exit_authorized_not_exited',
               severity: 'critical',
+              sessionId: session.id,
               sessionCode: session.sessionCode,
               paymentId: session.payment?.id ?? null,
               plateNumber: session.licensePlate,
@@ -297,6 +324,7 @@ export class AdminService {
             buildFlag({
               type: 'pending_bank_qr_too_long',
               severity: 'warning',
+              sessionId: payment.session.id,
               sessionCode: payment.session.sessionCode,
               paymentId: payment.id,
               plateNumber: payment.session.licensePlate,
@@ -314,6 +342,7 @@ export class AdminService {
           buildFlag({
             type: 'failed_payment',
             severity: 'warning',
+            sessionId: payment.session.id,
             sessionCode: payment.session.sessionCode,
             paymentId: payment.id,
             plateNumber: payment.session.licensePlate,
@@ -331,6 +360,7 @@ export class AdminService {
         buildFlag({
           type: 'expired_reservation',
           severity: 'info',
+          sessionId: reservation.session?.id ?? null,
           sessionCode: reservation.session?.sessionCode ?? null,
           reservationCode: null,
           plateNumber: reservation.session?.licensePlate ?? null,
@@ -532,6 +562,315 @@ export class AdminService {
       watchlist,
     };
   }
+
+  async getSessionEvidence(sessionId: string): Promise<AdminSessionEvidenceDto> {
+    const session = await this.prisma.parkingSession.findUnique({
+      where: { id: sessionId },
+      select: {
+        id: true,
+        sessionCode: true,
+        licensePlate: true,
+        plateNumberConfirmed: true,
+        vehicleType: true,
+        status: true,
+        checkInTime: true,
+        checkOutTime: true,
+        slot: {
+          select: {
+            code: true,
+          },
+        },
+      },
+    });
+
+    if (!session) {
+      throw new NotFoundException(`Session not found: ${sessionId}`);
+    }
+
+    const evidences = await this.prisma.ocrEvidence.findMany({
+      where: { sessionId },
+      orderBy: [{ capturedAt: 'desc' }],
+      select: {
+        id: true,
+        eventType: true,
+        thumbnailKey: true,
+        imageKey: true,
+        imageExpiresAt: true,
+        imageDeletedAt: true,
+        thumbnailExpiresAt: true,
+        thumbnailDeletedAt: true,
+        ocrPlate: true,
+        confirmedPlate: true,
+        ocrConfidence: true,
+        capturedAt: true,
+        providerTimestamp: true,
+        staff: {
+          select: {
+            fullName: true,
+            phone: true,
+          },
+        },
+      },
+    });
+
+    const checkInEvidence = evidences.find((evidence) => evidence.eventType === 'check_in') ?? null;
+    const checkOutEvidence = evidences.find((evidence) => evidence.eventType === 'check_out') ?? null;
+
+    return {
+      session: {
+        id: session.id,
+        sessionCode: session.sessionCode,
+        licensePlate: session.licensePlate,
+        plateNumberConfirmed: session.plateNumberConfirmed,
+        vehicleType: session.vehicleType,
+        status: session.status,
+        checkInTime: session.checkInTime.toISOString(),
+        checkOutTime: session.checkOutTime?.toISOString() ?? null,
+        slotCode: session.slot?.code ?? null,
+      },
+      checkInEvidence: checkInEvidence ? mapSessionEvidence(checkInEvidence) : null,
+      checkOutEvidence: checkOutEvidence ? mapSessionEvidence(checkOutEvidence) : null,
+    };
+  }
+
+  // ─── Slot Occupancy Map ────────────────────────────────────────────────────
+
+  async getSlotOccupancyMap(now = new Date()): Promise<AdminSlotOccupancyMapDto> {
+    // 1. Fetch all floors + slots in a single round-trip
+    const floors = await this.prisma.floor.findMany({
+      orderBy: { floorNumber: 'asc' },
+      select: {
+        floorNumber: true,
+        name: true,
+        slots: {
+          orderBy: [{ zone: 'asc' }, { slotNumber: 'asc' }],
+          select: {
+            id: true,
+            code: true,
+            status: true,
+            vehicleType: true,
+            zone: true,
+            slotNumber: true,
+          },
+        },
+      },
+    });
+
+    // 2. Fetch all open sessions (vehicle still in-lot) keyed by slotId
+    const openSessions = await this.prisma.parkingSession.findMany({
+      where: {
+        status: {
+          in: [SessionStatus.active, SessionStatus.checkout_pending, SessionStatus.exit_authorized],
+        },
+      },
+      select: {
+        id: true,
+        sessionCode: true,
+        licensePlate: true,
+        status: true,
+        checkInTime: true,
+        slotId: true,
+        payment: {
+          select: {
+            id: true,
+            method: true,
+            status: true,
+            paidAt: true,
+            expiredAt: true,
+          },
+        },
+        ocrEvidences: {
+          where: { eventType: 'check_in' },
+          orderBy: { capturedAt: 'asc' },
+          take: 1,
+          select: {
+            id: true,
+            thumbnailKey: true,
+            thumbnailDeletedAt: true,
+            thumbnailExpiresAt: true,
+          },
+        },
+      },
+    });
+
+    // Index sessions by slotId for O(1) lookup
+    const sessionBySlotId = new Map(openSessions.map((s) => [s.slotId, s]));
+
+    // 3. Build grouped response
+    const floorDtos: SlotOccupancyMapFloorDto[] = floors.map((floor) => {
+      const zoneMap = new Map<'A' | 'B', SlotOccupancyMapSlotDto[]>([
+        ['A', []],
+        ['B', []],
+      ]);
+
+      for (const slot of floor.slots) {
+        const session = sessionBySlotId.get(slot.id) ?? null;
+        const risk = session ? computeSlotRisk(session, now) : { level: 'normal' as SlotOccupancyMapRiskLevel, reason: null };
+
+        const sessionDto = session
+          ? {
+              id: session.id,
+              sessionCode: session.sessionCode,
+              plate: session.licensePlate,
+              checkInTime: session.checkInTime.toISOString(),
+              durationMinutes: Math.floor(
+                (now.getTime() - session.checkInTime.getTime()) / 60_000,
+              ),
+              status: session.status as 'active' | 'checkout_pending' | 'exit_authorized',
+              thumbnailUrl: buildThumbnailUrl(session.ocrEvidences[0] ?? null),
+            }
+          : null;
+
+        const slotDto: SlotOccupancyMapSlotDto = {
+          id: slot.id,
+          code: slot.code,
+          status: slot.status as 'available' | 'occupied' | 'reserved' | 'maintenance',
+          vehicleType: slot.vehicleType as 'car' | 'motorbike',
+          floorNumber: floor.floorNumber,
+          floorName: floor.name,
+          zone: slot.zone as 'A' | 'B',
+          session: sessionDto,
+          risk,
+        };
+
+        const zoneSlots = zoneMap.get(slot.zone as 'A' | 'B');
+        if (zoneSlots) zoneSlots.push(slotDto);
+      }
+
+      const zones: SlotOccupancyMapZoneDto[] = [];
+      for (const [zone, slots] of zoneMap) {
+        if (slots.length > 0) zones.push({ zone, slots });
+      }
+
+      return {
+        floorNumber: floor.floorNumber,
+        floorName: floor.name,
+        zones,
+      };
+    });
+
+    return {
+      generatedAt: now.toISOString(),
+      thresholds: MAP_THRESHOLDS,
+      floors: floorDtos,
+    };
+  }
+}
+
+// ─── Slot Occupancy Map Helpers ────────────────────────────────────────────
+
+type OpenSessionShape = {
+  id: string;
+  status: SessionStatus;
+  checkInTime: Date;
+  payment: {
+    method: PaymentMethod;
+    status: PaymentStatus;
+    paidAt: Date | null;
+    expiredAt: Date | null;
+  } | null;
+};
+
+type OcrEvidenceThumbnailShape = {
+  id: string;
+  thumbnailKey: string | null;
+  thumbnailDeletedAt: Date | null;
+  thumbnailExpiresAt: Date | null;
+} | null;
+
+function computeSlotRisk(session: OpenSessionShape, now: Date): SlotOccupancyMapRiskDto {
+  const durationMinutes = diffMinutes(now, session.checkInTime);
+  const durationHours = durationMinutes / 60;
+
+  // critical: session >= 24h
+  if (
+    session.status === SessionStatus.active &&
+    durationHours >= MAP_THRESHOLDS.longActiveSessionHours
+  ) {
+    return {
+      level: 'critical',
+      reason: `Vehicle has been parked for ${Math.floor(durationHours)}h — exceeds 24h threshold.`,
+    };
+  }
+
+  // critical: checkout_pending > 30 minutes
+  if (session.status === SessionStatus.checkout_pending) {
+    const anchor =
+      session.payment?.expiredAt && session.payment.method === PaymentMethod.bank_qr
+        ? new Date(
+            session.payment.expiredAt.getTime() -
+              MAP_THRESHOLDS.pendingBankQrMinutes * 60 * 1000,
+          )
+        : session.checkInTime;
+    const ageMinutes = diffMinutes(now, anchor);
+    if (ageMinutes > MAP_THRESHOLDS.checkoutPendingMinutes) {
+      return {
+        level: 'critical',
+        reason: `Checkout has been pending for ${ageMinutes}m — exceeds ${MAP_THRESHOLDS.checkoutPendingMinutes}m threshold.`,
+      };
+    }
+  }
+
+  // critical: exit_authorized > 10 minutes
+  if (session.status === SessionStatus.exit_authorized) {
+    const anchor = session.payment?.paidAt ?? session.checkInTime;
+    const ageMinutes = diffMinutes(now, anchor);
+    if (ageMinutes > MAP_THRESHOLDS.exitAuthorizedMinutes) {
+      return {
+        level: 'critical',
+        reason: `Exit authorized ${ageMinutes}m ago — vehicle has not left the lot.`,
+      };
+    }
+  }
+
+  // critical: Bank QR pending > 15 minutes
+  if (
+    session.payment?.status === PaymentStatus.pending &&
+    session.payment.method === PaymentMethod.bank_qr
+  ) {
+    const anchor = session.payment.expiredAt
+      ? new Date(
+          session.payment.expiredAt.getTime() -
+            MAP_THRESHOLDS.pendingBankQrMinutes * 60 * 1000,
+        )
+      : session.checkInTime;
+    const ageMinutes = diffMinutes(now, anchor);
+    if (ageMinutes > MAP_THRESHOLDS.pendingBankQrMinutes) {
+      return {
+        level: 'critical',
+        reason: `Bank QR payment has been pending for ${ageMinutes}m — exceeds ${MAP_THRESHOLDS.pendingBankQrMinutes}m threshold.`,
+      };
+    }
+  }
+
+  // warning: session >= 12h
+  if (durationHours >= MAP_THRESHOLDS.warningActiveHours) {
+    return {
+      level: 'warning',
+      reason: `Vehicle has been parked for ${Math.floor(durationHours)}h — approaching 24h threshold.`,
+    };
+  }
+
+  // warning: checked in on a previous calendar day (Ho Chi Minh TZ)
+  const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+  const checkInDay = formatter.format(session.checkInTime);
+  const nowDay = formatter.format(now);
+  if (checkInDay < nowDay) {
+    return {
+      level: 'warning',
+      reason: `Vehicle checked in on ${checkInDay} — overnight stay detected.`,
+    };
+  }
+
+  return { level: 'normal', reason: null };
+}
+
+function buildThumbnailUrl(evidence: OcrEvidenceThumbnailShape): string | null {
+  if (!evidence) return null;
+  if (!evidence.thumbnailKey) return null;
+  // Treat deleted or hard-expired thumbnails as unavailable
+  if (evidence.thumbnailDeletedAt) return null;
+  return `/api/ocr-evidences/${evidence.id}/thumbnail`;
 }
 
 const reservationAuditInclude = {
@@ -812,6 +1151,7 @@ function buildFlag(
   return {
     type: input.type,
     severity: input.severity,
+    sessionId: input.sessionId ?? null,
     sessionCode: input.sessionCode ?? null,
     reservationCode: input.reservationCode ?? null,
     paymentId: input.paymentId ?? null,
@@ -820,6 +1160,60 @@ function buildFlag(
     createdAt: input.createdAt.toISOString(),
     ageMinutes: input.ageMinutes,
   };
+}
+
+function mapSessionEvidence(
+  evidence: {
+    id: string;
+    eventType: 'check_in' | 'check_out';
+    thumbnailKey: string | null;
+    imageKey: string | null;
+    imageExpiresAt: Date | null;
+    imageDeletedAt: Date | null;
+    thumbnailExpiresAt: Date | null;
+    thumbnailDeletedAt: Date | null;
+    ocrPlate: string | null;
+    confirmedPlate: string | null;
+    ocrConfidence: number | null;
+    capturedAt: Date;
+    providerTimestamp: Date | null;
+    staff: { fullName: string | null; phone: string | null } | null;
+  },
+): AdminSessionEvidenceItemDto {
+  return {
+    id: evidence.id,
+    eventType: evidence.eventType,
+    thumbnailUrl: evidence.thumbnailKey ? `/api/ocr-evidences/${evidence.id}/thumbnail` : null,
+    imageUrl: evidence.imageKey ? `/api/ocr-evidences/${evidence.id}/image` : null,
+    ocrPlate: evidence.ocrPlate,
+    confirmedPlate: evidence.confirmedPlate,
+    ocrConfidence: evidence.ocrConfidence,
+    capturedAt: evidence.capturedAt.toISOString(),
+    providerTimestamp: evidence.providerTimestamp?.toISOString() ?? null,
+    staffName: evidence.staff?.fullName ?? null,
+    staffPhone: evidence.staff?.phone ?? null,
+    imageStatus: resolveEvidenceImageStatus(evidence),
+  };
+}
+
+function resolveEvidenceImageStatus(evidence: {
+  thumbnailKey: string | null;
+  imageKey: string | null;
+  imageDeletedAt: Date | null;
+  thumbnailDeletedAt: Date | null;
+  imageExpiresAt: Date | null;
+  thumbnailExpiresAt: Date | null;
+}): AdminSessionEvidenceItemDto['imageStatus'] {
+  if (evidence.thumbnailKey || evidence.imageKey) return 'available';
+  if (
+    evidence.imageDeletedAt ||
+    evidence.thumbnailDeletedAt ||
+    (evidence.imageExpiresAt && evidence.imageExpiresAt.getTime() <= Date.now()) ||
+    (evidence.thumbnailExpiresAt && evidence.thumbnailExpiresAt.getTime() <= Date.now())
+  ) {
+    return 'expired';
+  }
+  return 'missing';
 }
 
 function severityRank(severity: AdminOperationFlagDto['severity']): number {

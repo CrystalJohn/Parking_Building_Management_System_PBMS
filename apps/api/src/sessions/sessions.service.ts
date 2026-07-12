@@ -848,11 +848,13 @@ export class SessionsService {
   private async buildCheckoutLookupPreview(session: {
     id: string;
     sessionCode: string;
+    reservationId: string | null;
     licensePlate: string;
     vehicleType: VehicleType;
     checkInTime: Date;
     checkOutTime: Date | null;
     status: SessionStatus;
+    allocationStrategy: string | null;
     isPaid: boolean;
     feeAmount: number;
     penaltyAmount: number;
@@ -894,11 +896,13 @@ export class SessionsService {
       session: {
         id: session.id,
         sessionCode: session.sessionCode,
+        reservationId: session.reservationId,
         licensePlate: session.licensePlate,
         vehicleType: session.vehicleType,
         checkInTime: session.checkInTime,
         checkOutTime: session.checkOutTime,
         status: session.status,
+        allocationStrategy: session.allocationStrategy,
         isPaid: session.isPaid,
         feeAmount: session.feeAmount,
         penaltyAmount: session.penaltyAmount,
@@ -942,6 +946,7 @@ export class SessionsService {
               : null,
             capturedAt: checkInEvidence.capturedAt,
             ocrPlate: checkInEvidence.ocrPlate,
+            confirmedPlate: checkInEvidence.confirmedPlate,
             ocrConfidence: checkInEvidence.ocrConfidence,
           }
         : null,
@@ -1207,11 +1212,13 @@ export class SessionsService {
       session: {
         id: session.id,
         sessionCode: session.sessionCode,
+        reservationId: session.reservationId,
         licensePlate: session.licensePlate,
         vehicleType: session.vehicleType,
         checkInTime: session.checkInTime,
         checkOutTime: session.checkOutTime,
         status: 'checkout_pending',
+        allocationStrategy: session.allocationStrategy,
         driverId: session.driverId,
         isPaid: session.isPaid,
         feeAmount: breakdown.baseFee,

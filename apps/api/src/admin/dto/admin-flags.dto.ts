@@ -9,7 +9,7 @@ export interface AdminOperationsFlagsDto {
   };
   thresholds: {
     longActiveSessionHours: 24;
-    checkoutPendingMinutes: 30;
+    checkoutPendingMinutes: 10;
     exitAuthorizedMinutes: 10;
     pendingBankQrMinutes: 15;
   };
@@ -19,6 +19,7 @@ export interface AdminOperationsFlagsDto {
 export interface AdminOperationFlagDto {
   type: string;
   severity: AdminFlagSeverity;
+  sessionId: string | null;
   sessionCode: string | null;
   reservationCode: string | null;
   paymentId: string | null;
