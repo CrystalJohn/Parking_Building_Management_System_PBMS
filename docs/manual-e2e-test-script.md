@@ -72,7 +72,7 @@
 
 ## Section 5 — Checkout & Payment
 
-- [ ] 5.1 Cash: staff chọn Cash → `checkout_pending` → xác nhận đã nhận tiền → `exit_authorized`
+- [x] 5.1 Cash: staff chọn Cash → `checkout_pending` → xác nhận đã nhận tiền → `exit_authorized`
 - [ ] 5.2 VNPay (staff tạo QR): staff generate QR, hoàn tất thanh toán sandbox → webhook cập nhật → `exit_authorized`
 - [ ] 5.3 VNPay (driver tự trả): khi session ở `checkout_pending`, driver app hiện tùy chọn thanh toán, driver hoàn tất → staff quét lại thấy "sẵn sàng ra", không cần chọn phương thức nữa
 - [ ] 5.4 Staff bấm tạo thanh toán VNPay **2 lần liên tiếp** cho cùng session → verify tái sử dụng đúng 1 payment URL đang pending, không tạo 2 payment record

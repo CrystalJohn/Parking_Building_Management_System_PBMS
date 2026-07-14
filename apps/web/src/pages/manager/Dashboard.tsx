@@ -344,6 +344,11 @@ export default function Dashboard() {
 
               {/* Slot grid */}
               <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 transition-colors dark:border-white/10 dark:bg-slate-950/70">
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                    Floor {selectedFloor?.floorNumber} — Zone {selectedZone} ({selectedZone === 'A' ? 'Car' : 'Motorbike'})
+                  </h3>
+                </div>
                 {currentSlots.length === 0 ? (
                   <EmptyPanel
                     title="No slots configured for this zone."
@@ -389,21 +394,8 @@ function OccupancySlotTile({
 }) {
   const isOccupied = slot.status === 'occupied' && slot.session !== null
 
-  if (selected) {
-    return (
-      <button
-        type="button"
-        onClick={onSelect}
-        className="flex aspect-[3/2] flex-col items-center justify-center rounded-xl bg-[#2563eb] text-white transition hover:-translate-y-0.5 shadow-lg shadow-blue-500/30 ring-2 ring-white/20"
-      >
-        <span className="text-[10px] md:text-xs font-medium">Selected</span>
-        <span className="font-bold text-sm">{slot.code}</span>
-      </button>
-    )
-  }
-
   if (isOccupied && slot.session) {
-    return <OccupiedSlotTile slot={slot} session={slot.session} onSelect={onSelect} />
+    return <OccupiedSlotTile slot={slot} session={slot.session} selected={selected} onSelect={onSelect} />
   }
 
   // Available / reserved / maintenance — compact
@@ -418,10 +410,10 @@ function OccupancySlotTile({
     <button
       type="button"
       onClick={onSelect}
-      className={`flex aspect-[3/2] flex-col items-center justify-center rounded-xl transition hover:-translate-y-0.5 shadow-sm ${styleClass}`}
+      className={`flex aspect-[3/2] flex-col items-center justify-center rounded-xl transition hover:-translate-y-0.5 shadow-sm ${styleClass} ${selected ? 'ring-4 ring-blue-500/50' : ''}`}
     >
       <span className="text-[10px] md:text-xs font-medium capitalize opacity-70">
-        {STATUS_LABELS[slot.status]}
+        {selected ? 'Selected' : STATUS_LABELS[slot.status]}
       </span>
       <span className="font-bold text-sm">{slot.code}</span>
     </button>
@@ -435,10 +427,12 @@ function OccupancySlotTile({
 function OccupiedSlotTile({
   slot,
   session,
+  selected,
   onSelect,
 }: {
   slot: SlotOccupancyMapSlot
   session: SlotOccupancyMapSession
+  selected?: boolean
   onSelect: () => void
 }) {
   const risk = slot.risk.level
@@ -451,7 +445,7 @@ function OccupiedSlotTile({
     <button
       type="button"
       onClick={onSelect}
-      className={`group relative flex flex-col overflow-hidden rounded-xl border border-l-4 ${borderColor} border-slate-200/60 bg-white dark:border-slate-700/60 dark:bg-slate-900 text-left transition hover:-translate-y-0.5 hover:shadow-lg shadow-sm`}
+      className={`group relative flex flex-col overflow-hidden rounded-xl border border-l-4 ${borderColor} border-slate-200/60 bg-white dark:border-slate-700/60 dark:bg-slate-900 text-left transition hover:-translate-y-0.5 hover:shadow-lg shadow-sm ${selected ? 'ring-4 ring-blue-500/50' : ''}`}
     >
       {/* Thumbnail strip */}
       <div className="relative h-[72px] w-full overflow-hidden bg-slate-900">

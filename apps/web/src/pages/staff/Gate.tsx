@@ -558,7 +558,7 @@ function CheckOutPanel({
     (workflow.payment.status === 'failed' ||
       workflow.payment.status === 'cancelled' ||
       workflow.payment.status === 'expired')
-  const canConfirmPayment = status === 'checkout_pending' && !isBankQrPending && !isBankQrExpired && !isBankQrFailed
+  const canConfirmPayment = status === 'checkout_pending'
   const canGenerateBankQr = status === 'checkout_pending' && !isBankQrPending && !isBankQrExpired && !isBankQrFailed
   const canConfirmExit = status === 'exit_authorized'
   const isCompleted = status === 'completed'
@@ -630,6 +630,27 @@ function CheckOutPanel({
   useEffect(() => {
     return loadEvidenceImage(workflow?.exitEvidence ?? null, setExitEvidenceImage)
   }, [workflow?.exitEvidence])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      ) {
+        return
+      }
+
+      if (event.key === 'Enter' && canConfirmPayment && !action) {
+        event.preventDefault()
+        void handleConfirmPayment()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [canConfirmPayment, action])
 
   const lookupSession = async (input: { sessionCode?: string; licensePlate?: string }) => {
     const code = input.sessionCode ? normalizeSessionCode(input.sessionCode) : ''
@@ -1263,7 +1284,10 @@ function CheckOutPanel({
                       ) : (
                         <img src={CASH_ICON_SRC} alt="" aria-hidden="true" className="size-5 object-contain" />
                       )}
-                      {action === 'payment' ? 'Confirming cash...' : 'Confirm Cash Payment'}
+                      <span>{action === 'payment' ? 'Confirming cash...' : 'Confirm Cash Payment'}</span>
+                      <kbd className="pointer-events-none ml-2 hidden items-center gap-1 rounded border border-white/20 bg-white/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-white/90 sm:inline-flex">
+                        <span className="text-xs">↵</span> Enter
+                      </kbd>
                     </Button>
                   ) : null}
 
@@ -1520,6 +1544,7 @@ function SessionSummary({
 }) {
   const ticketType = getTicketTypeLabel(workflow)
   const penaltyLabel = getPenaltyLabel(workflow)
+  const hasPenalty = Boolean(workflow.fee.penalty && workflow.fee.penalty > 0)
 
   return (
     <div className="rounded-2xl border bg-card p-4 text-card-foreground shadow-sm">
@@ -1527,13 +1552,12 @@ function SessionSummary({
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
           Session summary
         </p>
-        <Badge variant="outline" className="h-5 font-semibold">
-          {workflow.slot.code}
+        <Badge variant="outline" className="h-5 font-semibold bg-primary/5 text-primary border-primary/20">
+          Slot {workflow.slot.code}
         </Badge>
       </div>
       <div className="mt-3 space-y-2 text-sm">
         <SummaryRow label="Session code" value={workflow.session.sessionCode} mono strong />
-        <SummaryRow label="Slot" value={workflow.slot.code} mono />
         <SummaryRow label="Vehicle type" value={readableVehicleType(workflow.session.vehicleType)} />
         <SummaryRow label="Ticket type" value={ticketType} />
         <SummaryRow label="Plate match" value={<PlateMatchBadge state={plateMatchState} />} />
@@ -1551,10 +1575,15 @@ function SessionSummary({
             )
           }
         />
-        <SummaryRow label="Check-in time" value={formatDateTime(workflow.session.checkInTime)} />
         <SummaryRow label="Floor / Zone" value={`${workflow.slot.floor.name} / Zone ${workflow.slot.zone}`} />
-        <SummaryRow label="Base fee" value={VND(workflow.fee.baseFee)} />
-        <SummaryRow label="Penalty" value={penaltyLabel} />
+        
+        {hasPenalty ? (
+          <>
+            <SummaryRow label="Base fee" value={VND(workflow.fee.baseFee)} />
+            <SummaryRow label="Penalty" value={penaltyLabel} />
+          </>
+        ) : null}
+
         {workflow.payment?.paidAt ? (
           <SummaryRow label="Paid at" value={formatDateTime(workflow.payment.paidAt)} />
         ) : null}
