@@ -461,7 +461,9 @@ export class SessionsService {
       vehicleType: reservation.vehicle.vehicleType,
       slotId: reservation.slot.id,
       slotCode: reservation.slot.code,
-      slotLabel: `${reservation.slot.code} - ${reservation.slot.floor.name}`,
+      slotLabel: reservation.slot.code.startsWith(reservation.slot.floor.name)
+        ? reservation.slot.code
+        : `${reservation.slot.code} - ${reservation.slot.floor.name}`,
       driverName: reservation.driver.fullName ?? reservation.driver.phone ?? 'Unknown driver',
       paymentBadge: this.getReservationPaymentBadge({
         subscriptionCount: reservation.vehicle.subscriptions.length,

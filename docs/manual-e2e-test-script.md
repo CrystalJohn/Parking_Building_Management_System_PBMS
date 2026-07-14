@@ -54,10 +54,10 @@
 
 ## Section 3 — QR-First Check-in (Staff)
 
-- [ ] 3.1 Staff quét QR reservation Driver A → hiện preview đủ: biển số, tên driver, slot, payment info — **verify KHÔNG có network call nào tới OCR provider** (mở tab Network, xác nhận)
-- [ ] 3.2 Staff bấm Confirm → reservation `fulfilled`, slot `occupied`, `ParkingSession` tạo với cả `vehicleId` VÀ `reservationId`
-- [ ] 3.3 Bấm Confirm **lần 2** cho cùng reservation (giả lập double-click) → trả về đúng session đã tạo, KHÔNG tạo session thứ 2 (idempotent)
-- [ ] 3.4 Thử reservation check-in cho 1 xe **đã có session mở ở nơi khác** → bị chặn
+- [x] 3.1 Staff quét QR reservation Driver A → hiện preview đủ: biển số, tên driver, slot, payment info — **verify KHÔNG có network call nào tới OCR provider** (mở tab Network, xác nhận)
+- [x] 3.2 Staff bấm Confirm → reservation `fulfilled`, slot `occupied`, `ParkingSession` tạo với cả `vehicleId` VÀ `reservationId`
+- [x] 3.3 Bấm Confirm **lần 2** cho cùng reservation (giả lập double-click) → trả về đúng session đã tạo, KHÔNG tạo session thứ 2 (idempotent)
+- [x] 3.4 Thử reservation check-in cho 1 xe **đã có session mở ở nơi khác** → bị chặn
 
 ---
 
