@@ -17,7 +17,6 @@ import {
   AlertTriangle,
   AlertCircle,
   Clock,
-  Bike,
 } from 'lucide-react'
 import api from '../../lib/api'
 import { useManagerOperations } from '../../lib/ManagerOperationsContext'

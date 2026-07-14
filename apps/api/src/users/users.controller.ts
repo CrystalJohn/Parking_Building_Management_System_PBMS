@@ -1,4 +1,6 @@
 import {
+  BadRequestException,
+  Query,
   Controller,
   Get,
   Post,
@@ -14,14 +16,26 @@ import {
 import { Role } from '@prisma/client';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
 import { CurrentUser, Roles } from '../auth/decorators';
-import { UsersService } from './users.service';
 import { CreateUserDto, UpdateUserDto } from './dto';
+import { UsersService } from './users.service';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.admin)
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
+
+  /**
+   * GET /users/lookup-by-phone — find user by phone (admin & manager only)
+   */
+  @Get('lookup-by-phone')
+  @Roles(Role.admin, Role.manager)
+  lookupByPhone(@Query('phone') phone: string) {
+    if (!phone) {
+      throw new BadRequestException('Phone query parameter is required');
+    }
+    return this.usersService.findOneByPhone(phone);
+  }
 
   /**
    * GET /users — list all users (admin only)

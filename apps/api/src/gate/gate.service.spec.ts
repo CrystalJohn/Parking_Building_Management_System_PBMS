@@ -8,12 +8,12 @@ import { GateService } from './gate.service';
 
 describe('GateService', () => {
   let service: GateService;
-  let ocrService: { recognize: jest.Mock };
+  let ocrService: { recognize: jest.Mock; linkEvidenceToCheckout: jest.Mock };
   let sessionsService: { lookupOpenForGateByPlate: jest.Mock };
   let vehiclesService: { lookupPlate: jest.Mock };
 
   beforeEach(async () => {
-    ocrService = { recognize: jest.fn() };
+    ocrService = { recognize: jest.fn(), linkEvidenceToCheckout: jest.fn() };
     sessionsService = { lookupOpenForGateByPlate: jest.fn() };
     vehiclesService = { lookupPlate: jest.fn() };
 

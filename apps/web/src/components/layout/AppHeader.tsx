@@ -23,6 +23,7 @@ const PAGE_LABELS: Record<string, string> = {
   operations: 'Operations',
   payments: 'Payments',
   config: 'Config',
+  vehicles: 'Vehicles',
   gate: 'Gate',
   'lost-ticket': 'Lost Ticket',
   home: 'Availability',

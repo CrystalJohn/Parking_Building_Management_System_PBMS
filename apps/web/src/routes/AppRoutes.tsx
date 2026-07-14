@@ -19,6 +19,7 @@ import Payments from '../pages/manager/Payments'
 import ManagerReservations from '../pages/manager/Reservations'
 import Reports from '../pages/manager/Reports'
 import Config from '../pages/manager/Config'
+import Vehicles from '../pages/manager/Vehicles'
 
 // Admin
 import Users from '../pages/admin/Users'
@@ -35,16 +36,6 @@ import Profile from '../pages/driver/Profile'
 
 /**
  * Central route configuration for the Parking Building Management System.
- *
- * Route protection is handled by <RequireAuth> which:
- *  - Redirects unauthenticated users to /login
- *  - Redirects authenticated users with the wrong role to their default home
- *
- * Role hierarchy:
- *  admin   → /admin/*
- *  manager → /manager/*
- *  staff   → /staff/*
- *  driver  → /driver/*
  */
 export default function AppRoutes() {
   return (
@@ -117,6 +108,14 @@ export default function AppRoutes() {
         element={
           <RequireAuth allowedRoles={['manager']}>
             <Config />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/manager/vehicles"
+        element={
+          <RequireAuth allowedRoles={['manager']}>
+            <Vehicles />
           </RequireAuth>
         }
       />

@@ -167,8 +167,12 @@ export class SessionsController {
    */
   @Get(':id/qr')
   @Roles(Role.staff, Role.driver)
-  getQrCode(@Param('id', ParseUUIDPipe) id: string) {
-    return this.sessionsService.getQrCode(id);
+  getQrCode(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') role: Role,
+  ) {
+    return this.sessionsService.getQrCode(id, userId, role);
   }
 
   /**
@@ -177,7 +181,11 @@ export class SessionsController {
    */
   @Get(':id')
   @Roles(Role.staff, Role.driver)
-  findOne(@Param('id') id: string) {
-    return this.sessionsService.findOne(id);
+  findOne(
+    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') role: Role,
+  ) {
+    return this.sessionsService.findOne(id, userId, role);
   }
 }

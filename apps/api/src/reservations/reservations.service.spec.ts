@@ -17,6 +17,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ReservationsService } from './reservations.service';
 import { AllocationService } from '../slots/allocation.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const makeFloor = (overrides: Partial<{ id: number; floorNumber: number; name: string }> = {}) => ({
   id: 1,
@@ -166,6 +167,7 @@ describe('ReservationsService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: AllocationService, useValue: allocationService },
         { provide: JwtService, useValue: jwtService },
+        { provide: NotificationsService, useValue: { createForUser: jest.fn() } },
       ],
     }).compile();
 

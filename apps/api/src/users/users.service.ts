@@ -55,6 +55,23 @@ export class UsersService {
   }
 
   /**
+   * Find a single user by phone number, excluding password_hash.
+   * Throws NotFoundException if not found.
+   */
+  async findOneByPhone(phone: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { phone },
+      select: USER_SELECT,
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with phone number "${phone}" not found`);
+    }
+
+    return user;
+  }
+
+  /**
    * Create a new user account (admin-initiated).
    * Req 12.2
    */

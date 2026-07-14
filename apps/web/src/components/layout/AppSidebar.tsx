@@ -72,6 +72,7 @@ const NAV_BY_ROLE: Record<AuthUser['role'], NavItem[]> = {
     { to: '/manager/payments', label: 'Payments', icon: CircleDollarSign },
     { to: '/manager/reservations', label: 'Reservations', icon: CalendarClock },
     { to: '/manager/reports', label: 'Reports', icon: BarChart3 },
+    { to: '/manager/vehicles', label: 'Vehicles', icon: Car },
     { to: '/manager/config', label: 'Config', icon: Settings },
   ],
   staff: [

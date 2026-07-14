@@ -7,8 +7,10 @@ import { AllocationService } from '../slots/allocation.service';
 import { FeesService } from '../fees/fees.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { VehicleIdentificationService } from '../vehicle-identification/vehicle-identification.service';
-import type { VehicleIdentityResult } from '../vehicle-identification/vehicle-identity.types';
+import { VehicleIdentityResult } from '../vehicle-identification/vehicle-identity.types';
 import { NotificationsService } from '../notifications/notifications.service';
+import { OcrService } from '../ocr/ocr.service';
+import { OcrEvidenceStorageService } from '../ocr-evidences/ocr-evidence-storage.service';
 import * as QRCode from 'qrcode';
 
 jest.mock('qrcode', () => ({
@@ -193,6 +195,8 @@ describe('SessionsService', () => {
         { provide: VehicleIdentificationService, useValue: vehicleIdentificationService },
         { provide: JwtService, useValue: jwtService },
         { provide: NotificationsService, useValue: notificationsService },
+        { provide: OcrService, useValue: { getCheckInEvidenceForSession: jest.fn().mockResolvedValue(null), linkEvidenceToCheckout: jest.fn().mockResolvedValue(null) } },
+        { provide: OcrEvidenceStorageService, useValue: {} },
       ],
     }).compile();
 

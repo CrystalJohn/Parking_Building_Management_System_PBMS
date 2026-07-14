@@ -1429,7 +1429,7 @@ export class SessionsService {
    * Get a single session by ID.
    * Accessible by Staff and the owning Driver.
    */
-  async findOne(id: string) {
+  async findOne(id: string, userId?: string, role?: string) {
     const session = await this.prisma.parkingSession.findUnique({
       where: { id },
       include: {
@@ -1441,6 +1441,10 @@ export class SessionsService {
 
     if (!session) {
       throw new NotFoundException(`Session with id "${id}" not found`);
+    }
+
+    if (role === 'driver' && session.driverId !== userId) {
+      throw new ForbiddenException('You can only access your own session.');
     }
 
     return session;
@@ -1574,7 +1578,7 @@ export class SessionsService {
    * Returns the stored base64 data URL, or generates one if missing.
    * Accessible by Staff and the owning Driver.
    */
-  async getQrCode(sessionId: string) {
+  async getQrCode(sessionId: string, userId?: string, role?: string) {
     const session = await this.prisma.parkingSession.findUnique({
       where: { id: sessionId },
       select: { id: true, sessionCode: true, qrCode: true, driverId: true },
@@ -1582,6 +1586,10 @@ export class SessionsService {
 
     if (!session) {
       throw new NotFoundException(`Session not found: ${sessionId}`);
+    }
+
+    if (role === 'driver' && session.driverId !== userId) {
+      throw new ForbiddenException('You can only access your own session.');
     }
 
     // If QR was already generated at check-in, return it
