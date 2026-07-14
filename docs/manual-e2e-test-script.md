@@ -63,10 +63,10 @@
 
 ## Section 4 — Walk-in OCR + Unified Scan
 
-- [ ] 4.1 Staff chụp biển số xe **chưa từng có session** → tự route sang check-in preview, slot được allocate
-- [ ] 4.2 Confirm → session tạo, status `active`
-- [ ] 4.3 Chụp lại **cùng biển số đó** (giả lập lúc ra) → tự động route sang checkout preview, phí đã tính sẵn — không cần chọn tab nào
-- [ ] 4.4 Cố tình để OCR đọc sai, sửa tay biển số đúng → hệ thống re-resolve qua `resolve-plate`, **verify KHÔNG gọi lại OCR** (kiểm tra Network tab, không thấy call thứ 2 tới Plate Recognizer)
+- [x] 4.1 Staff chụp biển số xe **chưa từng có session** → tự route sang check-in preview, slot được allocate
+- [x] 4.2 Confirm → session tạo, status `active`
+- [x] 4.3 Chụp lại **cùng biển số đó** (giả lập lúc ra) → tự động route sang checkout preview, phí đã tính sẵn — không cần chọn tab nào
+- [x] 4.4 Cố tình để OCR đọc sai, sửa tay biển số đúng → hệ thống re-resolve qua `resolve-plate`, **verify KHÔNG gọi lại OCR** (kiểm tra Network tab, không thấy call thứ 2 tới Plate Recognizer)
 
 ---
 
