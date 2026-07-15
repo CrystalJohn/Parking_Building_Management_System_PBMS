@@ -88,3 +88,8 @@ Admin Telemetry Phase 1.docx
 .agent
 docs/PBMS_SRS_REPORT.md
 
+# Demo scripts (ignored)
+demo-commands.md
+simulate-driver-pay.js
+
+
