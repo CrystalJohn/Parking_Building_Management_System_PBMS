@@ -93,12 +93,12 @@
 
 ## Section 7 — Bảo mật: Ownership Check (BOLA fix — ưu tiên cao nhất hiện tại)
 
-- [ ] 7.1 Driver A tạo 1 session, ghi lại `id`
-- [ ] 7.2 Driver B gọi `GET /sessions/:id` với `id` của Driver A → **404** (không phải 403)
-- [ ] 7.3 Driver B gọi `GET /sessions/:id/qr` với `id` của Driver A → **404**
-- [ ] 7.4 Driver A gọi lại chính session của mình → **200**, dữ liệu đúng
-- [ ] 7.5 Staff gọi `GET /sessions/checkout-lookup` cho session bất kỳ → vẫn **200** (fix không làm gãy luồng staff)
-- [ ] 7.6 Kiểm tra `GET /reservations/:id` có cùng pattern lỗ hổng không (theo prompt audit đã đưa trước đó — nếu có, áp dụng đúng fix tương tự)
+- [x] 7.1 Driver A tạo 1 session, ghi lại `id`
+- [x] 7.2 Driver B gọi `GET /sessions/:id` với `id` của Driver A → **404** (không phải 403)
+- [x] 7.3 Driver B gọi `GET /sessions/:id/qr` với `id` của Driver A → **404**
+- [x] 7.4 Driver A gọi lại chính session của mình → **200**, dữ liệu đúng
+- [x] 7.5 Staff gọi `GET /sessions/checkout-lookup` cho session bất kỳ → vẫn **200** (fix không làm gãy luồng staff)
+- [x] 7.6 Kiểm tra `GET /reservations/:id` có cùng pattern lỗ hổng không (theo prompt audit đã đưa trước đó — nếu có, áp dụng đúng fix tương tự)
 
 ---
 
