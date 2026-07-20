@@ -61,7 +61,11 @@ export function DriverTabs() {
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Reservations" component={ReservationsScreen} />
+      <Tab.Screen
+        name="Reservations"
+        component={ReservationsScreen}
+        options={{ title: 'Reservation', tabBarLabel: 'Reservation' }}
+      />
       <Tab.Screen
         name="ActiveSessionTab"
         component={ActiveSessionScreen}

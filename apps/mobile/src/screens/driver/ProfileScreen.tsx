@@ -29,6 +29,9 @@ export function ProfileScreen({ navigation }: Props) {
         <Text style={styles.line}>Name: {user?.fullName ?? 'N/A'}</Text>
         <Text style={styles.line}>Phone: {user?.phone ?? 'N/A'}</Text>
         <Text style={styles.line}>Role: {user?.role ?? 'driver'}</Text>
+        <Button variant="secondary" onPress={() => navigation.navigate('RegisterVehicle')}>
+          Register Vehicle
+        </Button>
         <Button variant="secondary" onPress={() => navigation.navigate('NotificationCenter')}>
           Notification center
         </Button>

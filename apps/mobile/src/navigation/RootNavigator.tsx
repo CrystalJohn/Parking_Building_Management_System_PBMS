@@ -3,6 +3,7 @@ import { ActivityIndicator, View } from 'react-native';
 
 import { NotificationCenterScreen } from '../screens/driver/NotificationCenterScreen';
 import { ReservationDetailScreen } from '../screens/driver/ReservationDetailScreen';
+import { RegisterVehicleScreen } from '../screens/driver/RegisterVehicleScreen';
 import { WelcomeScreen } from '../screens/driver/WelcomeScreen';
 import { useAuthStore } from '../store/authStore';
 import { colors } from '../theme/colors';
@@ -55,6 +56,11 @@ export function RootNavigator() {
             name="NotificationCenter"
             component={NotificationCenterScreen}
             options={{ title: 'Notifications' }}
+          />
+          <Stack.Screen
+            name="RegisterVehicle"
+            component={RegisterVehicleScreen}
+            options={{ title: 'Register Vehicle' }}
           />
         </>
       ) : (

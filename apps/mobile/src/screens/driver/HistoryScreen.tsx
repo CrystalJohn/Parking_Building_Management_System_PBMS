@@ -12,12 +12,12 @@ export function HistoryScreen() {
 
   return (
     <Screen>
-      <InfoCard title="Parking History" subtitle="Completed sessions from backend">
+      <InfoCard title="Parking History" subtitle="Your completed parking visits.">
         <QueryState
           loading={historyQuery.isLoading}
           error={historyQuery.error}
           empty={!historyQuery.data?.length}
-          emptyMessage="No completed parking sessions yet."
+          emptyMessage="You don't have any past parking visits yet."
           onRetry={() => historyQuery.refetch()}
         />
 

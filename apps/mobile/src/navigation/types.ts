@@ -18,4 +18,5 @@ export type RootStackParamList = {
   DriverTabs: undefined;
   ReservationDetail: { reservationId: string };
   NotificationCenter: undefined;
+  RegisterVehicle: undefined;
 };

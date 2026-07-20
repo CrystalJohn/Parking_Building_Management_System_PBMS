@@ -21,6 +21,16 @@ export type DriverVehicle = {
   } | null;
 };
 
+export type VehicleRegistrationRequest = {
+  id: string;
+  driverId: string;
+  plateNumber: string;
+  vehicleType: VehicleType;
+  status: 'pending' | 'approved' | 'rejected' | 'expired';
+  rejectReason?: string | null;
+  createdAt: string;
+};
+
 export type User = {
   id: string;
   phone: string;

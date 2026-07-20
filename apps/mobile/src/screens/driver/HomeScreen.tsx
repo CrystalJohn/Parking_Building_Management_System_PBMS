@@ -103,19 +103,6 @@ export function HomeScreen({ navigation }: Props) {
 
   return (
     <Screen>
-      <View style={styles.hero}>
-        <View style={styles.heroTop}>
-          <View>
-            <Text style={styles.greeting}>Hi, {user?.fullName ?? user?.phone ?? 'Driver'}</Text>
-            <Text style={styles.title}>What do you need today?</Text>
-          </View>
-          <View style={styles.avatar} accessibilityLabel="Driver dashboard">
-            <Ionicons name="car-outline" size={24} color="#ffffff" />
-          </View>
-        </View>
-        <Text style={styles.subtitle}>Reserve, check in with staff, and track your parking visit.</Text>
-      </View>
-
       <View style={styles.primaryCard}>
         <View style={styles.primaryIcon}>
           <Ionicons name="location-outline" size={26} color="#0b5ed7" />
