@@ -223,8 +223,10 @@ export class ReservationsService {
       throw new NotFoundException(`Reservation not found: ${reservationId}`);
     }
 
+    // BOLA: ownership mismatch returns 404 (not 403) so a driver cannot
+    // enumerate other users' reservation IDs.
     if (reservation.driverId !== driverId) {
-      throw new ForbiddenException('You can only view your own reservations');
+      throw new NotFoundException(`Reservation not found: ${reservationId}`);
     }
 
     return this.mapReservationDetail(reservation);
@@ -243,8 +245,9 @@ export class ReservationsService {
       throw new NotFoundException(`Reservation not found: ${reservationId}`);
     }
 
+    // BOLA: ownership mismatch returns 404 (not 403) to avoid ID enumeration.
     if (reservation.driverId !== driverId) {
-      throw new ForbiddenException('You can only access your own reservation QR.');
+      throw new NotFoundException(`Reservation not found: ${reservationId}`);
     }
 
     if (reservation.status !== 'active') {
@@ -311,8 +314,9 @@ export class ReservationsService {
       throw new NotFoundException(`Reservation not found: ${reservationId}`);
     }
 
+    // BOLA: ownership mismatch returns 404 (not 403) to avoid ID enumeration.
     if (reservation.driverId !== driverId) {
-      throw new ForbiddenException('You can only cancel your own reservations');
+      throw new NotFoundException(`Reservation not found: ${reservationId}`);
     }
 
     if (reservation.status !== 'active') {

@@ -94,25 +94,25 @@ export class PaymentsController {
     @Res() res: import('express').Response,
   ) {
     let paid = false;
-    let message = 'Đang xử lý...';
+    let message = 'Processing...';
 
     try {
       const result = await this.paymentsService.handleVnpayReturn(params);
       paid = result.paid === true;
       message = paid
-        ? 'Thanh toán thành công! Vui lòng quay lại quầy để nhân viên xác nhận xe ra.'
-        : 'Thanh toán thất bại hoặc đã bị hủy.';
+        ? 'Payment successful! Please return to the gate so staff can confirm your exit.'
+        : 'Payment failed or cancelled.';
     } catch {
-      message = 'Có lỗi xảy ra khi xử lý thanh toán.';
+      message = 'An error occurred while processing the payment.';
     }
 
     const color = paid ? '#16a34a' : '#dc2626';
     const icon = paid ? '✓' : '✗';
-    const title = paid ? 'Thanh toán thành công' : 'Thanh toán thất bại';
+    const title = paid ? 'Payment Successful' : 'Payment Failed';
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(`<!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -132,7 +132,7 @@ export class PaymentsController {
     <div class="icon">${icon}</div>
     <h1>${title}</h1>
     <p>${message}</p>
-    <p class="note">Bạn có thể đóng tab này.</p>
+    <p class="note">You can close this tab.</p>
   </div>
 </body>
 </html>`);

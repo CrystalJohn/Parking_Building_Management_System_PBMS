@@ -7,10 +7,6 @@ export type NormalizedReservationQrError = {
   message: string
 }
 
-const DEFAULT_ERROR: NormalizedReservationQrError = {
-  badgeLabel: 'Invalid QR',
-  message: 'Unable to load reservation QR. Use OCR fallback or scan again.',
-}
 
 export function normalizeReservationQrError(error: unknown): NormalizedReservationQrError {
   const message = extractMessage(error)

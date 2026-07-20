@@ -1445,8 +1445,11 @@ export class SessionsService {
       throw new NotFoundException(`Session with id "${id}" not found`);
     }
 
+    // BOLA: a driver requesting a session they do not own gets 404, not 403.
+    // Returning 403 here would let a driver enumerate valid session IDs by
+    // distinguishing "exists but not yours" from "does not exist".
     if (role === 'driver' && session.driverId !== userId) {
-      throw new ForbiddenException('You can only access your own session.');
+      throw new NotFoundException(`Session with id "${id}" not found`);
     }
 
     return session;
@@ -1568,8 +1571,9 @@ export class SessionsService {
       throw new NotFoundException(`Session not found: ${sessionId}`);
     }
 
+    // BOLA: ownership mismatch returns 404 (not 403) to avoid ID enumeration.
     if (session.driverId !== driverId) {
-      throw new ForbiddenException('You can only access your own session.');
+      throw new NotFoundException(`Session not found: ${sessionId}`);
     }
 
     return session;
@@ -1590,8 +1594,9 @@ export class SessionsService {
       throw new NotFoundException(`Session not found: ${sessionId}`);
     }
 
+    // BOLA: ownership mismatch returns 404 (not 403) to avoid ID enumeration.
     if (role === 'driver' && session.driverId !== userId) {
-      throw new ForbiddenException('You can only access your own session.');
+      throw new NotFoundException(`Session not found: ${sessionId}`);
     }
 
     // If QR was already generated at check-in, return it

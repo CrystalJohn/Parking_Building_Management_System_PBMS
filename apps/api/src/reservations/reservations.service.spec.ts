@@ -423,14 +423,14 @@ describe('ReservationsService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    it('throws ForbiddenException when driver does not own the reservation', async () => {
+    it('throws NotFoundException when driver does not own the reservation (BOLA)', async () => {
       prisma.reservation.findUnique.mockResolvedValue(
         makeReservation({ driverId: 'other-driver' }),
       );
 
       await expect(
         service.findOne('reservation-uuid-1', 'driver-uuid'),
-      ).rejects.toThrow(ForbiddenException);
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
