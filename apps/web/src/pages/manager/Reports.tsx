@@ -50,10 +50,10 @@ export default function Reports() {
   const [tab, setTab] = useState<Tab>('revenue')
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <>
       <div className="max-w-5xl mx-auto space-y-6">
         <header>
-          <h1 className="text-2xl font-bold">Reports</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Reports</h1>
           <p className="text-sm text-gray-500">Revenue, traffic, and occupancy</p>
         </header>
 
@@ -85,7 +85,7 @@ export default function Reports() {
         {tab === 'traffic' && <TrafficTab />}
         {tab === 'occupancy' && <OccupancyTab />}
       </div>
-    </div>
+    </>
   )
 }
 

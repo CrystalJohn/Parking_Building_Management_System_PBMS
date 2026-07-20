@@ -28,6 +28,11 @@ export class AdminController {
     return this.adminService.getReservationAudit(this.parseAuditDate(dateStr));
   }
 
+  @Get('sessions/history')
+  getSessionHistory(@Query('date') dateStr?: string) {
+    return this.adminService.getSessionHistory(this.parseAuditDate(dateStr));
+  }
+
   @Get('operations/flags')
   getOperationsFlags() {
     return this.adminService.getOperationsFlags();

@@ -45,14 +45,13 @@ export default function Config() {
   const toasts = useToasts()
 
   return (
-    <div className="min-h-screen bg-background text-foreground p-6 sm:p-8">
-      <div className="max-w-4xl mx-auto space-y-8">
+    <div className="max-w-4xl mx-auto space-y-8">
         <header className="flex items-center gap-3">
           <span className="grid size-10 place-items-center rounded-lg bg-primary/10 text-primary">
             <Settings2 className="size-5" />
           </span>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">System configuration</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">System configuration</h1>
             <p className="text-sm text-muted-foreground">Manage pricing rates and building layout parameters</p>
           </div>
         </header>
@@ -60,7 +59,6 @@ export default function Config() {
         <PricingSection toasts={toasts} />
         <BuildingSection toasts={toasts} />
       </div>
-    </div>
   )
 }
 

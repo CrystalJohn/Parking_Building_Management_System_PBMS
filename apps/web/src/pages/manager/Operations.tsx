@@ -104,7 +104,7 @@ export default function Operations() {
       <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-black tracking-tight text-slate-950 dark:text-white md:text-3xl">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
               Operations Queue
             </h1>
             <Badge variant={connected ? 'default' : 'secondary'} className="gap-1.5">
@@ -112,7 +112,7 @@ export default function Operations() {
               {connected ? 'Live' : 'Fallback'}
             </Badge>
           </div>
-          <p className="mt-1 text-sm font-medium text-slate-600 dark:text-slate-400">
+          <p className="mt-1 text-sm font-medium text-muted-foreground">
             Staff escalations that need manager review.
           </p>
         </div>
@@ -137,7 +137,7 @@ export default function Operations() {
       <Card className="border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
         <CardHeader className="gap-4">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <CardTitle className="flex items-center gap-2 text-base font-black">
+            <CardTitle className="flex items-center gap-2 text-base font-semibold">
               <ShieldAlert className="size-5 text-cyan-700 dark:text-cyan-200" strokeWidth={1.8} />
               Review queue
             </CardTitle>
@@ -173,10 +173,10 @@ export default function Operations() {
           ) : filteredIssues.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center dark:border-white/10 dark:bg-slate-950/50">
               <CheckCircle2 className="mx-auto size-8 text-emerald-600 dark:text-emerald-300" strokeWidth={1.8} />
-              <p className="mt-3 text-sm font-black text-slate-900 dark:text-white">
+              <p className="mt-3 text-sm font-semibold text-foreground">
                 No matching operation issues.
               </p>
-              <p className="mt-1 text-xs font-medium text-slate-500">
+              <p className="mt-1 text-xs font-medium text-muted-foreground">
                 New staff requests will appear here automatically.
               </p>
             </div>
@@ -214,10 +214,10 @@ export default function Operations() {
                     <SeverityPill severity={selectedIssue.severity} />
                     <Badge variant="outline">{labelize(selectedIssue.type)}</Badge>
                   </div>
-                  <p className="mt-3 font-mono text-xl font-black text-slate-950 dark:text-white">
+                  <p className="mt-3 font-mono text-xl font-semibold text-foreground">
                     {selectedIssue.plateNumber ?? selectedIssue.session?.licensePlate ?? 'No plate'}
                   </p>
-                  <p className="mt-2 text-sm font-medium text-slate-600 dark:text-slate-300">
+                  <p className="mt-2 text-sm font-medium text-muted-foreground dark:text-slate-300">
                     {selectedIssue.session?.sessionCode ?? 'No session'} • {formatDateTime(selectedIssue.createdAt)}
                   </p>
                   <p className="mt-3 text-sm text-slate-700 dark:text-slate-300">{selectedIssue.note}</p>
@@ -239,7 +239,7 @@ export default function Operations() {
                     checkOutEvidence={selectedEvidence.checkOutEvidence}
                   />
                 ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-400">
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-muted-foreground dark:border-white/10 dark:bg-slate-950/50 dark:text-muted-foreground">
                     No linked session evidence.
                   </div>
                 )}
@@ -310,17 +310,17 @@ function IssueCard({
             </Badge>
           </div>
           <div>
-            <p className="font-mono text-2xl font-black tracking-tight text-slate-950 dark:text-white">
+            <p className="font-mono text-2xl font-semibold tracking-tight text-foreground">
               {plate}
             </p>
-            <p className="mt-1 text-sm font-semibold text-slate-500">
+            <p className="mt-1 text-sm font-semibold text-muted-foreground">
               {sessionCode} · {formatDateTime(issue.createdAt)}
             </p>
           </div>
           <p className="max-w-3xl text-sm font-medium leading-6 text-slate-700 dark:text-slate-300">
             {issue.note}
           </p>
-          <div className="flex flex-wrap gap-2 text-xs font-semibold text-slate-500">
+          <div className="flex flex-wrap gap-2 text-xs font-semibold text-muted-foreground">
             <span>Staff: {issue.createdBy?.fullName ?? issue.createdBy?.phone ?? 'System'}</span>
             {issue.payment ? <span>Payment: {labelize(issue.payment.status)}</span> : null}
             {issue.slot?.code ? <span>Slot: {issue.slot.code}</span> : null}
@@ -371,7 +371,7 @@ function IssueCard({
       {issue.resolutionNote ? (
         <>
           <Separator className="my-3" />
-          <p className="text-xs font-semibold text-slate-500">{issue.resolutionNote}</p>
+          <p className="text-xs font-semibold text-muted-foreground">{issue.resolutionNote}</p>
         </>
       ) : null}
     </article>
@@ -397,8 +397,8 @@ function SummaryCard({
   return (
     <Card className="border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
       <CardContent className="p-4">
-        <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">{label}</p>
-        <p className={`mt-2 text-3xl font-black ${styles}`}>{value}</p>
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+        <p className={`mt-2 text-3xl font-semibold ${styles}`}>{value}</p>
       </CardContent>
     </Card>
   )
@@ -439,7 +439,7 @@ function SeverityPill({ severity }: { severity: OperationIssueSeverity }) {
         ? 'bg-amber-500/10 text-amber-800 ring-amber-500/20 dark:text-amber-100'
         : 'bg-cyan-500/10 text-cyan-800 ring-cyan-500/20 dark:text-cyan-100'
 
-  return <span className={`rounded-full px-2.5 py-1 text-xs font-black ring-1 ${className}`}>{labelize(severity)}</span>
+  return <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${className}`}>{labelize(severity)}</span>
 }
 
 function StatusPill({ status }: { status: OperationIssueStatus }) {
@@ -454,7 +454,7 @@ function StatusPill({ status }: { status: OperationIssueStatus }) {
           : 'bg-emerald-500/10 text-emerald-800 ring-emerald-500/20 dark:text-emerald-100'
 
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-black ring-1 ${className}`}>
+    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${className}`}>
       {icon}
       {labelize(status)}
     </span>

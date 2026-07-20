@@ -64,6 +64,7 @@ const NAV_BY_ROLE: Record<AuthUser['role'], NavItem[]> = {
     { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/admin/users', label: 'Users', icon: Users },
     { to: '/admin/reservations', label: 'Reservations', icon: CalendarClock },
+    { to: '/admin/sessions', label: 'Session History', icon: History },
     { to: '/admin/reports', label: 'Reports & Flags', icon: BarChart3 },
   ],
   manager: [
@@ -71,6 +72,7 @@ const NAV_BY_ROLE: Record<AuthUser['role'], NavItem[]> = {
     { to: '/manager/operations', label: 'Operations', icon: ClipboardList },
     { to: '/manager/payments', label: 'Payments', icon: CircleDollarSign },
     { to: '/manager/reservations', label: 'Reservations', icon: CalendarClock },
+    { to: '/manager/sessions', label: 'Session History', icon: History },
     { to: '/manager/reports', label: 'Reports', icon: BarChart3 },
     { to: '/manager/vehicles', label: 'Vehicles', icon: Car },
     { to: '/manager/config', label: 'Config', icon: Settings },

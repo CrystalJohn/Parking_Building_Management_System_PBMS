@@ -349,3 +349,49 @@ export async function getAdminSlotOccupancyMap() {
   const { data } = await api.get<AdminSlotOccupancyMap>('/admin/operations/slot-occupancy-map')
   return data
 }
+
+export interface AdminSessionHistoryItem {
+  id: string
+  sessionCode: string | null
+  status: string
+  licensePlate: string
+  vehicleType: 'car' | 'motorbike'
+  checkInTime: string
+  checkOutTime: string | null
+  durationMinutes: number | null
+  slotCode: string | null
+  floorName: string | null
+  isLostTicket: boolean
+  driverName: string | null
+  driverPhone: string | null
+  payment: {
+    id: string
+    amount: number
+    method: 'cash' | 'bank_qr'
+    status: string
+    paidAt: string | null
+  } | null
+}
+
+export interface AdminSessionHistory {
+  meta: {
+    selectedDate: string
+    timezone: string
+    range: {
+      start: string
+      end: string
+    }
+  }
+  summary: {
+    totalSessions: number
+    totalRevenue: number
+  }
+  items: AdminSessionHistoryItem[]
+}
+
+export async function getAdminSessionHistory(date?: string) {
+  const { data } = await api.get<AdminSessionHistory>('/admin/sessions/history', {
+    params: { date },
+  })
+  return data
+}

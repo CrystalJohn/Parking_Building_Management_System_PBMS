@@ -25,6 +25,7 @@ import Vehicles from '../pages/manager/Vehicles'
 import Users from '../pages/admin/Users'
 import AdminDashboard from '../pages/admin/AdminDashboard'
 import AdminReservations from '../pages/admin/AdminReservations'
+import AdminSessions from '../pages/admin/AdminSessions'
 import AdminReportsFlags from '../pages/admin/AdminReportsFlags'
 
 // Driver
@@ -96,6 +97,14 @@ export default function AppRoutes() {
         }
       />
       <Route
+        path="/manager/sessions"
+        element={
+          <RequireAuth allowedRoles={['manager']}>
+            <AdminSessions />
+          </RequireAuth>
+        }
+      />
+      <Route
         path="/manager/reports"
         element={
           <RequireAuth allowedRoles={['manager']}>
@@ -143,6 +152,14 @@ export default function AppRoutes() {
         element={
           <RequireAuth allowedRoles={['admin']}>
             <AdminReservations />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/admin/sessions"
+        element={
+          <RequireAuth allowedRoles={['admin']}>
+            <AdminSessions />
           </RequireAuth>
         }
       />

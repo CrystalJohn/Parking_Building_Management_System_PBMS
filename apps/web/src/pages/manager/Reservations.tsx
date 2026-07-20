@@ -33,9 +33,9 @@ export default function Reservations() {
   }, [loadReservations])
 
   return (
-    <div className="min-h-screen bg-slate-100 px-4 py-5 text-slate-950 transition-colors duration-300 dark:bg-slate-950 dark:text-slate-100 lg:px-6">
-      <div className="mx-auto max-w-[1500px] space-y-5">
-        <h1 className="text-2xl font-black tracking-tight text-slate-950 dark:text-white md:text-3xl">
+    <>
+      <div className="space-y-5">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
           Reservations
         </h1>
         {error ? (
@@ -51,11 +51,11 @@ export default function Reservations() {
         ) : (
           <div className="animate-pulse space-y-5">
             <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-              <div className="h-[200px] rounded-2xl bg-white/[0.06] border border-slate-200 dark:border-white/10" />
+              <div className="h-[200px] rounded-2xl bg-white/[0.06] border border-border" />
             </div>
           </div>
         )}
       </div>
-    </div>
+    </>
   )
 }

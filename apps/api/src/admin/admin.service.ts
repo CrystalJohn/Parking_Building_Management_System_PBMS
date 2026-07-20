@@ -23,6 +23,10 @@ import type {
   AdminSessionEvidenceItemDto,
 } from './dto/admin-session-evidence.dto';
 import type {
+  AdminSessionHistoryDto,
+  AdminSessionHistoryItemDto,
+} from './dto/admin-session-history.dto';
+import type {
   AdminSummaryDto,
   FloorSlotMetricDto,
   SlotSummaryDto,
@@ -560,6 +564,126 @@ export class AdminService {
         fulfilledToday: fulfilledToday.length,
       },
       watchlist,
+    };
+  }
+
+  async getSessionHistory(now = new Date()): Promise<AdminSessionHistoryDto> {
+    const today = getHoChiMinhDayRange(now);
+
+    const completedSessions = await this.prisma.parkingSession.findMany({
+      where: {
+        status: SessionStatus.completed,
+        checkOutTime: {
+          gte: today.start,
+          lte: today.end,
+        },
+      },
+      include: {
+        payment: true,
+        slot: {
+          include: {
+            floor: true,
+          },
+        },
+        reservation: {
+          include: {
+            driver: {
+              select: {
+                fullName: true,
+                phone: true,
+              },
+            },
+          },
+        },
+        vehicle: {
+          include: {
+            vehicleUsers: {
+              include: {
+                user: {
+                  select: {
+                    fullName: true,
+                    phone: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        checkOutTime: 'desc',
+      },
+    });
+
+    const items: AdminSessionHistoryItemDto[] = completedSessions.map((session) => {
+      let driverName: string | null = null;
+      let driverPhone: string | null = null;
+
+      if (session.reservation?.driver) {
+        driverName = session.reservation.driver.fullName;
+        driverPhone = session.reservation.driver.phone;
+      } else if (session.vehicle) {
+        const owner = session.vehicle.vehicleUsers.find((vu) => vu.role === 'owner')?.user;
+        if (owner) {
+          driverName = owner.fullName;
+          driverPhone = owner.phone;
+        } else if (session.vehicle.vehicleUsers.length > 0) {
+          const firstDriver = session.vehicle.vehicleUsers[0].user;
+          driverName = firstDriver.fullName;
+          driverPhone = firstDriver.phone;
+        }
+      }
+
+      let durationMinutes: number | null = null;
+      if (session.checkInTime && session.checkOutTime) {
+        durationMinutes = Math.floor(
+          (session.checkOutTime.getTime() - session.checkInTime.getTime()) / 1000 / 60,
+        );
+      }
+
+      return {
+        id: session.id,
+        sessionCode: session.sessionCode,
+        status: session.status,
+        licensePlate: session.licensePlate,
+        vehicleType: session.vehicleType,
+        checkInTime: session.checkInTime.toISOString(),
+        checkOutTime: session.checkOutTime?.toISOString() ?? null,
+        durationMinutes,
+        slotCode: session.slot?.code ?? null,
+        floorName: session.slot?.floor?.name ?? null,
+        isLostTicket: session.isLostTicket,
+        driverName,
+        driverPhone,
+        payment: session.payment
+          ? {
+              id: session.payment.id,
+              amount: session.payment.amount,
+              method: session.payment.method,
+              status: session.payment.status,
+              paidAt: session.payment.paidAt?.toISOString() ?? null,
+            }
+          : null,
+      };
+    });
+
+    const totalSessions = items.length;
+    const totalRevenue = items.reduce((sum, item) => sum + (item.payment?.amount ?? 0), 0);
+
+    return {
+      meta: {
+        selectedDate: now.toISOString().split('T')[0],
+        timezone: 'Asia/Ho_Chi_Minh',
+        range: {
+          start: today.start.toISOString(),
+          end: today.end.toISOString(),
+        },
+      },
+      summary: {
+        totalSessions,
+        totalRevenue,
+      },
+      items,
     };
   }
 

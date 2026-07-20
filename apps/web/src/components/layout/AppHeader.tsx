@@ -19,6 +19,7 @@ const PAGE_LABELS: Record<string, string> = {
   dashboard: 'Dashboard',
   users: 'Users',
   reservations: 'Reservations',
+  sessions: 'Session History',
   reports: 'Reports',
   operations: 'Operations',
   payments: 'Payments',

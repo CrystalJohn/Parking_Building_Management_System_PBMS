@@ -39,7 +39,7 @@ import {
   type PaymentMonitoringRisk,
 } from '../../lib/admin-api'
 import { useToasts } from '../../lib/use-toasts'
-import { AdminPageHeader, EmptyState, LoadingRows } from './admin-ui'
+import { EmptyState, LoadingRows } from './admin-ui'
 
 const API_DATE_FORMAT = 'yyyy-MM-dd'
 const DISPLAY_DATE_FORMAT = 'dd/MM/yyyy'
@@ -119,17 +119,6 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-6">
-      <AdminPageHeader
-        title="Admin Dashboard"
-        description="Current operations stay separate from selected-date reports."
-        action={
-          <RefreshDashboardButton
-            loading={loading}
-            onRefresh={() => setRefreshKey((value) => value + 1)}
-          />
-        }
-      />
-
       {error ? (
         <Card className="border-destructive/30 bg-destructive/10 text-destructive">
           <CardContent className="flex items-center gap-2 py-4 font-semibold">
@@ -158,7 +147,13 @@ export default function AdminDashboard() {
                 <h2 className="text-lg font-semibold tracking-tight text-foreground">Today Status</h2>
                 <p className="text-sm text-muted-foreground">Current operational state</p>
               </div>
-              <Badge variant="secondary">Today</Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary">Today</Badge>
+                <RefreshDashboardButton
+                  loading={loading}
+                  onRefresh={() => setRefreshKey((value) => value + 1)}
+                />
+              </div>
             </div>
 
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.75fr)]">
@@ -171,11 +166,7 @@ export default function AdminDashboard() {
                         Current capacity: {todayStatus.slots.occupied} / {todayStatus.slots.total} occupied
                       </CardDescription>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant="secondary">{todayStatus.slots.available} available</Badge>
-                      <Badge variant="outline">{todayStatus.slots.reserved} reserved</Badge>
-                      <Badge variant="outline">{todayStatus.slots.occupied} occupied</Badge>
-                    </div>
+
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-5">
@@ -330,12 +321,6 @@ export default function AdminDashboard() {
                 label="Expired reservations"
                 value={report.expiredReservations}
                 helper="Expired during selected date"
-              />
-              <ReportMetricCard
-                icon={<CalendarDays className="h-4 w-4" />}
-                label="Selected date"
-                value={selectedDateLabel}
-                helper={selectedDateIsToday ? 'Today report' : 'Historical report'}
               />
             </div>
           </section>
