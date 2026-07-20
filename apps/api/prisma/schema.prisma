@@ -107,6 +107,13 @@ enum OperationIssueSource {
   system
 }
 
+enum VehicleRegistrationStatus {
+  pending
+  approved
+  rejected
+  expired
+}
+
 // ─── Models ──────────────────────────────────────────────────────────────────
 
 model User {
@@ -134,6 +141,8 @@ model User {
   notifications       Notification[]
   operationIssuesCreated OperationIssue[] @relation("OperationIssueCreatedBy")
   operationIssuesReviewed OperationIssue[] @relation("OperationIssueReviewedBy")
+  vehicleRegistrationsCreated VehicleRegistrationRequest[] @relation("VehicleRegistrationDriver")
+  vehicleRegistrationsReviewed VehicleRegistrationRequest[] @relation("VehicleRegistrationReviewer")
 
   @@map("users")
 }
@@ -475,4 +484,24 @@ model OcrEvidence {
   @@index([staffId], map: "idx_ocr_evidence_staff")
   @@index([capturedAt], map: "idx_ocr_evidence_captured_at")
   @@map("ocr_evidences")
+}
+
+model VehicleRegistrationRequest {
+  id           String                    @id @default(uuid())
+  driverId     String                    @map("driver_id")
+  plateNumber  String                    @map("plate_number")
+  vehicleType  VehicleType               @map("vehicle_type")
+  status       VehicleRegistrationStatus @default(pending)
+  reviewedById String?                   @map("reviewed_by_id")
+  reviewedAt   DateTime?                 @map("reviewed_at") @db.Timestamptz(3)
+  rejectReason String?                   @map("reject_reason")
+  createdAt    DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  driver     User  @relation("VehicleRegistrationDriver", fields: [driverId], references: [id])
+  reviewedBy User? @relation("VehicleRegistrationReviewer", fields: [reviewedById], references: [id])
+
+  @@index([status, createdAt], map: "idx_vehicle_registration_status")
+  @@index([driverId], map: "idx_vehicle_registration_driver")
+  @@map("vehicle_registration_requests")
 }

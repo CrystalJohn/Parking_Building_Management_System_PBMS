@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { VehicleUserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { LinkVehicleUserDto } from './dto';
+
 
 export interface MatchedVehicleSummary {
   inputPlate: string;
@@ -142,76 +142,7 @@ export class VehiclesService {
     }));
   }
 
-  async linkUser(vehicleId: string, dto: LinkVehicleUserDto) {
-    const role = dto.role ?? VehicleUserRole.driver;
 
-    const [vehicle, user] = await Promise.all([
-      this.prisma.vehicle.findUnique({
-        where: { id: vehicleId },
-        select: { id: true },
-      }),
-      this.prisma.user.findUnique({
-        where: { id: dto.userId },
-        select: { id: true, fullName: true, phone: true, email: true },
-      }),
-    ]);
-
-    if (!vehicle) {
-      throw new NotFoundException(`Vehicle with id "${vehicleId}" not found`);
-    }
-
-    if (!user) {
-      throw new NotFoundException(`User with id "${dto.userId}" not found`);
-    }
-
-    const existingLink = await this.prisma.vehicleUser.findUnique({
-      where: {
-        vehicleId_userId: {
-          vehicleId,
-          userId: dto.userId,
-        },
-      },
-      select: { vehicleId: true, userId: true },
-    });
-
-    if (existingLink) {
-      throw new ConflictException('User is already linked to this vehicle');
-    }
-
-    if (role === VehicleUserRole.owner) {
-      await this.assertVehicleHasNoOwner(vehicleId);
-    }
-
-    try {
-      return await this.prisma.vehicleUser.create({
-        data: {
-          vehicleId,
-          userId: dto.userId,
-          role,
-        },
-        include: {
-          user: {
-            select: {
-              id: true,
-              fullName: true,
-              phone: true,
-              email: true,
-            },
-          },
-        },
-      });
-    } catch (error) {
-      if (this.isUniqueConstraintError(error)) {
-        throw new ConflictException(
-          role === VehicleUserRole.owner
-            ? 'Vehicle already has an owner'
-            : 'User is already linked to this vehicle',
-        );
-      }
-
-      throw error;
-    }
-  }
 
   async matchPlate(plateNumber: string): Promise<MatchedVehicleSummary> {
     const normalizedPlate = normalizePlateNumber(plateNumber);
@@ -475,38 +406,7 @@ export class VehiclesService {
     };
   }
 
-  private async assertVehicleHasNoOwner(vehicleId: string): Promise<void> {
-    const existingOwner = await this.prisma.vehicleUser.findFirst({
-      where: {
-        vehicleId,
-        role: VehicleUserRole.owner,
-      },
-      select: {
-        user: {
-          select: {
-            fullName: true,
-            phone: true,
-          },
-        },
-      },
-    });
 
-    if (existingOwner) {
-      const ownerLabel =
-        existingOwner.user.fullName || existingOwner.user.phone || 'another user';
-
-      throw new ConflictException(`Vehicle already has an owner: ${ownerLabel}`);
-    }
-  }
-
-  private isUniqueConstraintError(error: unknown): boolean {
-    return (
-      typeof error === 'object' &&
-      error !== null &&
-      'code' in error &&
-      (error as { code?: string }).code === 'P2002'
-    );
-  }
 }
 
 export function normalizePlateNumber(value: string | null | undefined): string {
