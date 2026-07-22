@@ -139,6 +139,8 @@ async function main() {
       overtimePenalty: 50000,
       lostTicketPenalty: 100000,
       overtimeThresholdHours: 24,
+      monthlyRate: 300000,
+      yearlyRate: 3000000,
     },
     create: {
       vehicleType: VehicleType.car,
@@ -146,6 +148,8 @@ async function main() {
       overtimePenalty: 50000,
       lostTicketPenalty: 100000,
       overtimeThresholdHours: 24,
+      monthlyRate: 300000,
+      yearlyRate: 3000000,
     },
   });
 
@@ -158,6 +162,8 @@ async function main() {
       overtimePenalty: 50000,
       lostTicketPenalty: 100000,
       overtimeThresholdHours: 24,
+      monthlyRate: 300000,
+      yearlyRate: 3000000,
     },
     create: {
       vehicleType: VehicleType.motorbike,
@@ -165,6 +171,8 @@ async function main() {
       overtimePenalty: 50000,
       lostTicketPenalty: 100000,
       overtimeThresholdHours: 24,
+      monthlyRate: 300000,
+      yearlyRate: 3000000,
     },
   });
 
