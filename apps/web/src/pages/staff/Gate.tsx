@@ -75,6 +75,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
+import { getCurrentGateLane, type CurrentGateAssignment } from '../../lib/gate-lanes-api'
 
 type Tab = 'check-in' | 'check-out'
 type MismatchProtectedAction = 'bankQr' | 'payment' | 'exit'
@@ -195,6 +196,8 @@ function extractError(err: unknown): { message: string; isFull: boolean } {
 export default function Gate() {
   const location = useLocation()
   const toasts = useToasts()
+  const [laneAssignment, setLaneAssignment] = useState<CurrentGateAssignment | null>(null)
+  const [laneLoading, setLaneLoading] = useState(true)
   const gateRoute = useMemo(() => {
     const params = new URLSearchParams(location.search)
     const tab = normalizeGateTab(params.get('tab'))
@@ -209,6 +212,29 @@ export default function Gate() {
     }
   }, [location.search])
 
+  useEffect(() => {
+    let active = true
+    setLaneLoading(true)
+    void getCurrentGateLane()
+      .then((assignment) => {
+        if (active) setLaneAssignment(assignment)
+      })
+      .catch(() => {
+        if (active) setLaneAssignment(null)
+      })
+      .finally(() => {
+        if (active) setLaneLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const lane = laneAssignment?.gateLane
+  const laneLabel = lane
+    ? `${lane.name} · ${lane.vehicleType === 'car' ? 'Car' : 'Motorbike'}`
+    : null
+
   return (
     <div className="min-h-[calc(100svh-5rem)] bg-muted/40">
       <div className="mx-auto max-w-7xl px-4 pb-4 pt-4 sm:px-6 print:hidden">
@@ -220,6 +246,7 @@ export default function Gate() {
             <Badge variant="outline" className="bg-background">
               Staff console
             </Badge>
+            {laneLabel ? <Badge variant="secondary">{laneLabel}</Badge> : null}
           </div>
         </div>
       </div>
@@ -232,10 +259,23 @@ export default function Gate() {
             "print:rounded-none print:border-0 print:p-0 print:shadow-none",
           )}
         >
-          {gateRoute.renderLegacyCheckout ? (
+          {laneLoading ? (
+            <Card className="flex min-h-48 items-center justify-center">
+              <Loader2 className="size-6 animate-spin text-muted-foreground" />
+            </Card>
+          ) : !lane || !lane.isActive ? (
+            <Card className="border-amber-200 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/20">
+              <CardHeader>
+                <CardTitle>Gate lane assignment required</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Contact a manager to receive an active Car or Motorbike lane assignment before using this gate.
+                </p>
+              </CardHeader>
+            </Card>
+          ) : gateRoute.renderLegacyCheckout ? (
             <CheckOutPanel toasts={toasts} />
           ) : (
-            <GateOperationsPanel toasts={toasts} />
+            <GateOperationsPanel toasts={toasts} laneVehicleType={lane.vehicleType} />
           )}
         </div>
       </div>
@@ -243,7 +283,7 @@ export default function Gate() {
   )
 }
 
-function GateOperationsPanel({ toasts }: PanelProps) {
+function GateOperationsPanel({ toasts, laneVehicleType }: PanelProps & { laneVehicleType: 'car' | 'motorbike' }) {
   const [mode, setMode] = useState<'scan-plate' | 'reservation-qr' | 'checkout'>('scan-plate')
   const [routedCheckout, setRoutedCheckout] = useState<{
     checkout: CheckoutWorkflowResponse
@@ -280,6 +320,7 @@ function GateOperationsPanel({ toasts }: PanelProps) {
   return (
     <StaffOcrCheckInPanel
       toasts={toasts}
+      laneVehicleType={laneVehicleType}
       onSwitchToReservationQr={() => setMode('reservation-qr')}
       onRouteToCheckout={(input) => {
         setRoutedCheckout(input)
@@ -431,7 +472,13 @@ export function LegacyCheckOutPanel({ toasts }: PanelProps) {
         <div className="border-t border-gray-200 pt-4 space-y-1 text-sm">
           <div className="flex justify-between">
             <span className="text-gray-500">Base fee</span>
-            <span>{VND(feePreview.fee.baseFee)}</span>
+            <span className="flex items-center gap-2">
+              {feePreview.fee.isSubscriber ? (
+                <span className="bg-green-100 text-green-700 text-xs font-medium px-2 py-0.5 rounded-full">FREE — Subscriber</span>
+              ) : (
+                VND(feePreview.fee.baseFee)
+              )}
+            </span>
           </div>
           {feePreview.fee.penalty > 0 && (
             <div className="flex justify-between text-yellow-700">
@@ -1579,7 +1626,11 @@ function SessionSummary({
         
         {hasPenalty ? (
           <>
-            <SummaryRow label="Base fee" value={VND(workflow.fee.baseFee)} />
+            <SummaryRow label="Base fee" value={
+              workflow.fee.isSubscriber
+                ? <span className="bg-green-100 text-green-700 text-xs font-medium px-2 py-0.5 rounded-full">FREE — Subscriber</span>
+                : VND(workflow.fee.baseFee)
+            } />
             <SummaryRow label="Penalty" value={penaltyLabel} />
           </>
         ) : null}

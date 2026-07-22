@@ -11,6 +11,7 @@ import { VehicleIdentityResult } from '../vehicle-identification/vehicle-identit
 import { NotificationsService } from '../notifications/notifications.service';
 import { OcrService } from '../ocr/ocr.service';
 import { OcrEvidenceStorageService } from '../ocr-evidences/ocr-evidence-storage.service';
+import { GateLanesService } from '../gate-lanes/gate-lanes.service';
 import * as QRCode from 'qrcode';
 
 jest.mock('qrcode', () => ({
@@ -154,6 +155,7 @@ describe('SessionsService', () => {
   let vehicleIdentificationService: { identifyForCheckIn: jest.Mock; identifyForCheckout: jest.Mock };
   let jwtService: { verifyAsync: jest.Mock };
   let notificationsService: { createForUser: jest.Mock };
+  let gateLanesService: { requireActiveLane: jest.Mock; assertVehicleType: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
@@ -185,6 +187,12 @@ describe('SessionsService', () => {
     notificationsService = {
       createForUser: jest.fn(),
     };
+    gateLanesService = {
+      requireActiveLane: jest.fn().mockResolvedValue({
+        gateLane: { id: 'lane-1', code: 'CAR-01', name: 'Car Lane 1', vehicleType: 'car', isActive: true },
+      }),
+      assertVehicleType: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -197,6 +205,7 @@ describe('SessionsService', () => {
         { provide: NotificationsService, useValue: notificationsService },
         { provide: OcrService, useValue: { getCheckInEvidenceForSession: jest.fn().mockResolvedValue(null), linkEvidenceToCheckout: jest.fn().mockResolvedValue(null) } },
         { provide: OcrEvidenceStorageService, useValue: {} },
+        { provide: GateLanesService, useValue: gateLanesService },
       ],
     }).compile();
 
@@ -728,6 +737,9 @@ describe('SessionsService', () => {
       } as VehicleIdentityResult);
 
       prisma.reservation.findUnique.mockResolvedValue(reservation);
+      gateLanesService.requireActiveLane.mockResolvedValueOnce({
+        gateLane: { id: 'lane-2', code: 'BIKE-01', name: 'Motorbike Lane 1', vehicleType: VehicleType.motorbike, isActive: true },
+      });
 
       let capturedSessionData: Record<string, unknown> | null = null;
       prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
@@ -1760,6 +1772,7 @@ describe('SessionsService', () => {
     const staffId = 'staff-uuid';
 
     it('stores ticketIssuedAt and ticketIssuedByStaffId for a session ticket', async () => {
+      prisma.parkingSession.findUnique.mockResolvedValue(makeSession({ vehicleType: VehicleType.car }));
       prisma.parkingSession.update.mockResolvedValue({
         ...makeSession(),
         ticketIssuedAt: new Date('2026-06-13T03:00:00Z'),

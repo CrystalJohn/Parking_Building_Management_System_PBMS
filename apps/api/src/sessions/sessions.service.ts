@@ -23,6 +23,7 @@ import { FeesService, FeeBreakdown } from '../fees/fees.service';
 import { OcrService } from '../ocr';
 import { OcrEvidenceStorageService } from '../ocr-evidences/ocr-evidence-storage.service';
 import { VehicleIdentificationService } from '../vehicle-identification/vehicle-identification.service';
+import { GateLanesService } from '../gate-lanes/gate-lanes.service';
 import type { VehicleIdentityResult } from '../vehicle-identification/vehicle-identity.types';
 import { normalizePlateNumber } from '../vehicles/vehicles.service';
 import {
@@ -60,6 +61,7 @@ export class SessionsService {
     private readonly notificationsService: NotificationsService,
     private readonly ocrService: OcrService,
     private readonly ocrStorageService: OcrEvidenceStorageService,
+    private readonly gateLanesService: GateLanesService,
   ) {}
 
   /**
@@ -67,11 +69,13 @@ export class SessionsService {
    * type=checkin  → sessions ordered by check_in_time desc (all statuses)
    * type=checkout → sessions that have been checked out (completed/exit_authorized)
    */
-  async findRecent(type?: 'checkin' | 'checkout', limit = 20) {
+  async findRecent(type?: 'checkin' | 'checkout', limit = 20, staffId?: string) {
+    const lane = staffId ? await this.gateLanesService.requireActiveLane(staffId) : null;
     const where =
       type === 'checkout'
         ? { status: { in: ['completed', 'exit_authorized', 'checkout_pending'] as any } }
-        : {};
+      : {};
+    const laneWhere = lane ? { vehicleType: lane.gateLane.vehicleType } : {};
 
     const orderBy =
       type === 'checkout'
@@ -79,7 +83,7 @@ export class SessionsService {
         : [{ checkInTime: 'desc' as const }];
 
     const sessions = await this.prisma.parkingSession.findMany({
-      where,
+      where: { ...where, ...laneWhere },
       orderBy,
       take: Math.min(limit, 50),
       include: {
@@ -131,6 +135,8 @@ export class SessionsService {
    * Req 1.1–1.5, 3.6, 8
    */
   async checkIn(dto: CheckInDto, staffId: string) {
+    const lane = await this.gateLanesService.requireActiveLane(staffId);
+    const laneVehicleType = lane.gateLane.vehicleType;
     // ─── P1-B: Identification (separated from business logic) ────────────
     const identity: VehicleIdentityResult =
       await this.vehicleIdentificationService.identifyForCheckIn({
@@ -182,6 +188,10 @@ export class SessionsService {
         })
       : null;
 
+    if (matchedVehicle) {
+      this.gateLanesService.assertVehicleType(lane, matchedVehicle.vehicleType);
+    }
+
     const vehicleOwner =
       matchedVehicle?.vehicleUsers.find((link) => link.role === 'owner' && link.user.isActive) ??
       matchedVehicle?.vehicleUsers.find((link) => link.user.isActive) ??
@@ -218,7 +228,10 @@ export class SessionsService {
         include: { slot: { include: { floor: true } } },
       });
 
-      this.assertReservationCanBeFulfilled(activeReservation, dto.vehicleType);
+      this.assertReservationCanBeFulfilled(activeReservation, laneVehicleType);
+      if (activeReservation) {
+        this.gateLanesService.assertVehicleType(lane, activeReservation.vehicleType);
+      }
 
       if (!driverId && activeReservation.driverId) {
         driverId = activeReservation.driverId;
@@ -230,14 +243,14 @@ export class SessionsService {
       activeReservation = await this.prisma.reservation.findFirst({
         where: {
           driverId,
-          vehicleType: dto.vehicleType,
+            vehicleType: laneVehicleType,
           status: 'active',
         },
         include: { slot: { include: { floor: true } } },
       });
 
       if (activeReservation) {
-        this.assertReservationCanBeFulfilled(activeReservation, dto.vehicleType);
+        this.assertReservationCanBeFulfilled(activeReservation, laneVehicleType);
       }
     }
 
@@ -248,7 +261,7 @@ export class SessionsService {
       allocationTimeMs = 0;
     } else {
       // 13.2: Allocate slot — throws ConflictException if building is full (Req 1.5)
-      const result = await this.allocationService.allocate(dto.vehicleType);
+      const result = await this.allocationService.allocate(laneVehicleType);
       slot = result.slot;
       allocationStrategy = result.allocationStrategy;
       allocationTimeMs = result.allocationTimeMs;
@@ -288,7 +301,7 @@ export class SessionsService {
           slotId: slot.id,
           floorId: slot.floorId,
           zone: slot.zone,
-          vehicleType: dto.vehicleType,
+          vehicleType: laneVehicleType,
           plateConfirmed: plateNumberConfirmed,
           plateOcr: plateNumberOcr,
           driverId,
@@ -305,7 +318,7 @@ export class SessionsService {
             data: {
               sessionId: newSession.id,
               confirmedPlate: licensePlate,
-              vehicleType: dto.vehicleType,
+              vehicleType: laneVehicleType,
               staffId,
               reservationId,
               checkInTime: newSession.checkInTime,
@@ -475,6 +488,7 @@ export class SessionsService {
   }
 
   async confirmReservationCheckIn(reservationId: string, staffId: string) {
+    const lane = await this.gateLanesService.requireActiveLane(staffId);
     try {
       const result = await this.prisma.$transaction(async (tx) => {
         const existingSession = await tx.parkingSession.findUnique({
@@ -536,6 +550,10 @@ export class SessionsService {
         }
 
         this.assertReservationCanConfirmCheckIn(reservation);
+        this.gateLanesService.assertVehicleType(
+          lane,
+          reservation.vehicle!.vehicleType,
+        );
 
         const lockedSlot = await tx.$queryRaw<{ id: number; status: string }[]>`
           SELECT id, status
@@ -764,6 +782,15 @@ export class SessionsService {
   }
 
   async issueTicket(sessionId: string, staffId: string) {
+    const lane = await this.gateLanesService.requireActiveLane(staffId);
+    const session = await this.prisma.parkingSession.findUnique({
+      where: { id: sessionId },
+      select: { id: true, vehicleType: true },
+    });
+    if (!session) {
+      throw new NotFoundException(`Session not found: ${sessionId}`);
+    }
+    this.gateLanesService.assertVehicleType(lane, session.vehicleType);
     const updated = await (this.prisma as any).parkingSession.update({
       where: { id: sessionId },
       data: {
@@ -844,6 +871,7 @@ export class SessionsService {
       isOvertime: breakdown.isOvertime,
       isLostTicket: breakdown.isLostTicket,
       checkOutTime: breakdown.checkOutTime,
+      isSubscriber: breakdown.isSubscriber,
     };
   }
 
@@ -853,6 +881,7 @@ export class SessionsService {
     reservationId: string | null;
     licensePlate: string;
     vehicleType: VehicleType;
+    vehicleId: string | null;
     checkInTime: Date;
     checkOutTime: Date | null;
     status: SessionStatus;
@@ -1140,6 +1169,7 @@ export class SessionsService {
    * Req 2.1–2.3, 5.5
    */
   async checkOut(dto: CheckOutDto, staffId: string) {
+    const lane = await this.gateLanesService.requireActiveLane(staffId);
     // 15.1: Validate at least one identifier provided
     if (!dto.sessionId && !dto.licensePlate) {
       throw new BadRequestException(
@@ -1165,6 +1195,7 @@ export class SessionsService {
         `No active session found for ${dto.sessionId ? `id: ${dto.sessionId}` : `plate: ${dto.licensePlate}`}`,
       );
     }
+    this.gateLanesService.assertVehicleType(lane, session.vehicleType);
 
     // 15.2: Calculate fee breakdown via FeesService
     const now = new Date();
@@ -1266,6 +1297,7 @@ export class SessionsService {
     dto: ConfirmPaymentDto,
     staffId: string,
   ) {
+    const lane = await this.gateLanesService.requireActiveLane(staffId);
     // Lookup checkout pending session
     const session = await this.prisma.parkingSession.findUnique({
       where: { id: sessionId },
@@ -1277,6 +1309,7 @@ export class SessionsService {
     if (!session) {
       throw new NotFoundException(`Session not found: ${sessionId}`);
     }
+    this.gateLanesService.assertVehicleType(lane, session.vehicleType);
 
     if ((session.status as string) !== 'checkout_pending') {
       throw new ConflictException(
@@ -1376,6 +1409,7 @@ export class SessionsService {
    * This is the only point where the slot is released.
    */
   async confirmExit(sessionId: string, staffId: string) {
+    const lane = await this.gateLanesService.requireActiveLane(staffId);
     const session = await this.prisma.parkingSession.findUnique({
       where: { id: sessionId },
       include: {
@@ -1386,6 +1420,7 @@ export class SessionsService {
     if (!session) {
       throw new NotFoundException(`Session not found: ${sessionId}`);
     }
+    this.gateLanesService.assertVehicleType(lane, session.vehicleType);
 
     if ((session.status as string) !== 'exit_authorized') {
       throw new ConflictException(
@@ -1477,7 +1512,8 @@ export class SessionsService {
   async lookupForCheckout(input: {
     sessionCode?: string;
     licensePlate?: string;
-  }) {
+  }, staffId?: string) {
+    const lane = staffId ? await this.gateLanesService.requireActiveLane(staffId) : null;
     const sessionCode = input.sessionCode?.trim();
     const licensePlate = normalizePlateNumber(input.licensePlate);
 
@@ -1501,6 +1537,7 @@ export class SessionsService {
     if (!session) {
       throw new NotFoundException('Parking session not found.');
     }
+    if (lane) this.gateLanesService.assertVehicleType(lane, session.vehicleType);
 
     return this.buildCheckoutLookupPreview(session);
   }
@@ -1635,6 +1672,7 @@ export class SessionsService {
    * Req 5.6, 7.3
    */
   async handleLostTicket(dto: LostTicketDto, staffId: string) {
+    const lane = await this.gateLanesService.requireActiveLane(staffId);
     // 24.2: Lookup active session by plate
     const session = await this.prisma.parkingSession.findFirst({
       where: {
@@ -1651,6 +1689,7 @@ export class SessionsService {
         `Không tìm thấy phiên gửi xe cho biển số: ${dto.licensePlate}`,
       );
     }
+    this.gateLanesService.assertVehicleType(lane, session.vehicleType);
 
     // 24.2: Set lost ticket flag and record ID info
     await this.prisma.parkingSession.update({

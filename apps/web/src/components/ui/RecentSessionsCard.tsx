@@ -20,6 +20,7 @@ interface Props {
   type: 'checkin' | 'checkout'
   /** Pass a trigger value that increments each time a new action completes to auto-refresh */
   refreshTrigger?: number
+  limit?: number
 }
 
 const VND = (n: number) =>
@@ -76,21 +77,22 @@ function HistorySkeleton() {
   )
 }
 
-export function RecentSessionsCard({ type, refreshTrigger = 0 }: Props) {
+export function RecentSessionsCard({ type, refreshTrigger = 0, limit }: Props) {
   const [sessions, setSessions] = useState<RecentSession[]>([])
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await getRecentSessions(type, 20)
+      const requestLimit = limit ?? (type === 'checkin' ? 3 : 20)
+      const data = await getRecentSessions(type, requestLimit)
       setSessions(data)
     } catch {
       // History is non-critical. Keep the gate workflow usable if this request fails.
     } finally {
       setLoading(false)
     }
-  }, [type])
+  }, [type, limit])
 
   useEffect(() => {
     void load()

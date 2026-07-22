@@ -75,6 +75,13 @@ enum SubscriptionPlanType {
   yearly
 }
 
+enum SubscriptionStatus {
+  pending
+  active
+  expired
+  cancelled
+}
+
 enum NotificationType {
   session_started
   reservation_expiring_soon
@@ -143,6 +150,9 @@ model User {
   operationIssuesReviewed OperationIssue[] @relation("OperationIssueReviewedBy")
   vehicleRegistrationsCreated VehicleRegistrationRequest[] @relation("VehicleRegistrationDriver")
   vehicleRegistrationsReviewed VehicleRegistrationRequest[] @relation("VehicleRegistrationReviewer")
+  subscriptionsCreated Subscription[] @relation("SubscriptionCreatedBy")
+  gateAssignment StaffGateAssignment? @relation("StaffGateAssignment")
+  gateAssignmentsCreated StaffGateAssignment[] @relation("GateAssignmentsCreated")
 
   @@map("users")
 }
@@ -165,6 +175,37 @@ model Vehicle {
   @@map("vehicles")
 }
 
+model GateLane {
+  id          String      @id @default(uuid())
+  code        String      @unique
+  name        String
+  vehicleType VehicleType @map("vehicle_type")
+  cameraId    String?     @map("camera_id")
+  isActive    Boolean     @default(true) @map("is_active")
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  assignments StaffGateAssignment[]
+
+  @@index([vehicleType, isActive], map: "idx_gate_lanes_type_active")
+  @@map("gate_lanes")
+}
+
+model StaffGateAssignment {
+  staffId      String   @unique @map("staff_id")
+  gateLaneId   String   @map("gate_lane_id")
+  assignedById String   @map("assigned_by_id")
+  assignedAt   DateTime @default(now()) @map("assigned_at") @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  staff      User     @relation("StaffGateAssignment", fields: [staffId], references: [id], onDelete: Cascade)
+  gateLane   GateLane @relation(fields: [gateLaneId], references: [id], onDelete: Cascade)
+  assignedBy User     @relation("GateAssignmentsCreated", fields: [assignedById], references: [id], onDelete: Restrict)
+
+  @@index([gateLaneId], map: "idx_gate_assignments_lane")
+  @@map("staff_gate_assignments")
+}
+
 model VehicleUser {
   vehicleId String          @map("vehicle_id")
   userId    String          @map("user_id")
@@ -183,17 +224,25 @@ model VehicleUser {
 }
 
 model Subscription {
-  id        String               @id @default(uuid())
-  vehicleId String               @map("vehicle_id")
-  planType  SubscriptionPlanType @map("plan_type")
-  validFrom DateTime             @map("valid_from") @db.Timestamptz(3)
-  validTo   DateTime             @map("valid_to") @db.Timestamptz(3)
-  createdAt DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id          String               @id @default(uuid())
+  vehicleId   String               @map("vehicle_id")
+  planType    SubscriptionPlanType @map("plan_type")
+  status      SubscriptionStatus   @default(pending)
+  validFrom   DateTime?            @map("valid_from") @db.Timestamptz(3)
+  validTo     DateTime?            @map("valid_to") @db.Timestamptz(3)
+  paymentId   String?              @unique @map("payment_id")
+  notes       String?
+  createdById String?              @map("created_by")
+  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicle     Vehicle     @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  payment     Payment?     @relation
+  createdBy   User?        @relation("SubscriptionCreatedBy", fields: [createdById], references: [id])
 
   @@index([vehicleId, validFrom, validTo], map: "idx_subscriptions_vehicle_window")
+  @@index([validTo], map: "idx_subscription_valid_to")
+  @@index([vehicleId, status], map: "idx_subscription_vehicle_status")
   @@map("subscriptions")
 }
 
@@ -329,7 +378,8 @@ model Notification {
 
 model Payment {
   id                String        @id @default(uuid())
-  sessionId         String        @unique @map("session_id")
+  sessionId         String?       @unique @map("session_id")
+  subscriptionId    String?       @unique @map("subscription_id")
   amount            Int
   method            PaymentMethod @default(cash)
   status            PaymentStatus @default(pending)
@@ -344,8 +394,9 @@ model Payment {
   providerPayload   Json?         @map("provider_payload")
 
   // Relations
-  session      ParkingSession @relation(fields: [sessionId], references: [id])
-  receivedUser User?          @relation("ReceivedBy", fields: [receivedBy], references: [id])
+  session        ParkingSession?  @relation(fields: [sessionId], references: [id])
+  subscription   Subscription?    @relation(fields: [subscriptionId], references: [id])
+  receivedUser   User?            @relation("ReceivedBy", fields: [receivedBy], references: [id])
   operationIssues OperationIssue[]
 
   @@index([providerOrderCode], map: "idx_payment_provider_order_code")
@@ -396,6 +447,8 @@ model PricingConfig {
   overtimePenalty       Int         @map("overtime_penalty")
   lostTicketPenalty     Int         @map("lost_ticket_penalty")
   overtimeThresholdHours Int        @default(24) @map("overtime_threshold_hours")
+  monthlyRate           Int         @default(300000) @map("monthly_rate")
+  yearlyRate            Int         @default(3000000) @map("yearly_rate")
   updatedAt             DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
   updatedBy             String?     @map("updated_by")
 

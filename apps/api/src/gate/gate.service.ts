@@ -4,6 +4,7 @@ import { UploadedOcrImage } from '../ocr/ocr.types';
 import { OcrService } from '../ocr';
 import { SessionsService } from '../sessions/sessions.service';
 import { VehiclesService, normalizePlateNumber } from '../vehicles/vehicles.service';
+import { GateLanesService } from '../gate-lanes/gate-lanes.service';
 import { ResolvePlateDto, ScanPlateDto } from './dto';
 
 type GateSource = 'OCR' | 'MANUAL';
@@ -42,6 +43,7 @@ export class GateService {
     private readonly ocrService: OcrService,
     private readonly sessionsService: SessionsService,
     private readonly vehiclesService: VehiclesService,
+    private readonly gateLanesService: GateLanesService,
   ) {}
 
   async scanPlate(
@@ -49,6 +51,7 @@ export class GateService {
     input: ScanPlateDto,
     staffId: string,
   ): Promise<GateScanResponse> {
+    await this.gateLanesService.requireActiveLane(staffId);
     const ocr = await this.ocrService.recognize(file, input, staffId);
 
     if (!ocr.detectedPlate) {
@@ -64,16 +67,19 @@ export class GateService {
       plate: ocr.detectedPlate,
       source: 'OCR',
       ocrEvidenceId: ocr.ocrEvidenceId,
+      staffId,
       plateOcr: ocr.detectedPlate,
       confidence: ocr.confidence,
     });
   }
 
-  async resolvePlate(input: ResolvePlateDto): Promise<Exclude<GateScanResponse, { mode: 'NEEDS_MANUAL_PLATE' }>> {
+  async resolvePlate(input: ResolvePlateDto, staffId: string): Promise<Exclude<GateScanResponse, { mode: 'NEEDS_MANUAL_PLATE' }>> {
+    await this.gateLanesService.requireActiveLane(staffId);
     return this.resolvePlateMode({
       plate: input.plate,
       source: 'MANUAL',
       ocrEvidenceId: input.ocrEvidenceId,
+      staffId,
     });
   }
 
@@ -83,7 +89,9 @@ export class GateService {
     ocrEvidenceId?: string;
     plateOcr?: string | null;
     confidence?: number | null;
+    staffId: string;
   }): Promise<Exclude<GateScanResponse, { mode: 'NEEDS_MANUAL_PLATE' }>> {
+    const lane = await this.gateLanesService.requireActiveLane(input.staffId);
     const plateConfirmed = normalizePlateNumber(input.plate);
     if (!plateConfirmed) {
       throw new BadRequestException('plate is required');
@@ -91,6 +99,7 @@ export class GateService {
 
     const checkout = await this.sessionsService.lookupOpenForGateByPlate(plateConfirmed);
     if (checkout) {
+      this.gateLanesService.assertVehicleType(lane, checkout.session.vehicleType);
       if (input.ocrEvidenceId) {
         await this.ocrService.linkEvidenceToCheckout(
           input.ocrEvidenceId,
@@ -111,6 +120,9 @@ export class GateService {
     }
 
     const lookup = await this.vehiclesService.lookupPlate(plateConfirmed);
+    if (lookup.matched && lookup.vehicleType) {
+      this.gateLanesService.assertVehicleType(lane, lookup.vehicleType as any);
+    }
     return {
       mode: 'CHECK_IN',
       source: input.source,

@@ -118,8 +118,9 @@ export class SessionsController {
   findRecent(
     @Query('type') type?: 'checkin' | 'checkout',
     @Query('limit') limit?: string,
+    @CurrentUser('id') staffId?: string,
   ) {
-    return this.sessionsService.findRecent(type, Number(limit) || 20);
+    return this.sessionsService.findRecent(type, Number(limit) || 20, staffId);
   }
 
   /**
@@ -132,8 +133,9 @@ export class SessionsController {
   lookupForCheckout(
     @Query('sessionCode') sessionCode?: string,
     @Query('licensePlate') licensePlate?: string,
+    @CurrentUser('id') staffId?: string,
   ) {
-    return this.sessionsService.lookupForCheckout({ sessionCode, licensePlate });
+    return this.sessionsService.lookupForCheckout({ sessionCode, licensePlate }, staffId!);
   }
 
   /**

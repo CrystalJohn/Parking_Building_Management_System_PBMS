@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { GateLanesModule } from '../gate-lanes/gate-lanes.module';
 import { SlotsModule } from '../slots/slots.module';
 import { FeesModule } from '../fees/fees.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -16,6 +17,7 @@ import { SessionsService } from './sessions.service';
   imports: [
     AuthModule,
     PrismaModule,
+    GateLanesModule,
     SlotsModule,
     FeesModule,
     NotificationsModule,

@@ -1,24 +1,17 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { isAxiosError } from 'axios'
 import {
-  Bike,
   Camera,
-  Car,
   CheckCircle2,
   Clock3,
-  Edit3,
   Eye,
-  HelpCircle,
   Keyboard,
   Loader2,
   Printer,
   QrCode,
   RotateCcw,
   ScanLine,
-  ShieldCheck,
   Ticket,
-  UserRound,
-  Users,
 } from 'lucide-react'
 
 import { formatDateTimeVN } from '../../lib/date-time'
@@ -40,7 +33,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -55,9 +47,6 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { cn } from '@/lib/utils'
 import {
   checkIn,
   type CheckoutEvidence,
@@ -102,6 +91,7 @@ type Props = {
   }) => void
   onSwitchToReservationQr?: () => void
   toasts: ReturnType<typeof useToasts>
+  laneVehicleType?: VehicleType
 }
 
 const BUILDING_NAME = import.meta.env.VITE_PBMS_BUILDING_NAME ?? 'PBMS Building'
@@ -112,6 +102,7 @@ export function StaffOcrCheckInPanel({
   onRouteToCheckout,
   onSwitchToReservationQr,
   toasts,
+  laneVehicleType = 'car',
 }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -122,44 +113,56 @@ export function StaffOcrCheckInPanel({
   const [cameraError, setCameraError] = useState<string | null>(null)
   const [capturedImageUrl, setCapturedImageUrl] = useState<string | null>(null)
   const [ocrResult, setOcrResult] = useState<OcrRecognizeResponse | null>(null)
+  const [ocrFailureCount, setOcrFailureCount] = useState(0)
   const [plateLookup, setPlateLookup] = useState<VehicleLookupResponse | null>(null)
   const [plateLookupStatus, setPlateLookupStatus] = useState<PlateLookupStatus>('idle')
   const [plateLookupError, setPlateLookupError] = useState<string | null>(null)
   const [licensePlate, setLicensePlate] = useState('')
   const [vehicleType, setVehicleType] = useState<VehicleType>('car')
-  const [vehicleTypeOverride, setVehicleTypeOverride] = useState(false)
   const [ticket, setTicket] = useState<SessionTicket | null>(null)
   const [ticketStage, setTicketStage] = useState<TicketStage>('idle')
   const [issuedAt, setIssuedAt] = useState<string | null>(null)
   const [resetDialogOpen, setResetDialogOpen] = useState(false)
+  const [skipDialogOpen, setSkipDialogOpen] = useState(false)
   const [ticketDialogOpen, setTicketDialogOpen] = useState(false)
+  const [reviewDialogOpen, setReviewDialogOpen] = useState(false)
   const [now, setNow] = useState(new Date())
   const [checkInCount, setCheckInCount] = useState(0)
+
+  useEffect(() => {
+    setVehicleType(laneVehicleType)
+  }, [laneVehicleType])
 
 
   const accessMode = plateLookup?.mode ?? 'WALK_IN'
   const hasLookupResult = plateLookupStatus === 'success' && Boolean(plateLookup)
-  const canShowConfirm = hasLookupResult && Boolean(licensePlate.trim())
   const hasDraftData =
     Boolean(licensePlate.trim()) ||
     Boolean(capturedImageUrl) ||
     Boolean(ocrResult) ||
     Boolean(plateLookup) ||
     Boolean(ticket)
-  const checkInMode =
-    accessMode === 'SUBSCRIBER'
-      ? 'Subscriber vehicle'
-      : accessMode === 'REGISTERED'
-        ? 'Registered vehicle'
-        : 'Walk-in / no reservation'
   const canConfirm =
     Boolean(licensePlate.trim()) &&
     hasLookupResult &&
     status !== 'OCR_PROCESSING' &&
     status !== 'CHECKING_IN'
   const canPrint = Boolean(ticket) && ticketStage === 'confirmed'
+  const canReprint = Boolean(ticket) && (ticketStage === 'printed' || ticketStage === 'issued')
   const canMarkIssued = Boolean(ticket) && ticketStage === 'printed'
-  const canNextVehicle = Boolean(ticket) && ticketStage === 'issued'
+  const canNextVehicle = Boolean(ticket)
+  const scanLocked = Boolean(ticket) || status === 'OCR_PROCESSING' || status === 'CHECKING_IN'
+
+  useEffect(() => {
+    if (ticket) {
+      setReviewDialogOpen(false)
+      return
+    }
+
+    if (hasLookupResult || status === 'REVIEW_REQUIRED') {
+      setReviewDialogOpen(true)
+    }
+  }, [hasLookupResult, status, ticket])
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000)
@@ -213,17 +216,19 @@ export function StaffOcrCheckInPanel({
       return null
     })
     setOcrResult(null)
+    setOcrFailureCount(0)
     setPlateLookup(null)
     setPlateLookupStatus('idle')
     setPlateLookupError(null)
     setLicensePlate('')
     setVehicleType('car')
-    setVehicleTypeOverride(false)
     setTicket(null)
     setTicketStage('idle')
     setIssuedAt(null)
     setResetDialogOpen(false)
+    setSkipDialogOpen(false)
     setTicketDialogOpen(false)
+    setReviewDialogOpen(false)
   }, [])
 
   const requestReset = useCallback(() => {
@@ -240,7 +245,6 @@ export function StaffOcrCheckInPanel({
     setPlateLookup(null)
     setPlateLookupStatus('idle')
     setPlateLookupError(null)
-    setVehicleTypeOverride(true)
   }, [])
 
   const applyCheckInLookup = useCallback((plate: string, lookup: VehicleLookupResponse) => {
@@ -251,9 +255,6 @@ export function StaffOcrCheckInPanel({
 
     if (lookup.matched && lookup.vehicleType) {
       setVehicleType(lookup.vehicleType)
-      setVehicleTypeOverride(false)
-    } else {
-      setVehicleTypeOverride(true)
     }
   }, [])
 
@@ -297,12 +298,11 @@ export function StaffOcrCheckInPanel({
       setPlateLookup(null)
       setPlateLookupStatus('error')
       setPlateLookupError(extractErrorMessage(error))
-      setVehicleTypeOverride(true)
     }
   }, [applyCheckInLookup, capturedImageUrl, ocrResult?.confidence, ocrResult?.ocrEvidenceId, onRouteToCheckout])
 
   const captureAndRecognize = useCallback(async () => {
-    if (status === 'OCR_PROCESSING' || status === 'CHECKING_IN') return
+    if (scanLocked) return
     const video = videoRef.current
     if (!video || video.readyState < 2) {
       toasts.showError('Camera is not ready yet')
@@ -374,6 +374,7 @@ export function StaffOcrCheckInPanel({
       setOcrResult(nextOcrResult)
 
       if (response.mode === 'CHECK_OUT') {
+        setOcrFailureCount(0)
         const exitEvidence = buildExitEvidenceFromOcr({
           ocrEvidenceId: response.ocrEvidenceId,
           plate: response.plateOcr ?? response.plateConfirmed,
@@ -397,16 +398,22 @@ export function StaffOcrCheckInPanel({
       }
 
       if (response.mode === 'CHECK_IN') {
+        setOcrFailureCount(0)
         applyCheckInLookup(response.plateConfirmed, response.lookup)
         setStatus('OCR_SUCCESS')
         toasts.showSuccess(`Plate detected: ${formatPlateForDisplay(response.plateConfirmed)}`)
       } else {
+        const nextFailureCount = ocrFailureCount + 1
+        setOcrFailureCount(nextFailureCount)
         setPlateLookup(null)
         setPlateLookupStatus('idle')
         setPlateLookupError(null)
-        setVehicleTypeOverride(true)
-        setStatus('OCR_FAILED')
-        toasts.showError(response.error ?? 'No plate detected. Enter the plate manually.')
+        setStatus(nextFailureCount >= 2 ? 'REVIEW_REQUIRED' : 'OCR_FAILED')
+        toasts.showError(
+          nextFailureCount >= 2
+            ? 'OCR failed twice. Enter the plate manually.'
+            : 'Plate not detected. Align the vehicle and scan again.',
+        )
       }
     } catch (error) {
       if (requestId !== ocrRequestIdRef.current) return
@@ -414,7 +421,7 @@ export function StaffOcrCheckInPanel({
       setStatus('OCR_FAILED')
       toasts.showError(extractErrorMessage(error))
     }
-  }, [applyCheckInLookup, onRouteToCheckout, status, toasts])
+  }, [applyCheckInLookup, ocrFailureCount, onRouteToCheckout, scanLocked, toasts])
 
   const confirmCheckIn = useCallback(async () => {
     if (!licensePlate.trim()) {
@@ -433,7 +440,7 @@ export function StaffOcrCheckInPanel({
     try {
       const response = await checkIn({
         licensePlate: normalizePlateForApi(licensePlate),
-        vehicleType,
+        vehicleType: laneVehicleType,
         ocrEvidenceId: ocrResult?.ocrEvidenceId,
         identificationMethod: ocrResult?.ocrEvidenceId ? 'OCR' : 'MANUAL_PLATE',
         identificationConfidence: ocrResult?.confidence ?? undefined,
@@ -443,25 +450,30 @@ export function StaffOcrCheckInPanel({
       if (response.ticket) {
         setTicket(normalizeSessionTicket(response.ticket, response.slot))
         setTicketStage('confirmed')
+        setOcrFailureCount(0)
         setCheckInCount((c) => c + 1)
         window.setTimeout(() => setStatus('TICKET_READY'), 250)
       } else {
+        setOcrFailureCount(0)
         setCheckInCount((c) => c + 1)
         setStatus('CHECKIN_SUCCESS')
       }
+      setReviewDialogOpen(false)
     } catch (error) {
       setStatus('ERROR')
       toasts.showError(extractErrorMessage(error))
     }
-  }, [hasLookupResult, licensePlate, ocrResult, toasts, vehicleType])
+  }, [hasLookupResult, laneVehicleType, licensePlate, ocrResult, toasts])
 
   const printTicket = useCallback(() => {
     if (!ticket) return
     setStatus('PRINT_DIALOG_OPENED')
-    setTicketStage('printed')
+    if (ticketStage === 'confirmed') {
+      setTicketStage('printed')
+    }
     toasts.showSuccess('Ticket ready for printing.')
     window.print()
-  }, [ticket, toasts])
+  }, [ticket, ticketStage, toasts])
 
   const markTicketIssued = useCallback(async () => {
     if (!ticket || ticketStage !== 'printed') return
@@ -475,6 +487,11 @@ export function StaffOcrCheckInPanel({
       toasts.showError(extractErrorMessage(error))
     }
   }, [ticket, ticketStage, toasts])
+
+  const skipTicket = useCallback(() => {
+    setSkipDialogOpen(false)
+    reset()
+  }, [reset])
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -492,27 +509,27 @@ export function StaffOcrCheckInPanel({
 
       if (isTyping) return
 
-      if (event.code === 'Space') {
+      if (event.code === 'Space' && !reviewDialogOpen && !ticket) {
         event.preventDefault()
         void captureAndRecognize()
       }
-      if (event.key === 'Enter') {
+      if (event.key === 'Enter' && reviewDialogOpen && canConfirm) {
         event.preventDefault()
         void confirmCheckIn()
       }
       if (event.key.toLowerCase() === 'p') {
         event.preventDefault()
-        if (canPrint) printTicket()
+        if (canPrint || canReprint) printTicket()
       }
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [canPrint, captureAndRecognize, confirmCheckIn, printTicket, requestReset])
+  }, [canConfirm, canPrint, canReprint, captureAndRecognize, confirmCheckIn, printTicket, requestReset, reviewDialogOpen, ticket])
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.85fr)_minmax(320px,0.5fr)]">
+      <div className={ticket ? 'grid gap-4 xl:grid-cols-[minmax(0,2.4fr)_minmax(300px,0.6fr)]' : 'grid gap-4'}>
         <Card className="self-start border-primary/20 shadow-sm print:hidden">
           <CardHeader className="border-b bg-muted/30">
             <div>
@@ -533,47 +550,44 @@ export function StaffOcrCheckInPanel({
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid items-stretch gap-4 lg:grid-cols-[minmax(0,1.75fr)_minmax(15rem,0.65fr)] 2xl:grid-cols-[minmax(0,1.9fr)_minmax(17rem,0.7fr)]">
-              <div className="relative aspect-video overflow-hidden rounded-xl border border-primary/20 bg-muted shadow-inner ring-1 ring-black/5">
-                <video
-                  ref={videoRef}
-                  className="h-full w-full object-cover"
-                  muted
-                  playsInline
-                  autoPlay
-                />
-                <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-black/45 via-black/20 to-transparent" />
-                <div className="pointer-events-none absolute inset-x-3 top-3 flex items-center justify-between gap-2 sm:inset-x-4 sm:top-4">
-                  <div className="flex items-center gap-2 rounded-lg border border-white/80 bg-white/95 px-2.5 py-1.5 text-xs font-semibold text-slate-950 shadow-lg backdrop-blur-md dark:border-white/15 dark:bg-slate-950/90 dark:text-slate-50">
-                    <span className="size-2 rounded-full bg-emerald-500" />
-                    <span>Live</span>
-                    <span className="text-slate-500 dark:text-slate-400">/</span>
-                    <span>{formatLookupMode(accessMode)}</span>
-                  </div>
-                  <div className="flex min-w-0 items-center gap-2">
-                    <Badge variant="secondary" className="border border-white/80 bg-white/95 text-slate-950 shadow-lg backdrop-blur-md dark:border-white/15 dark:bg-slate-950/90 dark:text-slate-50">
-                      {vehicleType === 'car' ? 'Car' : 'Motorbike'}
-                    </Badge>
-                    <div className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-white/80 bg-white/95 px-2.5 text-xs font-semibold text-slate-700 shadow-lg backdrop-blur-md dark:border-white/15 dark:bg-slate-950/90 dark:text-slate-300">
-                      <Clock3 className="size-3.5" />
-                      <span>{formatDateTimeVN(now)}</span>
-                    </div>
+            <div className="relative aspect-video overflow-hidden rounded-xl border border-primary/20 bg-muted shadow-inner ring-1 ring-black/5">
+              <video
+                ref={videoRef}
+                className="h-full w-full object-cover"
+                muted
+                playsInline
+                autoPlay
+              />
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-black/45 via-black/20 to-transparent" />
+              <div className="pointer-events-none absolute inset-x-3 top-3 flex items-center justify-between gap-2 sm:inset-x-4 sm:top-4">
+                <div className="flex items-center gap-2 rounded-lg border border-white/80 bg-white/95 px-2.5 py-1.5 text-xs font-semibold text-slate-950 shadow-lg backdrop-blur-md dark:border-white/15 dark:bg-slate-950/90 dark:text-slate-50">
+                  <span className="size-2 rounded-full bg-emerald-500" />
+                  <span>Live</span>
+                  <span className="text-slate-500 dark:text-slate-400">/</span>
+                  <span>{formatLookupMode(accessMode)}</span>
+                </div>
+                <div className="flex min-w-0 items-center gap-2">
+                  <Badge variant="secondary" className="border border-white/80 bg-white/95 text-slate-950 shadow-lg backdrop-blur-md dark:border-white/15 dark:bg-slate-950/90 dark:text-slate-50">
+                    {vehicleType === 'car' ? 'Car' : 'Motorbike'}
+                  </Badge>
+                  <div className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-white/80 bg-white/95 px-2.5 text-xs font-semibold text-slate-700 shadow-lg backdrop-blur-md dark:border-white/15 dark:bg-slate-950/90 dark:text-slate-300">
+                    <Clock3 className="size-3.5" />
+                    <span>{formatDateTimeVN(now)}</span>
                   </div>
                 </div>
-                {cameraError && (
-                  <div className="absolute inset-0 grid place-items-center bg-background/95 p-6 text-center text-sm font-medium text-destructive">
-                    {cameraError}
-                  </div>
-                )}
               </div>
-              <EvidencePreview title="Captured OCR evidence" imageUrl={capturedImageUrl} />
+              {cameraError && (
+                <div className="absolute inset-0 grid place-items-center bg-background/95 p-6 text-center text-sm font-medium text-destructive">
+                  {cameraError}
+                </div>
+              )}
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <Button
                 type="button"
                 onClick={() => void captureAndRecognize()}
-                disabled={status === 'OCR_PROCESSING' || status === 'CHECKING_IN'}
+                disabled={scanLocked}
                 className="h-11 sm:min-w-[180px]"
               >
                 {status === 'OCR_PROCESSING' ? (
@@ -581,52 +595,60 @@ export function StaffOcrCheckInPanel({
                 ) : (
                   <ScanLine className="size-4" />
                 )}
-                {status === 'OCR_PROCESSING' ? 'Scanning plate...' : 'Scan Plate'}
+                {status === 'OCR_PROCESSING'
+                  ? 'Scanning plate...'
+                  : ocrFailureCount > 0
+                    ? 'Scan again'
+                    : 'Scan Plate'}
               </Button>
               {onSwitchToReservationQr ? (
                 <Button
                   type="button"
                   onClick={onSwitchToReservationQr}
                   variant="outline"
+                  disabled={Boolean(ticket)}
                   className="h-11 sm:min-w-[200px]"
                 >
                   <QrCode className="size-4" />
                   Reservation QR check-in
                 </Button>
               ) : null}
+              {status === 'OCR_FAILED' ? (
+                <Alert className="min-h-11 flex-1 py-2">
+                  <AlertDescription className="text-xs">
+                    Align the vehicle or camera, then scan again.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+              {capturedImageUrl && (
+                <div className="ml-auto hidden sm:flex items-center gap-2 rounded-lg border bg-muted/40 px-2.5 py-1.5">
+                  <img
+                    src={capturedImageUrl}
+                    alt="OCR capture"
+                    className="h-9 w-14 rounded border object-cover"
+                  />
+                  <span className="text-[11px] font-medium text-muted-foreground">
+                    {ocrResult?.confidence != null
+                      ? `${Math.round(ocrResult.confidence * 100)}%`
+                      : 'Captured'}
+                  </span>
+                </div>
+              )}
             </div>
 
           </CardContent>
-          </Card>
+        </Card>
 
-        <div className="space-y-4 print:hidden">
+        {ticket ? (
+          <aside className="print:hidden">
           <Card>
             <CardHeader className="grid-cols-[1fr_auto]">
               <div>
-                <CardTitle>{ticket ? 'Ticket ready' : 'Gate workflow'}</CardTitle>
-                <CardDescription>{ticket ? ticket.sessionCode : checkInMode}</CardDescription>
+                <CardTitle>Ticket ready</CardTitle>
+                <CardDescription>{ticket.sessionCode}</CardDescription>
               </div>
-              {!ticket ? (
-                <CardAction>
-                <TooltipProvider delayDuration={150}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button type="button" variant="ghost" size="icon" className="size-11">
-                        <HelpCircle className="size-4" />
-                        <span className="sr-only">Check-in help</span>
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent align="end" className="max-w-64 text-xs">
-                      Scan once, then PBMS routes the plate to check-in or checkout.
-                      Staff can still correct the confirmed plate before continuing.
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-                </CardAction>
-              ) : null}
             </CardHeader>
             <CardContent className="space-y-4">
-              {ticket ? (
                 <div className="space-y-4">
                   <div className="rounded-lg border bg-muted/30 p-3">
                     <div className="flex items-start gap-3">
@@ -646,6 +668,24 @@ export function StaffOcrCheckInPanel({
                   </div>
 
                   <div className="grid gap-2">
+                    {ticketStage === 'confirmed' ? (
+                      <Button type="button" onClick={printTicket} disabled={!canPrint} className="h-11 w-full">
+                        <Printer className="size-4" />
+                        Print Ticket
+                      </Button>
+                    ) : null}
+                    {ticketStage === 'printed' ? (
+                      <Button type="button" onClick={markTicketIssued} disabled={!canMarkIssued} className="h-11 w-full">
+                        <Ticket className="size-4" />
+                        Mark Issued
+                      </Button>
+                    ) : null}
+                    {ticketStage === 'issued' ? (
+                      <Button type="button" onClick={reset} disabled={!canNextVehicle} className="h-11 w-full">
+                        <RotateCcw className="size-4" />
+                        Next Vehicle
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       variant="outline"
@@ -655,200 +695,32 @@ export function StaffOcrCheckInPanel({
                       <Eye className="size-4" />
                       View ticket
                     </Button>
-                    <Button
-                      type="button"
-                      onClick={printTicket}
-                      disabled={!canPrint}
-                      className="h-11 w-full"
-                    >
-                      <Printer className="size-4" />
-                      Print Ticket
-                    </Button>
-                    <Button
-                      type="button"
-                      onClick={markTicketIssued}
-                      disabled={!canMarkIssued}
-                      variant="outline"
-                      className="h-11 w-full"
-                    >
-                      <Ticket className="size-4" />
-                      Mark Issued
-                    </Button>
-                    <Button
-                      type="button"
-                      onClick={reset}
-                      disabled={!canNextVehicle}
-                      variant="outline"
-                      className="h-11 w-full"
-                    >
-                      <RotateCcw className="size-4" />
-                      Next Vehicle
-                    </Button>
+                    {canReprint ? (
+                      <Button type="button" onClick={printTicket} variant="outline" className="h-11 w-full">
+                        <Printer className="size-4" />
+                        Reprint Ticket
+                      </Button>
+                    ) : null}
+                    {ticketStage !== 'issued' ? (
+                      <Button
+                        type="button"
+                        onClick={() => setSkipDialogOpen(true)}
+                        variant="ghost"
+                        className="h-11 w-full text-destructive hover:bg-destructive/5 hover:text-destructive"
+                      >
+                        <RotateCcw className="size-4" />
+                        Skip ticket &amp; next vehicle
+                      </Button>
+                    ) : null}
                   </div>
-                </div>
-              ) : (
-                <>
-              <div className="space-y-3">
-                <Field
-                  label="Confirmed license plate"
-                  hint={
-                    ocrResult
-                      ? `OCR: ${ocrResult.detectedPlate || 'no plate detected'}${
-                          ocrResult.confidence != null ? ` (${Math.round(ocrResult.confidence * 100)}%)` : ''
-                        }`
-                      : 'OCR: not run yet'
-                  }
-                >
-                  <div className="flex gap-2">
-                    <Input
-                      className="h-11 font-mono text-sm font-semibold uppercase tracking-wide"
-                      value={licensePlate}
-                      onChange={(event) => handleLicensePlateChange(event.target.value)}
-                      onBlur={() => {
-                        if (licensePlate.trim()) void lookupConfirmedPlate(licensePlate)
-                      }}
-                      placeholder="VD: 59A-12345"
-                    />
-                    <Button
-                      type="button"
-                      onClick={() => lookupConfirmedPlate(licensePlate)}
-                      disabled={!licensePlate.trim() || plateLookupStatus === 'loading'}
-                      variant="outline"
-                      className="h-11 shrink-0"
-                    >
-                      {plateLookupStatus === 'loading' ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : (
-                        <ScanLine className="size-4" />
-                      )}
-                      Re-check plate
-                    </Button>
                   </div>
-                </Field>
-
-                {plateLookupStatus === 'error' && (
-                  <p className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs font-medium text-destructive">
-                    {plateLookupError ?? 'Unable to lookup this plate.'}
-                  </p>
-                )}
-              </div>
-
-              {hasLookupResult && (
-                <div className="animate-in space-y-4 fade-in-0 slide-in-from-top-1 duration-200">
-                  <div className="rounded-lg border bg-muted/30 p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 space-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <LookupModeBadge mode={accessMode} loading={false} />
-                        </div>
-                        <p className="text-sm font-medium text-foreground">
-                          {getLookupSummary(plateLookup, plateLookupStatus)}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {getLookupDetail(plateLookup, plateLookupStatus, plateLookupError)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {plateLookup?.subscription?.isExpired && (
-                    <Alert className="border-amber-200 bg-amber-50 text-amber-900">
-                      <ShieldCheck className="size-4" />
-                      <AlertTitle>Subscription expired</AlertTitle>
-                      <AlertDescription className="text-amber-800">
-                        Plan {plateLookup.subscription.planType} expired on{' '}
-                        {formatDateTimeVN(plateLookup.subscription.validTo)}.
-                      </AlertDescription>
-                    </Alert>
-                  )}
-
-                  <Field label="Vehicle type">
-                    {!vehicleTypeOverride && plateLookup?.matched && plateLookup.vehicleType ? (
-                      <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 p-2">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-sky-950 text-white">
-                            {vehicleType === 'car' ? <Car className="size-4" /> : <Bike className="size-4" />}
-                          </span>
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold capitalize text-foreground">{vehicleType}</p>
-                            <p className="truncate text-xs text-muted-foreground">Auto-filled from registered vehicle</p>
-                          </div>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setVehicleTypeOverride(true)}
-                          className="h-11 shrink-0"
-                        >
-                          <Edit3 className="size-3.5" />
-                          Edit
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-2 gap-2">
-                        {(['car', 'motorbike'] as VehicleType[]).map((type) => (
-                          <Button
-                            key={type}
-                            type="button"
-                            variant="outline"
-                            onClick={() => {
-                              setVehicleType(type)
-                              setVehicleTypeOverride(true)
-                            }}
-                            className={cn(
-                              'h-11 justify-center capitalize',
-                              vehicleType === type &&
-                                'border-sky-950 bg-sky-950 text-white hover:bg-sky-900 hover:text-white',
-                            )}
-                          >
-                            {type === 'car' ? <Car className="size-4" /> : <Bike className="size-4" />}
-                            {type}
-                          </Button>
-                        ))}
-                      </div>
-                    )}
-                  </Field>
-                </div>
-              )}
-
-              {canShowConfirm && (
-                <div className="animate-in space-y-3 fade-in-0 slide-in-from-top-1 duration-200">
-                  <Separator />
-                  <Button
-                    type="button"
-                    onClick={confirmCheckIn}
-                    disabled={!canConfirm}
-                    className="h-11 w-full"
-                  >
-                    {status === 'CHECKING_IN' ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <CheckCircle2 className="size-4" />
-                    )}
-                    {status === 'CHECKING_IN' ? 'Checking in...' : 'Confirm Check-in'}
-                  </Button>
-                </div>
-              )}
-
-              <div className="pt-2">
-                <Button
-                  type="button"
-                  onClick={requestReset}
-                  variant="outline"
-                  className="h-11 w-full border-destructive/30 text-destructive hover:bg-destructive/5 hover:text-destructive"
-                >
-                  <RotateCcw className="size-4" />
-                  Reset
-                </Button>
-              </div>
-                </>
-              )}
             </CardContent>
           </Card>
-        <RecentSessionsCard type="checkin" refreshTrigger={checkInCount} />
+          </aside>
+        ) : null}
       </div>
-    </div>
+
+      <RecentSessionsCard type="checkin" limit={3} refreshTrigger={checkInCount} />
 
       {ticket ? (
         <>
@@ -862,11 +734,117 @@ export function StaffOcrCheckInPanel({
             </DialogContent>
           </Dialog>
 
-          <div className="hidden print:block">
+          <div id="receipt" className="hidden print:block">
             <SessionTicketPreview ticket={ticket} issuedAt={issuedAt} />
           </div>
         </>
       ) : null}
+
+      <Dialog
+        open={reviewDialogOpen}
+        onOpenChange={(open) => {
+          if (open) setReviewDialogOpen(true)
+        }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          className="max-h-[calc(100dvh-2rem)] w-[calc(100vw-24px)] max-w-3xl gap-0 overflow-y-auto p-0 sm:max-w-3xl"
+          onInteractOutside={(event) => event.preventDefault()}
+          onEscapeKeyDown={(event) => {
+            event.preventDefault()
+            requestReset()
+          }}
+        >
+          <DialogHeader className="border-b px-6 py-4 sm:px-7">
+            <DialogTitle>Confirm check-in</DialogTitle>
+            <DialogDescription className="sr-only">
+              Review the captured vehicle plate before assigning a slot.
+            </DialogDescription>
+          </DialogHeader>
+
+          {hasLookupResult ? (
+            <div className="grid gap-6 px-6 py-6 sm:grid-cols-[minmax(0,1.2fr)_minmax(16rem,0.8fr)] sm:px-7">
+              {capturedImageUrl ? (
+                <img
+                  src={capturedImageUrl}
+                  alt="Captured vehicle plate"
+                  className="aspect-video h-full w-full rounded-xl border bg-muted object-contain shadow-sm"
+                />
+              ) : (
+                <div className="grid aspect-video place-items-center rounded-xl border border-dashed bg-muted/30 text-muted-foreground">
+                  <Camera className="size-7" />
+                </div>
+              )}
+              <div className="flex min-w-0 flex-col justify-center gap-5">
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Captured plate</p>
+                  <p className="break-all font-mono text-3xl font-black tracking-wide text-foreground sm:text-4xl">
+                    {formatPlateForDisplay(licensePlate)}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  autoFocus
+                  onClick={confirmCheckIn}
+                  disabled={!canConfirm}
+                  className="h-12 w-full text-base"
+                >
+                  {status === 'CHECKING_IN' ? <Loader2 className="size-5 animate-spin" /> : <CheckCircle2 className="size-5" />}
+                  {status === 'CHECKING_IN' ? 'Checking in...' : 'Confirm Check-in'}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4 px-6 py-6 sm:px-7">
+              <div className="flex items-center gap-3 rounded-xl border bg-muted/30 p-3">
+                {capturedImageUrl ? (
+                  <img
+                    src={capturedImageUrl}
+                    alt="Latest OCR capture"
+                    className="h-20 w-28 shrink-0 rounded-lg border bg-background object-contain"
+                  />
+                ) : null}
+                <p className="text-sm text-muted-foreground">
+                  OCR failed twice. Enter the plate manually to continue.
+                </p>
+              </div>
+              <Field label="License plate">
+                <div className="flex gap-2">
+                  <Input
+                    autoFocus
+                    className="h-12 font-mono text-base font-semibold uppercase tracking-wide"
+                    value={licensePlate}
+                    onChange={(event) => handleLicensePlateChange(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && licensePlate.trim()) {
+                        event.preventDefault()
+                        void lookupConfirmedPlate(licensePlate)
+                      }
+                    }}
+                    placeholder="e.g. 59A-12345"
+                  />
+                  <Button
+                    type="button"
+                    onClick={() => void lookupConfirmedPlate(licensePlate)}
+                    disabled={!licensePlate.trim() || plateLookupStatus === 'loading'}
+                    className="h-12 shrink-0"
+                  >
+                    {plateLookupStatus === 'loading' ? <Loader2 className="size-4 animate-spin" /> : <ScanLine className="size-4" />}
+                    Continue
+                  </Button>
+                </div>
+              </Field>
+
+              {plateLookupStatus === 'error' ? (
+                <Alert variant="destructive">
+                  <AlertTitle>Plate lookup failed</AlertTitle>
+                  <AlertDescription>{plateLookupError ?? 'Unable to lookup this plate.'}</AlertDescription>
+                </Alert>
+              ) : null}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
         <AlertDialogContent>
@@ -882,71 +860,25 @@ export function StaffOcrCheckInPanel({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AlertDialog open={skipDialogOpen} onOpenChange={setSkipDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Skip ticket and continue?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The ticket for session <span className="font-mono font-semibold">{ticket?.sessionCode}</span> and plate{' '}
+              <span className="font-mono font-semibold">{ticket ? formatPlateForDisplay(ticket.licensePlate) : '-'}</span>{' '}
+              has not been issued.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={skipTicket}>Skip and continue</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
-}
-
-function LookupModeBadge({
-  mode,
-  loading,
-}: {
-  mode: VehicleLookupMode
-  loading?: boolean
-}) {
-  const Icon =
-    mode === 'SUBSCRIBER' ? ShieldCheck : mode === 'REGISTERED' ? UserRound : Users
-
-  return (
-    <Badge
-      variant="outline"
-      className={cn(
-        'h-6 gap-1.5 px-2.5 font-semibold',
-        loading && 'border-muted-foreground/20 bg-muted text-muted-foreground',
-        !loading &&
-          mode === 'SUBSCRIBER' &&
-          'border-emerald-200 bg-emerald-50 text-emerald-700',
-        !loading &&
-          mode === 'REGISTERED' &&
-          'border-sky-200 bg-sky-50 text-sky-700',
-        !loading &&
-          mode === 'WALK_IN' &&
-          'border-slate-200 bg-slate-50 text-slate-700',
-      )}
-    >
-      {loading ? <Loader2 className="size-3 animate-spin" /> : <Icon className="size-3" />}
-      {loading ? 'Looking up' : formatLookupMode(mode)}
-    </Badge>
-  )
-}
-
-function getLookupSummary(
-  lookup: VehicleLookupResponse | null,
-  status: PlateLookupStatus,
-) {
-  if (status === 'loading') return 'Checking registered vehicle data...'
-  if (!lookup) return 'Capture OCR or enter a plate to identify the vehicle.'
-  if (!lookup.matched) return 'No registered vehicle found.'
-
-  const ownerName = lookup.ownerName || lookup.owner?.phone || 'Registered customer'
-  if (lookup.mode === 'SUBSCRIBER') return `${ownerName} - Subscriber`
-  return `${ownerName} - Registered vehicle`
-}
-
-function getLookupDetail(
-  lookup: VehicleLookupResponse | null,
-  status: PlateLookupStatus,
-  error: string | null,
-) {
-  if (status === 'error') return error ?? 'Unable to lookup this plate.'
-  if (status === 'loading') return 'Owner, linked drivers, subscription, and vehicle type are being loaded.'
-  if (!lookup) return 'Matched vehicles will auto-fill owner, subscription, and vehicle type.'
-  if (!lookup.matched) return 'Staff must confirm vehicle type manually before check-in.'
-
-  const linked = lookup.driverCount === 1 ? '1 linked user' : `${lookup.driverCount} linked users`
-  const subscription = lookup.subscription
-    ? `${lookup.subscription.planType}${lookup.subscription.isExpired ? ' expired' : ' active'}`
-    : 'no subscription'
-  return `${linked} - ${subscription}`
 }
 
 function formatLookupMode(mode: VehicleLookupMode) {
@@ -978,31 +910,6 @@ function buildExitEvidenceFromOcr({
     ocrConfidence: confidence ?? null,
     localImageUrl: localImageUrl ?? null,
   }
-}
-
-function EvidencePreview({ title, imageUrl }: { title: string; imageUrl: string | null }) {
-  return (
-    <div className="flex h-full min-h-[160px] flex-col rounded-xl border bg-card p-2.5 shadow-sm">
-      <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-foreground">
-        <ScanLine className="size-3.5 text-primary" />
-        <span className="truncate">{title}</span>
-      </div>
-      {imageUrl ? (
-        <img
-          src={imageUrl}
-          alt="Captured OCR evidence"
-          className="min-h-0 w-full flex-1 rounded-lg border object-cover"
-        />
-      ) : (
-        <div className="grid min-h-[120px] flex-1 place-items-center rounded-lg border border-dashed bg-muted/40 p-3 text-center text-xs text-muted-foreground">
-          <div className="space-y-1">
-            <ScanLine className="mx-auto size-5 text-primary/70" />
-            <p>Press Space to capture plate</p>
-          </div>
-        </div>
-      )}
-    </div>
-  )
 }
 
 function Field({

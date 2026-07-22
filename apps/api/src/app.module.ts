@@ -23,6 +23,8 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { GateModule } from './gate/gate.module';
 import { OperationIssuesModule } from './operation-issues/operation-issues.module';
 import { VehicleRegistrationsModule } from './vehicle-registrations/vehicle-registrations.module';
+import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { GateLanesModule } from './gate-lanes/gate-lanes.module';
 
 @Module({
   imports: [
@@ -51,6 +53,8 @@ import { VehicleRegistrationsModule } from './vehicle-registrations/vehicle-regi
     GateModule,
     OperationIssuesModule,
     VehicleRegistrationsModule,
+    SubscriptionsModule,
+    GateLanesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

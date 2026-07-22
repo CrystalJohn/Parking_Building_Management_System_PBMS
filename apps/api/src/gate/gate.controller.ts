@@ -49,7 +49,7 @@ export class GateController {
 
   @Post('resolve-plate')
   @HttpCode(HttpStatus.OK)
-  resolvePlate(@Body() dto: ResolvePlateDto) {
-    return this.gateService.resolvePlate(dto);
+  resolvePlate(@Body() dto: ResolvePlateDto, @CurrentUser('id') staffId: string) {
+    return this.gateService.resolvePlate(dto, staffId);
   }
 }
