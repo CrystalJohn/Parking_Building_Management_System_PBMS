@@ -53,10 +53,12 @@ Nguyên tắc thiết kế cốt lõi là **hoạt động do nhân viên xác n
 - Ownership check khi truy xuất session/QR (phần 3.1).
 - Đăng ký xe tự phục vụ với sự phê duyệt của quản lý (phần 3.10).
 
-### In design, chưa triển khai (xem phần 9)
+### In design, chưa triển khai (xem phần 9 và 10)
 
 - Biến liên kết xe với reservation thành tùy chọn.
 - Tự động log plate-mismatch, đếm số lượng nghi ngờ biển số distinct, và manager-to-administrator account escalation.
+- Phân tách cổng thành các lane vật lý cố định theo `car`/`motorbike`, Admin cấu hình lane và tài khoản, Manager chỉ phân công staff đang active vào lane.
+- Cải tiến Gate Console: chỉ đề xuất nhập biển số thủ công sau hai lần OCR không nhận diện, enforce workflow phát vé, và sửa vùng in ticket 80 mm.
 
 ### Out of scope
 
@@ -228,6 +230,8 @@ Gate console của nhân viên được thiết kế action-first. Quét biển 
 - `POST /gate/resolve-plate` re-route sau khi sửa đổi biển số manual mà không cần gọi lại OCR.
 - Một open session bao gồm `active`, `checkout_pending`, và `exit_authorized`, giúp ngăn chặn các quyết định entry trùng lặp khi xe vẫn đang trong quá trình checkout.
 - QR reservation vẫn là phương pháp nhận dạng ưu tiên cho các tài xế đã đặt trước; OCR/nhập biển số manual vẫn là phương pháp walk-in và fallback.
+- **Baseline lane hiện tại:** Gate Console vẫn là single-lane theo từng phiên trình duyệt. Source chưa có Prisma model `GateLane`/`StaffGateAssignment`, chưa có manager assignment API, và backend chưa giới hạn staff theo loại xe của lane. Loại xe hiện được lấy từ hồ sơ xe khi lookup matched; walk-in không có lane policy server-side.
+- Gate Console hiển thị tối đa ba check-in gần nhất. Modal review biển số và card ticket đã tồn tại, nhưng ngưỡng hai lần OCR thất bại, wrong-lane enforcement, ticket-stage enforcement và print-root riêng cho vé check-in vẫn chưa được triển khai.
 - **Xử lý sự khác biệt biển số hiện nay là manual.** Nhân viên compare hình ảnh bằng chứng lúc checkout và có thể thao tác thủ công **Request Manager Review**, điều này tạo ra một `OperationIssue` (phần 3.9). Không có log mismatch tự động, không có đếm số lượng distinct-plate, và không có tự động escalation — xem phần 9 cho đề xuất đó.
 
 ### 3.6 Vòng đời parking session
@@ -335,12 +339,63 @@ Toàn bộ các task P0 (sửa Unit Test, pass E2E, Verify VNPay Sandbox, chốt
 
 ---
 
-## 10. Lộ trình Tương lai (đề xuất, ít chi tiết hơn phần 9)
+## 10. Lộ trình Tương lai và Thiết kế Gate/Lane (chưa triển khai)
 
 - Kênh Public Appeal không authenticate.
 - Migration Object storage.
 - CI/CD pipeline.
 - Tự động hóa suspicion threshold.
+
+### 10.1 Trạng thái thiết kế Gate/Lane
+
+**Trạng thái tại thời điểm viết v1.2:** Design approved, implementation 0%. Các model, migration, API và UI được mô tả dưới đây chưa tồn tại trong build hiện tại. Không được trình bày phần này như behavior đã triển khai cho tới khi hoàn thành migration và quality checks.
+
+**Mục tiêu:** Mỗi lane vật lý chỉ nhận một loại xe. Ví dụ, staff đăng nhập tại lane ô tô chỉ xử lý session `car`; staff tại lane xe máy chỉ xử lý session `motorbike`. Loại xe của lane là nguồn quyết định cho walk-in, không phụ thuộc vào AI vehicle classification hoặc lựa chọn tùy ý của nhân viên.
+
+### 10.2 Mô hình persistence đề xuất
+
+- `GateLane`: `id`, `code` unique, `name`, `vehicleType` (`car`/`motorbike`), `cameraId` optional, `isActive`, `createdAt`, `updatedAt`.
+- `StaffGateAssignment`: `staffId` unique, `gateLaneId`, `assignedById`, `assignedAt`, `updatedAt`. Một staff chỉ có một lane hiện hành.
+- Assignment chỉ hợp lệ khi user có role `staff`, user active và lane active.
+- Không lưu lane như một quyền RBAC mới. Role và assignment là hai lớp kiểm soát độc lập.
+
+### 10.3 Phân tách trách nhiệm Admin/Manager
+
+- **Administrator:** Tạo và quản lý tài khoản, gán role, activate/deactivate user, tạo/sửa/deactivate cấu hình lane, và có thể override assignment.
+- **Manager:** Không tạo tài khoản, không đổi role, không activate/deactivate user. Manager chỉ xem tập dữ liệu tối thiểu của active staff và assign/reassign/unassign các staff đó vào lane đã được Admin cấu hình.
+- Việc Manager phân công lane không tự cấp quyền truy cập. Gate yêu cầu đồng thời role `staff`, user active, assignment tồn tại và lane active.
+
+### 10.4 Enforcement đề xuất tại Gate
+
+- Staff chưa được gán lane hoặc được gán vào lane inactive bị block trước khi browser yêu cầu quyền camera.
+- Frontend hiển thị nhãn assignment tĩnh, ví dụ `Car Lane 1 · Car`; không cần một Gate Status card riêng.
+- Backend là nguồn enforcement cuối cùng. `vehicleType` do frontend gửi phải khớp assignment hoặc được backend derive trực tiếp từ lane.
+- Walk-in và manual plate dùng loại xe của lane, không hiển thị selector `Car/Motorbike`.
+- Xe đăng ký hoặc reservation có loại xe không khớp lane bị từ chối và được hướng dẫn sang lane phù hợp.
+- Chính sách lane áp dụng cho cả check-in và checkout, bao gồm lookup, payment, confirm-exit và lost-ticket action liên quan đến session.
+- Recent check-in của staff chỉ trả về ba session mới nhất phù hợp loại xe của lane.
+- Reassignment có hiệu lực từ request tiếp theo; không yêu cầu staff đăng xuất rồi đăng nhập lại.
+
+API sai lane nên trả mã nghiệp vụ ổn định cùng `expectedVehicleType`, `actualVehicleType` và thông tin lane. Backend phải từ chối request giả loại xe kể cả khi frontend bị bypass.
+
+### 10.5 Cải tiến OCR fallback và ticket workflow
+
+- Không hiển thị `Enter plate manually` ở trạng thái ban đầu.
+- Lần OCR trả `NEEDS_MANUAL_PLATE` đầu tiên chỉ yêu cầu scan lại; lần thứ hai mới tự mở modal nhập tay. Lỗi camera, network hoặc API không làm tăng bộ đếm này.
+- Khi ticket vừa tạo, `Print Ticket` là primary action. Sau khi gọi print, `Mark Issued` trở thành primary action; sau khi phát vé, `Next Vehicle` trở thành primary action.
+- Cho phép `Skip ticket & next vehicle` cho ngoại lệ vận hành nhưng bắt buộc qua confirmation dialog.
+- Khóa scan xe mới khi ticket hiện tại chưa được issued hoặc skip.
+- Thêm print root riêng để `window.print()` chỉ render ticket check-in 80 mm gồm QR, biển số, session code, loại xe, slot, floor, zone, thời gian và vị trí.
+
+### 10.6 Acceptance criteria trước khi chuyển sang Implemented
+
+1. Chỉ Admin quản lý account, role và lane configuration; Manager chỉ quản lý assignment.
+2. Staff chưa có assignment bị block trước khi camera khởi động.
+3. Backend enforce lane trên OCR, QR check-in, manual check-in, checkout, payment và confirm-exit.
+4. Walk-in dùng đúng loại xe của lane; registered/reservation sai lane bị block.
+5. OCR manual fallback chỉ xuất hiện sau hai lần không nhận diện liên tiếp.
+6. Ticket stage, skip confirmation và print preview hoạt động đúng.
+7. Migration, API unit/integration tests, web lint và web build pass.
 
 ---
 
