@@ -557,18 +557,18 @@ function UserDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="user-username">Username</Label>
+            <Label htmlFor="user-username">Quick login username (optional)</Label>
             <Input
               id="user-username"
               value={username}
               onChange={(event) => setUsername(event.target.value)}
               disabled={saving}
               autoComplete="username"
-              placeholder="admin, manager, staff..."
+              placeholder="e.g. alex.staff"
               className="h-10"
             />
             <p className="text-xs leading-5 text-muted-foreground">
-              Optional quick login name for staff accounts.
+              This is an optional sign-in name. The user can log in with it instead of their phone number.
             </p>
           </div>
 
