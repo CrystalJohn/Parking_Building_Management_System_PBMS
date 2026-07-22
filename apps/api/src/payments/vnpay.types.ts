@@ -4,9 +4,10 @@
  */
 
 export interface CreateVnpayPaymentUrlInput {
-  sessionId: string;
-  sessionCode: string;
-  licensePlate: string;
+  referenceType: 'session' | 'subscription';
+  referenceId: string;
+  referenceCode: string;
+  description: string;
   /** Fee amount in VND (integer). Will be multiplied by 100 per VNPAY spec. */
   amount: number;
   /** Client IP address for vnp_IpAddr. */

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import {
   PaymentMethod,
   PaymentStatus,
@@ -755,6 +755,52 @@ export class AdminService {
       checkInEvidence: checkInEvidence ? mapSessionEvidence(checkInEvidence) : null,
       checkOutEvidence: checkOutEvidence ? mapSessionEvidence(checkOutEvidence) : null,
     };
+  }
+
+  // ─── Subscriptions ──────────────────────────────────────────────────────────
+
+  async getSubscriptions() {
+    return this.prisma.subscription.findMany({
+      include: {
+        vehicle: { select: { id: true, plateNumber: true, vehicleType: true } },
+        payment: { select: { id: true, status: true, amount: true, method: true, paidAt: true } },
+        createdBy: { select: { id: true, fullName: true, phone: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async extendSubscription(id: string, days: number) {
+    const sub = await this.prisma.subscription.findUnique({ where: { id } });
+    if (!sub) throw new NotFoundException('Subscription not found');
+    if (sub.status !== 'active') throw new BadRequestException('Only active subscriptions can be extended');
+
+    const currentEnd = sub.validTo ?? new Date();
+    const newEnd = new Date(currentEnd.getTime() + days * 86400000);
+
+    return this.prisma.subscription.update({
+      where: { id },
+      data: { validTo: newEnd },
+      include: {
+        vehicle: { select: { id: true, plateNumber: true, vehicleType: true } },
+        payment: { select: { id: true, status: true, amount: true, paidAt: true } },
+      },
+    });
+  }
+
+  async cancelSubscription(id: string) {
+    const sub = await this.prisma.subscription.findUnique({ where: { id } });
+    if (!sub) throw new NotFoundException('Subscription not found');
+    if (sub.status === 'cancelled') throw new BadRequestException('Subscription is already cancelled');
+
+    return this.prisma.subscription.update({
+      where: { id },
+      data: { status: 'cancelled' as any },
+      include: {
+        vehicle: { select: { id: true, plateNumber: true, vehicleType: true } },
+        payment: { select: { id: true, status: true, amount: true, paidAt: true } },
+      },
+    });
   }
 
   // ─── Slot Occupancy Map ────────────────────────────────────────────────────

@@ -221,6 +221,7 @@ export interface FeeBreakdown {
   isOvertime: boolean
   isLostTicket: boolean
   checkOutTime?: string
+  isSubscriber?: boolean
 }
 
 export interface CheckoutLookupInput {

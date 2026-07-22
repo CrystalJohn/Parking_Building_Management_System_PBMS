@@ -147,6 +147,9 @@ export class PaymentsService {
         session: {
           select: { id: true, status: true, sessionCode: true, slotId: true, isPaid: true },
         },
+        subscription: {
+          select: { id: true, status: true, planType: true, vehicleId: true },
+        },
       },
     });
 
@@ -178,14 +181,59 @@ export class PaymentsService {
         paid: true,
         idempotent: true,
         sessionId: payment.sessionId,
+        subscriptionId: payment.subscriptionId,
         sessionCode: payment.session?.sessionCode ?? null,
       };
     }
 
-    // 5a. Success path
+    // 5a. Success path — branch on session vs subscription payment
     if (verified.success) {
       const paidAt = this.parseVnpayPayDate(verified.payDate) ?? new Date();
 
+      if (payment.subscriptionId && payment.subscription) {
+        // Subscription payment success path
+        const now = new Date();
+        const planType = payment.subscription.planType;
+        const validTo = new Date(now.getTime());
+        if (planType === 'monthly') {
+          validTo.setDate(validTo.getDate() + 30);
+        } else if (planType === 'yearly') {
+          validTo.setDate(validTo.getDate() + 365);
+        }
+
+        await this.prisma.$transaction(async (tx) => {
+          await (tx as any).payment.update({
+            where: { id: payment.id },
+            data: {
+              status: PaymentStatus.paid,
+              method: PaymentMethod.bank_qr,
+              paidAt,
+              providerPayload: verified.rawParams,
+            },
+          });
+
+          await (tx as any).subscription.update({
+            where: { id: payment.subscriptionId },
+            data: {
+              status: 'active',
+              validFrom: now,
+              validTo,
+            },
+          });
+        });
+
+        this.logger.log(
+          `VNPAY ${source} subscription success | txnRef=${verified.txnRef} subscriptionId=${payment.subscriptionId} paidAt=${paidAt.toISOString()}`,
+        );
+
+        return {
+          ok: true,
+          paid: true,
+          subscriptionId: payment.subscriptionId,
+        };
+      }
+
+      // Session payment success path (existing)
       await this.prisma.$transaction(async (tx) => {
         await (tx as any).payment.update({
           where: { id: payment.id },
@@ -370,9 +418,10 @@ export class PaymentsService {
       Number(session.feeAmount) + Number(session.penaltyAmount);
 
     const paymentResult = this.vnpayService.createPaymentUrl({
-      sessionId: session.id,
-      sessionCode: session.sessionCode,
-      licensePlate: session.licensePlate,
+      referenceType: 'session',
+      referenceId: session.id,
+      referenceCode: session.sessionCode,
+      description: 'PBMS checkout',
       amount,
       ipAddr,
     });

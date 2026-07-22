@@ -16,6 +16,7 @@ import {
   Sun,
   Ticket,
   Users,
+  Zap,
   type LucideIcon,
 } from 'lucide-react'
 import {
@@ -89,6 +90,7 @@ const NAV_BY_ROLE: Record<AuthUser['role'], NavItem[]> = {
   driver: [
     { to: '/driver/home', label: 'Availability', icon: Car },
     { to: '/driver/reservations', label: 'Reserve', icon: CalendarClock },
+    { to: '/driver/subscriptions', label: 'Subscriptions', icon: Zap },
     { to: '/driver/my-session', label: 'My QR', icon: QrCode },
     { to: '/driver/history', label: 'History', icon: History },
     { to: '/driver/profile', label: 'Profile', icon: Users },

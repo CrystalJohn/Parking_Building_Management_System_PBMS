@@ -34,6 +34,7 @@ import Reservations from '../pages/driver/Reservations'
 import History from '../pages/driver/History'
 import MySession from '../pages/driver/MySession'
 import Profile from '../pages/driver/Profile'
+import Subscriptions from '../pages/driver/Subscriptions'
 
 /**
  * Central route configuration for the Parking Building Management System.
@@ -210,6 +211,14 @@ export default function AppRoutes() {
         element={
           <RequireAuth allowedRoles={['driver']}>
             <Profile />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/driver/subscriptions"
+        element={
+          <RequireAuth allowedRoles={['driver']}>
+            <Subscriptions />
           </RequireAuth>
         }
       />

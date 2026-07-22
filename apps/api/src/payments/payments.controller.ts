@@ -95,13 +95,21 @@ export class PaymentsController {
   ) {
     let paid = false;
     let message = 'Processing...';
+    let isSubscription = false;
 
     try {
       const result = await this.paymentsService.handleVnpayReturn(params);
       paid = result.paid === true;
-      message = paid
-        ? 'Payment successful! Please return to the gate so staff can confirm your exit.'
-        : 'Payment failed or cancelled.';
+      isSubscription = !!(result as any).subscriptionId;
+      if (isSubscription) {
+        message = paid
+          ? 'Subscription payment successful! Your subscription is now active.'
+          : 'Subscription payment failed or cancelled.';
+      } else {
+        message = paid
+          ? 'Payment successful! Please return to the gate so staff can confirm your exit.'
+          : 'Payment failed or cancelled.';
+      }
     } catch {
       message = 'An error occurred while processing the payment.';
     }
@@ -109,6 +117,7 @@ export class PaymentsController {
     const color = paid ? '#16a34a' : '#dc2626';
     const icon = paid ? '✓' : '✗';
     const title = paid ? 'Payment Successful' : 'Payment Failed';
+    const redirectLink = isSubscription ? '/driver/subscriptions' : null;
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(`<!DOCTYPE html>
@@ -125,6 +134,7 @@ export class PaymentsController {
     h1 { font-size: 22px; font-weight: 700; color: #0f172a; margin-bottom: 12px; }
     p { font-size: 15px; color: #64748b; line-height: 1.6; margin-bottom: 28px; }
     .note { font-size: 13px; color: #94a3b8; }
+    ${redirectLink ? `.btn { display: inline-block; background: #2563eb; color: white; padding: 10px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; margin-top: 12px; }` : ''}
   </style>
 </head>
 <body>
@@ -132,6 +142,7 @@ export class PaymentsController {
     <div class="icon">${icon}</div>
     <h1>${title}</h1>
     <p>${message}</p>
+    ${redirectLink ? `<a href="${redirectLink}" class="btn">View My Subscriptions</a>` : ''}
     <p class="note">You can close this tab.</p>
   </div>
 </body>

@@ -6,6 +6,9 @@ import {
   BadRequestException,
   Param,
   ParseUUIDPipe,
+  Patch,
+  Post,
+  Body,
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { Roles } from '../auth/decorators';
@@ -51,6 +54,25 @@ export class AdminController {
   @Get('sessions/:sessionId/evidence')
   getSessionEvidence(@Param('sessionId', ParseUUIDPipe) sessionId: string) {
     return this.adminService.getSessionEvidence(sessionId);
+  }
+
+  @Get('subscriptions')
+  getSubscriptions() {
+    return this.adminService.getSubscriptions();
+  }
+
+  @Patch('subscriptions/:id/extend')
+  extendSubscription(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('days') days: number,
+  ) {
+    const extendDays = Math.max(1, Math.min(365, days ?? 30));
+    return this.adminService.extendSubscription(id, extendDays);
+  }
+
+  @Post('subscriptions/:id/cancel')
+  cancelSubscription(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.cancelSubscription(id);
   }
 
   private parseAuditDate(dateStr?: string) {

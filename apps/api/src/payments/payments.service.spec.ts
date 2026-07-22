@@ -190,8 +190,9 @@ describe('PaymentsService — VNPAY migration', () => {
       // VnpayService must be called with correct input
       expect(vnpay.createPaymentUrl).toHaveBeenCalledWith(
         expect.objectContaining({
-          sessionId: 'session-uuid-1',
-          sessionCode: 'PBMS-SESSION01',
+          referenceType: 'session',
+          referenceId: 'session-uuid-1',
+          referenceCode: 'PBMS-SESSION01',
           amount: 60000,
           ipAddr: '10.0.0.1',
         }),
@@ -234,9 +235,10 @@ describe('PaymentsService — VNPAY migration', () => {
       process.env.VNPAY_RETURN_URL = 'http://localhost:5173/staff/gate';
 
       const result = svc.createPaymentUrl({
-        sessionId: 'sess-1',
-        sessionCode: 'PBMS-SESS01',
-        licensePlate: '59A-12345',
+        referenceType: 'session',
+        referenceId: 'sess-1',
+        referenceCode: 'PBMS-SESS01',
+        description: 'PBMS checkout',
         amount: 10000,
         ipAddr: '127.0.0.1',
       });

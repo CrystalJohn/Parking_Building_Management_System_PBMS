@@ -31,6 +31,7 @@ const makeSession = (
   overrides: Partial<{
     id: string;
     vehicleType: VehicleType;
+    vehicleId: string | null;
     checkInTime: Date;
     checkOutTime: Date | null;
     status: SessionStatus;
@@ -38,6 +39,7 @@ const makeSession = (
 ) => ({
   id: 'session-uuid-1',
   vehicleType: VehicleType.car,
+  vehicleId: null,
   checkInTime: new Date('2024-01-01T08:00:00Z'),
   checkOutTime: null,
   status: SessionStatus.active,
@@ -249,6 +251,7 @@ describe('FeesService', () => {
         select: {
           id: true,
           vehicleType: true,
+          vehicleId: true,
           checkInTime: true,
           checkOutTime: true,
           status: true,

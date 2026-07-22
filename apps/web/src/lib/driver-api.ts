@@ -110,6 +110,45 @@ export interface ActiveSession {
   slot: SlotInfo
 }
 
+export type SubscriptionPlanType = 'monthly' | 'yearly'
+export type SubscriptionStatus = 'pending' | 'active' | 'expired' | 'cancelled'
+
+export interface SubscriptionInfo {
+  id: string
+  vehicleId: string
+  plateNumber: string
+  vehicleType: VehicleType
+  planType: SubscriptionPlanType
+  status: SubscriptionStatus
+  validFrom: string | null
+  validTo: string | null
+  notes: string | null
+  payment: {
+    id: string
+    status: string
+    amount: number
+    method: string | null
+    paidAt: string | null
+    checkoutUrl: string | null
+    expiredAt: string | null
+  } | null
+  createdAt: string
+}
+
+export interface CreateSubscriptionResponse {
+  id: string
+  vehicleId: string
+  vehicleType: VehicleType
+  plateNumber: string
+  planType: SubscriptionPlanType
+  amount: number
+  checkoutUrl: string
+  qrCode: string | null
+  expiredAt: string
+  paymentId: string
+  paymentStatus: string
+}
+
 // ─── API calls ───────────────────────────────────────────────────────────────
 
 /** 23.1: Get slot availability by floor/zone */
@@ -161,5 +200,37 @@ export async function getMyActiveSessions(): Promise<ActiveSession[]> {
 /** 23.4: Get QR code for a session */
 export async function getSessionQr(sessionId: string): Promise<{ sessionId: string; qrCode: string }> {
   const { data } = await api.get(`/sessions/${sessionId}/qr`)
+  return data
+}
+
+/** Create a subscription for a vehicle */
+export async function createSubscription(vehicleId: string, planType: SubscriptionPlanType): Promise<CreateSubscriptionResponse> {
+  const { data } = await api.post('/subscriptions', { vehicleId, planType })
+  return data
+}
+
+/** List my subscriptions */
+export async function getMySubscriptions(): Promise<SubscriptionInfo[]> {
+  const { data } = await api.get('/subscriptions/my')
+  return data
+}
+
+/** Get subscription payment status */
+export async function getSubscriptionPaymentStatus(subscriptionId: string): Promise<{
+  id: string
+  planType: SubscriptionPlanType
+  status: SubscriptionStatus
+  validFrom: string | null
+  validTo: string | null
+  payment: {
+    status: string
+    paidAt: string | null
+    method: string | null
+    amount: number
+    checkoutUrl: string | null
+    expiredAt: string | null
+  } | null
+}> {
+  const { data } = await api.get(`/subscriptions/${subscriptionId}/payment-status`)
   return data
 }

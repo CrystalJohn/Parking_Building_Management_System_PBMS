@@ -17,6 +17,7 @@ export interface FeeBreakdown {
   isLostTicket: boolean;
   lostTicketPenalty: number;
   totalFee: number;
+  isSubscriber: boolean;
 }
 
 @Injectable()
@@ -39,7 +40,7 @@ export class FeesService {
   async calculate(
     session: Pick<
       ParkingSession,
-      'id' | 'vehicleType' | 'checkInTime' | 'checkOutTime'
+      'id' | 'vehicleType' | 'checkInTime' | 'checkOutTime' | 'vehicleId'
     >,
     isLost: boolean = false,
     checkOutTime?: Date,
@@ -64,8 +65,23 @@ export class FeesService {
     const durationHours = durationMs / (1000 * 60 * 60);
     const roundedHours = Math.ceil(durationHours);
 
-    // Base fee = rounded hours * hourly rate
-    const baseFee = roundedHours * pricing.hourlyRate;
+    // Check for active subscription
+    let isSubscriber = false;
+    if (session.vehicleId) {
+      const now = new Date();
+      const activeSub = await this.prisma.subscription.findFirst({
+        where: {
+          vehicleId: session.vehicleId,
+          status: 'active',
+          validFrom: { lte: now },
+          validTo: { gte: now },
+        },
+      });
+      isSubscriber = !!activeSub;
+    }
+
+    // Base fee = rounded hours * hourly rate (waived for subscribers)
+    const baseFee = isSubscriber ? 0 : roundedHours * pricing.hourlyRate;
 
     // 14.3: Overtime penalty when duration exceeds threshold
     const isOvertime = durationHours > pricing.overtimeThresholdHours;
@@ -91,6 +107,7 @@ export class FeesService {
       isLostTicket: isLost,
       lostTicketPenalty,
       totalFee,
+      isSubscriber,
     };
   }
 
@@ -107,6 +124,7 @@ export class FeesService {
       select: {
         id: true,
         vehicleType: true,
+        vehicleId: true,
         checkInTime: true,
         checkOutTime: true,
         status: true,

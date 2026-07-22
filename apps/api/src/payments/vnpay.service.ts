@@ -50,7 +50,7 @@ export class VnpayService {
       );
     }
 
-    const txnRef = this.buildTxnRef(input.sessionCode);
+    const txnRef = this.buildTxnRef(input.referenceCode, input.referenceType);
     const now = new Date();
     const expiredAt = new Date(now.getTime() + 15 * 60 * 1000);
 
@@ -61,7 +61,7 @@ export class VnpayService {
       vnp_Amount: String(input.amount * 100),
       vnp_CurrCode: 'VND',
       vnp_TxnRef: txnRef,
-      vnp_OrderInfo: this.buildOrderInfo(input.sessionCode),
+      vnp_OrderInfo: this.buildOrderInfo(input.referenceCode, input.description),
       vnp_OrderType: this.orderType,
       vnp_Locale: 'vn',
       vnp_ReturnUrl: this.returnUrl,
@@ -194,14 +194,15 @@ export class VnpayService {
     ].join('');
   }
 
-  private buildTxnRef(sessionCode: string): string {
-    const compact = sessionCode.replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(-8);
+  private buildTxnRef(reference: string, type: 'session' | 'subscription'): string {
+    const compact = reference.replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(-8);
     const ts = Date.now().toString().slice(-10);
-    return `PBMS${compact}${ts}`.slice(0, 100);
+    const prefix = type === 'subscription' ? 'SUB' : 'SES';
+    return `PBMS-${prefix}-${compact}${ts}`.slice(0, 100);
   }
 
-  private buildOrderInfo(sessionCode: string): string {
-    const compact = sessionCode.replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(-10);
-    return `PBMS checkout ${compact}`.slice(0, 255);
+  private buildOrderInfo(reference: string, description: string): string {
+    const compact = reference.replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(-10);
+    return `${description} ${compact}`.slice(0, 255);
   }
 }
