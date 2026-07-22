@@ -279,6 +279,10 @@ function extractErrorMessage(err: unknown): string {
     const raw = data?.message
     const text = Array.isArray(raw) ? raw.join(', ') : raw
 
+    if (!err.response || status === 502 || status === 503 || status === 504) {
+      return 'Không thể kết nối đến máy chủ'
+    }
+
     if (status === 401) {
       if (text && /deactivat/i.test(text)) {
         return 'Account is deactivated. Contact an administrator.'
@@ -287,9 +291,6 @@ function extractErrorMessage(err: unknown): string {
     }
     if (status === 400) {
       return text ?? 'Invalid data'
-    }
-    if (!err.response) {
-      return 'Cannot connect to server. Please try again.'
     }
     return text ?? `Error (${status})`
   }

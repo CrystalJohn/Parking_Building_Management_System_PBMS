@@ -87,6 +87,11 @@ export default function Register() {
         const status = err.response?.status
         const msg = err.response?.data?.message
 
+        if (!err.response || status === 502 || status === 503 || status === 504) {
+          toasts.showError('Không thể kết nối đến máy chủ')
+          return
+        }
+
         if (status === 409) {
           setFieldErrors({ phone: 'Phone number is already registered' })
         } else {
