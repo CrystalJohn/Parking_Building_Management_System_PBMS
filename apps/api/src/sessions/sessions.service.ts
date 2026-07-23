@@ -327,7 +327,7 @@ export class SessionsService {
         }
 
         return newSession;
-      });
+      }, { timeout: 15000, maxWait: 20000 });
     } catch (error) {
       if (this.isPrismaUniqueConstraintError(error)) {
         const duplicateSession = await this.findActiveSessionForPlate(licensePlate);
@@ -1242,7 +1242,7 @@ export class SessionsService {
           receivedBy: null,
         } as any,
       });
-    });
+    }, { timeout: 15000, maxWait: 20000 });
 
     return {
       session: {
@@ -1370,7 +1370,7 @@ export class SessionsService {
       });
 
       return { updatedSession, payment };
-    });
+    }, { timeout: 15000, maxWait: 20000 });
 
     // 15.6: Return receipt (Req 6.4)
     return {
@@ -1448,7 +1448,7 @@ export class SessionsService {
       });
 
       return completed;
-    });
+    }, { timeout: 15000, maxWait: 20000 });
 
     return {
       session: {

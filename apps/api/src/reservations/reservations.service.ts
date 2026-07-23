@@ -184,7 +184,7 @@ export class ReservationsService {
 
             throw new ConflictException('No slot available for this time');
           },
-          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 15000, maxWait: 20000 },
         ),
       ),
     );
@@ -366,7 +366,7 @@ export class ReservationsService {
         where: { id: reservation.slotId, status: 'reserved' },
         data: { status: 'available' },
       });
-    });
+    }, { timeout: 15000, maxWait: 20000 });
 
     this.logger.log(
       `Reservation cancelled | reservationId=${reservationId} driverId=${driverId} slotId=${reservation.slotId}`,
@@ -464,7 +464,7 @@ export class ReservationsService {
             where: { id: reservation.slotId, status: 'reserved' },
             data: { status: 'available' },
           });
-        });
+        }, { timeout: 15000, maxWait: 20000 });
 
         this.logger.log(
           `Reservation expired | reservationId=${reservation.id} slotId=${reservation.slotId}`,
