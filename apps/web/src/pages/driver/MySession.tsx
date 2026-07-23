@@ -55,9 +55,9 @@ export default function MySession() {
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-md mx-auto space-y-6">
         <header>
-          <h1 className="text-2xl font-bold">My session</h1>
+          <h1 className="text-2xl font-bold">My QR</h1>
           <p className="text-sm text-gray-500">
-            Show this QR code to staff at the exit gate
+            Checkout QR for a session already parked. Reservation check-in QR is shown on Home.
           </p>
         </header>
 

@@ -111,7 +111,7 @@ export default function AppSidebar() {
   }
 
   return (
-    <Sidebar collapsible="icon" className="border-sidebar-border">
+    <Sidebar collapsible="icon" className={`border-sidebar-border ${role === 'driver' ? 'hidden md:flex' : ''}`}>
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>

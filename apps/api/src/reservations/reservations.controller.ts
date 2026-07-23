@@ -7,6 +7,8 @@ import {
   Param,
   UseGuards,
   ParseUUIDPipe,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
@@ -17,6 +19,8 @@ import { CreateReservationDto } from './dto';
 @Controller('reservations')
 @UseGuards(JwtAuthGuard)
 export class ReservationsController {
+  private readonly requestAttempts = new Map<string, number[]>();
+
   constructor(private readonly reservationsService: ReservationsService) {}
 
   /**
@@ -31,7 +35,15 @@ export class ReservationsController {
     @Body() dto: CreateReservationDto,
     @CurrentUser('id') driverId: string,
   ) {
+    this.throttle(driverId, 'create');
     return this.reservationsService.create(dto, driverId);
+  }
+
+  @Get('quota')
+  @UseGuards(RolesGuard)
+  @Roles(Role.driver)
+  quota(@CurrentUser('id') driverId: string) {
+    return this.reservationsService.getQuota(driverId);
   }
 
   /**
@@ -81,6 +93,28 @@ export class ReservationsController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser('id') driverId: string,
   ) {
+    this.throttle(driverId, 'cancel');
     return this.reservationsService.cancel(id, driverId);
+  }
+
+  private throttle(driverId: string, operation: 'create' | 'cancel') {
+    const key = `${operation}:${driverId}`;
+    const now = Date.now();
+    const attempts = (this.requestAttempts.get(key) ?? []).filter(
+      (timestamp) => now - timestamp < 10_000,
+    );
+
+    if (attempts.length >= 5) {
+      throw new HttpException(
+        {
+          code: 'RESERVATION_REQUEST_THROTTLED',
+          message: 'Too many reservation requests. Please try again shortly.',
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    attempts.push(now);
+    this.requestAttempts.set(key, attempts);
   }
 }

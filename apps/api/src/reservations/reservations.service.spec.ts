@@ -114,6 +114,7 @@ describe('ReservationsService', () => {
   function makeTx(overrides: Record<string, unknown> = {}) {
     return {
       reservation: {
+        findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockImplementation((args) =>
           Promise.resolve(
@@ -182,6 +183,7 @@ describe('ReservationsService', () => {
       plateNumber: '59A12345',
       vehicleType: VehicleType.car,
     });
+    prisma.reservation.findMany.mockResolvedValue([]);
     allocationService.allocate.mockResolvedValue({
       slot: makeSlot(),
       allocationStrategy: 'balanced_occupancy',
@@ -253,6 +255,7 @@ describe('ReservationsService', () => {
     it('maps duplicate active reservation to 409 before allocation', async () => {
       const tx = makeTx({
         reservation: {
+          findMany: jest.fn().mockResolvedValue([]),
           findFirst: jest.fn().mockResolvedValue({ id: 'existing' }),
           create: jest.fn(),
           update: jest.fn(),
@@ -265,6 +268,51 @@ describe('ReservationsService', () => {
       await expect(
         service.create(makeCreateDto(), 'driver-uuid'),
       ).rejects.toThrow(ConflictException);
+      expect(allocationService.allocate).not.toHaveBeenCalled();
+    });
+
+    it('returns RESERVATION_RATE_LIMITED after five recent reservations', async () => {
+      const now = new Date('2026-06-29T02:00:00.000Z');
+      const tx = makeTx({
+        reservation: {
+          findMany: jest.fn().mockResolvedValue(
+            Array.from({ length: 5 }, (_, index) => ({
+              createdAt: new Date(now.getTime() - index * 60_000),
+              cancelledAt: null,
+            })),
+          ),
+          findFirst: jest.fn(),
+          create: jest.fn(),
+          update: jest.fn(),
+        },
+      });
+      prisma.$transaction.mockImplementation(async (fn: (txArg: unknown) => Promise<unknown>) => fn(tx));
+
+      await expect(service.create(makeCreateDto(), 'driver-uuid')).rejects.toMatchObject({
+        response: { code: 'RESERVATION_RATE_LIMITED' },
+        status: 429,
+      });
+      expect(allocationService.allocate).not.toHaveBeenCalled();
+    });
+
+    it('returns RESERVATION_COOLDOWN for 30 seconds after cancellation', async () => {
+      const now = new Date('2026-06-29T02:00:00.000Z');
+      const tx = makeTx({
+        reservation: {
+          findMany: jest.fn().mockResolvedValue([
+            { createdAt: now, cancelledAt: new Date(now.getTime() - 10_000) },
+          ]),
+          findFirst: jest.fn(),
+          create: jest.fn(),
+          update: jest.fn(),
+        },
+      });
+      prisma.$transaction.mockImplementation(async (fn: (txArg: unknown) => Promise<unknown>) => fn(tx));
+
+      await expect(service.create(makeCreateDto(), 'driver-uuid')).rejects.toMatchObject({
+        response: { code: 'RESERVATION_COOLDOWN' },
+        status: 429,
+      });
       expect(allocationService.allocate).not.toHaveBeenCalled();
     });
 
@@ -447,7 +495,7 @@ describe('ReservationsService', () => {
       expect(result.message).toContain('cancelled');
       expect(tx.reservation.update).toHaveBeenCalledWith({
         where: { id: 'reservation-uuid-1' },
-        data: { status: 'cancelled' },
+        data: { status: 'cancelled', cancelledAt: expect.any(Date) },
       });
       expect(tx.slot.updateMany).toHaveBeenCalledWith({
         where: { id: 1, status: 'reserved' },
@@ -481,4 +529,3 @@ describe('ReservationsService', () => {
     });
   });
 });
-

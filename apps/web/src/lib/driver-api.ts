@@ -57,6 +57,27 @@ export interface Reservation {
   slot: SlotInfo | null
 }
 
+export interface ReservationCheckInQr {
+  reservationId: string
+  token: string
+  issuedAt: string
+  expiresAt: string
+  refreshAfterMs: number
+  vehicle: {
+    id: string
+    plateNumber: string
+    vehicleType: VehicleType
+  }
+  slot: SlotInfo
+}
+
+export interface ReservationQuotaSnapshot {
+  limit: number
+  remaining: number
+  windowResetAt: string
+  cooldownUntil: string | null
+}
+
 export interface DriverVehicle {
   id: string
   plateNumber: string
@@ -73,6 +94,7 @@ export interface DriverVehicle {
 }
 
 export interface CreateReservationResponse {
+  quota: ReservationQuotaSnapshot
   reservation: {
     id: string
     vehicleId?: string | null
@@ -83,6 +105,11 @@ export interface CreateReservationResponse {
     licensePlate?: string | null
   }
   slot: SlotInfo
+}
+
+export interface CancelReservationResponse {
+  message: string
+  quota: ReservationQuotaSnapshot
 }
 
 export interface ParkingSessionHistory {
@@ -174,6 +201,11 @@ export async function getMyVehicles(): Promise<DriverVehicle[]> {
   return data
 }
 
+export async function getReservationQuota(): Promise<ReservationQuotaSnapshot> {
+  const { data } = await api.get<ReservationQuotaSnapshot>('/reservations/quota')
+  return data
+}
+
 /** 23.2: Create a reservation */
 export async function createReservation(vehicleId: string): Promise<CreateReservationResponse> {
   const { data } = await api.post('/reservations', { vehicleId })
@@ -181,8 +213,14 @@ export async function createReservation(vehicleId: string): Promise<CreateReserv
 }
 
 /** 23.2: Cancel a reservation */
-export async function cancelReservation(id: string): Promise<void> {
-  await api.delete(`/reservations/${id}`)
+export async function cancelReservation(id: string): Promise<CancelReservationResponse> {
+  const { data } = await api.delete<CancelReservationResponse>(`/reservations/${id}`)
+  return data
+}
+
+export async function getReservationCheckInQr(id: string): Promise<ReservationCheckInQr> {
+  const { data } = await api.get<ReservationCheckInQr>(`/reservations/${id}/checkin-qr`)
+  return data
 }
 
 /** 23.3: Get my session history */

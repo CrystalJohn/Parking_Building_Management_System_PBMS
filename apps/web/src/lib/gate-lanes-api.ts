@@ -36,6 +36,36 @@ export interface GateLaneWithAssignment extends GateLane {
   }>
 }
 
+export type GateCoverageStatus =
+  | 'fixed_covered'
+  | 'fixed_unassigned'
+  | 'scheduled_unclaimed'
+  | 'on_duty'
+  | 'substitute_on_duty'
+  | 'unassigned_on_duty'
+  | 'inactive'
+
+export interface CurrentGateCoverage {
+  asOf: string
+  timezone: string
+  mode: 'fixed_assignment' | 'scheduled_shift'
+  currentShift: { code: string; label: string; startsAt: string; endsAt: string }
+  summary: { total: number; covered: number; unassigned: number; inactive: number }
+  lanes: Array<{
+    lane: GateLane
+    eligibleStaff: Array<Pick<GateLaneStaff, 'id' | 'fullName' | 'phone' | 'username' | 'isActive'>>
+    scheduledStaff: GateLaneStaff | null
+    activeDuty: { staff: GateLaneStaff; startedAt: string; kind: string } | null
+    lastActivity: { operation: string; occurredAt: string; staffName: string | null } | null
+    status: GateCoverageStatus
+  }>
+}
+
+export async function getCurrentGateCoverage() {
+  const { data } = await api.get<CurrentGateCoverage>('/gate-lanes/coverage/current')
+  return data
+}
+
 export async function getCurrentGateLane() {
   const { data } = await api.get<CurrentGateAssignment | null>('/gate-lanes/current')
   return data

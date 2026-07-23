@@ -1,4 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
+import { ShieldCheck } from 'lucide-react'
+import { getUser } from '@/lib/auth'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -42,18 +44,22 @@ const SECTION_HOME: Record<string, string> = {
 
 export default function AppHeader() {
   const { pathname } = useLocation()
+  const user = getUser()
   const [section = '', page = ''] = pathname.split('/').filter(Boolean)
   const sectionLabel = SECTION_LABELS[section] ?? 'PBMS'
   const pageLabel =
     pathname === '/admin/reports'
       ? 'Reports & Flags'
+      : user?.role === 'driver' && page === 'reservations'
+        ? 'Reserve'
       : PAGE_LABELS[page] ?? sectionLabel
   const sectionHome = SECTION_HOME[section] ?? '/'
 
   return (
     <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 print:hidden">
+      {user?.role === 'driver' ? <div className="flex min-w-0 items-center gap-2 md:hidden"><span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground"><ShieldCheck className="size-4" /></span><span className="truncate text-sm font-black">PBMS</span><span className="text-muted-foreground">/</span><span className="truncate text-sm font-medium">{pageLabel === 'Reservations' ? 'Reserve' : pageLabel}</span></div> : null}
       <Breadcrumb>
-        <BreadcrumbList>
+        <BreadcrumbList className={user?.role === 'driver' ? 'hidden md:flex' : ''}>
           <BreadcrumbItem className="hidden md:inline-flex">
             <BreadcrumbLink asChild>
               <Link to={sectionHome}>{sectionLabel}</Link>

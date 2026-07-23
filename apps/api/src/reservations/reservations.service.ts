@@ -3,6 +3,8 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   NotFoundException,
   Logger,
 } from '@nestjs/common';
@@ -22,6 +24,13 @@ import { CreateReservationDto } from './dto';
 
 type PrismaLike = PrismaService | Prisma.TransactionClient;
 
+export interface ReservationQuotaSnapshot {
+  limit: number;
+  remaining: number;
+  windowResetAt: Date;
+  cooldownUntil: Date | null;
+}
+
 @Injectable()
 export class ReservationsService {
   private readonly logger = new Logger(ReservationsService.name);
@@ -29,6 +38,9 @@ export class ReservationsService {
   private static readonly DEFAULT_TIMEOUT_MINUTES = 60;
   private static readonly MAX_ADVANCE_MINUTES = 120;
   private static readonly MAX_SLOT_LOCK_ATTEMPTS = 3;
+  private static readonly RESERVATION_RATE_LIMIT = 5;
+  private static readonly RESERVATION_RATE_WINDOW_MS = 10 * 60_000;
+  private static readonly RESERVATION_CANCEL_COOLDOWN_MS = 30_000;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -86,6 +98,24 @@ export class ReservationsService {
       this.runWithSerializableRetry(async () =>
         this.prisma.$transaction(
           async (tx) => {
+            const quota = await this.getQuotaSnapshot(driverId, new Date(), tx);
+
+            if (quota.cooldownUntil && quota.cooldownUntil.getTime() > Date.now()) {
+              throw this.quotaError(
+                'RESERVATION_COOLDOWN',
+                'You cancelled a reservation recently. Please wait before creating another one.',
+                quota,
+              );
+            }
+
+            if (quota.remaining <= 0) {
+              throw this.quotaError(
+                'RESERVATION_RATE_LIMITED',
+                'Reservation limit reached. Please try again after the quota window resets.',
+                quota,
+              );
+            }
+
             const existingActive = await tx.reservation.findFirst({
               where: {
                 status: 'active',
@@ -164,6 +194,7 @@ export class ReservationsService {
     );
 
     return {
+      quota: await this.getQuotaSnapshot(driverId),
       reservation: {
         id: reservation.id,
         vehicleId: reservation.vehicleId,
@@ -328,7 +359,7 @@ export class ReservationsService {
     await this.prisma.$transaction(async (tx) => {
       await tx.reservation.update({
         where: { id: reservationId },
-        data: { status: 'cancelled' },
+        data: { status: 'cancelled', cancelledAt: new Date() },
       });
 
       await tx.slot.updateMany({
@@ -341,7 +372,70 @@ export class ReservationsService {
       `Reservation cancelled | reservationId=${reservationId} driverId=${driverId} slotId=${reservation.slotId}`,
     );
 
-    return { message: 'Reservation cancelled successfully' };
+    return {
+      message: 'Reservation cancelled successfully',
+      quota: await this.getQuotaSnapshot(driverId),
+    };
+  }
+
+  async getQuota(driverId: string) {
+    return this.getQuotaSnapshot(driverId);
+  }
+
+  private async getQuotaSnapshot(
+    driverId: string,
+    now = new Date(),
+    client: PrismaLike = this.prisma,
+  ): Promise<ReservationQuotaSnapshot> {
+    const windowStart = new Date(
+      now.getTime() - ReservationsService.RESERVATION_RATE_WINDOW_MS,
+    );
+    const recent = await client.reservation.findMany({
+      where: { driverId, createdAt: { gte: windowStart } },
+      select: { createdAt: true, cancelledAt: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    const latestCancelled = recent.reduce<Date | null>((latest, reservation) => {
+      if (!reservation.cancelledAt) return latest;
+      return !latest || reservation.cancelledAt > latest
+        ? reservation.cancelledAt
+        : latest;
+    }, null);
+    const cooldownUntil = latestCancelled
+      ? new Date(
+          latestCancelled.getTime() +
+            ReservationsService.RESERVATION_CANCEL_COOLDOWN_MS,
+        )
+      : null;
+
+    return {
+      limit: ReservationsService.RESERVATION_RATE_LIMIT,
+      remaining: Math.max(
+        0,
+        ReservationsService.RESERVATION_RATE_LIMIT - recent.length,
+      ),
+      windowResetAt: recent[0]
+        ? new Date(
+            recent[0].createdAt.getTime() +
+              ReservationsService.RESERVATION_RATE_WINDOW_MS,
+          )
+        : new Date(now.getTime() + ReservationsService.RESERVATION_RATE_WINDOW_MS),
+      cooldownUntil:
+        cooldownUntil && cooldownUntil.getTime() > now.getTime()
+          ? cooldownUntil
+          : null,
+    };
+  }
+
+  private quotaError(
+    code: 'RESERVATION_RATE_LIMITED' | 'RESERVATION_COOLDOWN',
+    message: string,
+    quota: ReservationQuotaSnapshot,
+  ) {
+    return new HttpException(
+      { code, message, quota },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
   }
 
   @Cron(CronExpression.EVERY_MINUTE)

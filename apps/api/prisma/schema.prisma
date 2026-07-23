@@ -193,7 +193,7 @@ model GateLane {
 }
 
 model StaffGateAssignment {
-  staffId      String   @unique @map("staff_id")
+  staffId      String   @id @map("staff_id")
   gateLaneId   String   @map("gate_lane_id")
   assignedById String   @map("assigned_by_id")
   assignedAt   DateTime @default(now()) @map("assigned_at") @db.Timestamptz(3)
@@ -231,7 +231,6 @@ model Subscription {
   status      SubscriptionStatus   @default(pending)
   validFrom   DateTime?            @map("valid_from") @db.Timestamptz(3)
   validTo     DateTime?            @map("valid_to") @db.Timestamptz(3)
-  paymentId   String?              @unique @map("payment_id")
   notes       String?
   createdById String?              @map("created_by")
   createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -343,6 +342,7 @@ model Reservation {
   plannedArrivalAt DateTime?    @map("planned_arrival_at") @db.Timestamptz(3)
   createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
   expiresAt   DateTime          @map("expires_at") @db.Timestamptz(3)
+  cancelledAt DateTime?        @map("cancelled_at") @db.Timestamptz(3)
   remindedAt  DateTime?         @map("reminded_at") @db.Timestamptz(3)
   status      ReservationStatus @default(active)
 
@@ -355,6 +355,8 @@ model Reservation {
   operationIssues OperationIssue[]
 
   @@index([status, expiresAt], map: "idx_reservation_active")
+  @@index([driverId, createdAt], map: "idx_reservation_driver_created")
+  @@index([driverId, cancelledAt], map: "idx_reservation_driver_cancelled")
   @@index([vehicleId], map: "idx_reservation_vehicle")
   @@map("reservations")
 }

@@ -22,6 +22,12 @@ export class GateLanesController {
     return this.gateLanesService.listStaff();
   }
 
+  @Get('coverage/current')
+  @Roles(Role.manager, Role.admin)
+  getCurrentCoverage() {
+    return this.gateLanesService.getCurrentCoverage();
+  }
+
   @Get()
   @Roles(Role.manager, Role.admin)
   listLanes() {

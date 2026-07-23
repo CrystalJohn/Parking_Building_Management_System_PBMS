@@ -1,171 +1,100 @@
-import { useEffect, useState } from 'react'
-import { isAxiosError } from 'axios'
-import {
-  getAvailability,
-  type AvailabilityItem,
-} from '../../lib/driver-api'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ArrowRight, RefreshCw, Sparkles } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Button } from '@/components/ui/button'
+import { ActiveReservationCard } from '@/components/driver/ActiveReservationCard'
+import { AvailabilitySummary } from '@/components/driver/AvailabilitySummary'
+import { FloorAvailabilityCard } from '@/components/driver/FloorAvailabilityCard'
+import { cancelReservation, getAvailability, getMyReservations, getPricing, type AvailabilityItem, type PricingInfo, type Reservation } from '@/lib/driver-api'
 
-/**
- * 23.1: Driver Home — slot availability by floor/zone + pricing.
- * Req 9.4
- */
+const ACTIVE_REFRESH_MS = 30_000
+
 export default function DriverHome() {
   const [availability, setAvailability] = useState<AvailabilityItem[]>([])
+  const [reservations, setReservations] = useState<Reservation[]>([])
+  const [pricing, setPricing] = useState<PricingInfo[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [reservationError, setReservationError] = useState<string | null>(null)
 
-  useEffect(() => {
-    loadData()
+  const loadAvailability = useCallback(async (manual = false) => {
+    if (manual) setRefreshing(true)
+    try {
+      const [availabilityResult, pricingResult] = await Promise.allSettled([getAvailability(), getPricing()])
+      if (availabilityResult.status === 'rejected') throw availabilityResult.reason
+      setAvailability(availabilityResult.value)
+      if (pricingResult.status === 'fulfilled') setPricing(pricingResult.value)
+      setError(null)
+    } catch {
+      setError('Unable to load parking availability.')
+    } finally {
+      setRefreshing(false)
+    }
   }, [])
 
-  const loadData = async () => {
-    setLoading(true)
-    setError(null)
+  const loadReservations = useCallback(async () => {
     try {
-      const avail = await getAvailability()
-      setAvailability(avail)
-    } catch (err) {
-      setError(isAxiosError(err) ? 'Unable to load data' : 'Unknown error')
-    } finally {
-      setLoading(false)
+      setReservations(await getMyReservations())
+      setReservationError(null)
+    } catch {
+      setReservationError('Unable to load your reservations. Retry to see your latest booking.')
+    }
+  }, [])
+
+  const loadHome = useCallback(async () => {
+    setLoading(true)
+    await Promise.all([loadAvailability(), loadReservations()])
+    setLoading(false)
+  }, [loadAvailability, loadReservations])
+
+  useEffect(() => { void loadHome() }, [loadHome])
+
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void loadAvailability()
+    }
+    const timer = window.setInterval(refreshWhenVisible, ACTIVE_REFRESH_MS)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', refreshWhenVisible) }
+  }, [loadAvailability])
+
+  const activeReservations = useMemo(() => reservations.filter((reservation) => reservation.status === 'active'), [reservations])
+  const groupedFloors = useMemo(() => {
+    const grouped = new Map<string, AvailabilityItem[]>()
+    for (const item of availability) grouped.set(item.floorName, [...(grouped.get(item.floorName) ?? []), item])
+    return [...grouped.entries()]
+  }, [availability])
+
+  const handleCancel = async (id: string) => {
+    if (!window.confirm('Cancel this active reservation? The reserved slot will be released.')) return
+    try {
+      await cancelReservation(id)
+      await loadReservations()
+    } catch {
+      setReservationError('Unable to cancel this reservation. Please retry.')
     }
   }
 
-  const carSlots = availability.filter((a) => a.vehicleType === 'car')
-  const motorbikeSlots = availability.filter((a) => a.vehicleType === 'motorbike')
+  return <div className="min-h-[calc(100dvh-3.5rem)] bg-slate-50/70 dark:bg-slate-950/40">
+    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-5 sm:px-6 sm:py-7">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div><div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-primary"><Sparkles className="size-4" />Driver home</div><h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Find your next spot</h1><p className="mt-1 text-sm text-muted-foreground">Live parking availability and reservation check-in in one place.</p></div>
+        <Button type="button" variant="outline" className="min-h-11 w-full sm:w-auto" onClick={() => void loadAvailability(true)} disabled={refreshing}><RefreshCw className={`mr-2 size-4 ${refreshing ? 'animate-spin' : ''}`} />Refresh availability</Button>
+      </header>
 
-  const totalAvailable = (items: AvailabilityItem[]) =>
-    items.reduce((sum, i) => sum + i.available, 0)
-  const totalSlots = (items: AvailabilityItem[]) =>
-    items.reduce((sum, i) => sum + i.total, 0)
+      {reservationError ? <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200"><span>{reservationError}</span><Button type="button" variant="outline" className="min-h-11 border-rose-300 text-rose-700 dark:border-rose-300/40 dark:text-rose-100" onClick={() => void loadReservations()}>Retry reservations</Button></div> : null}
+      {error ? <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100">{error} <button type="button" className="ml-2 min-h-11 font-semibold underline underline-offset-4" onClick={() => void loadAvailability(true)}>Retry</button></div> : null}
 
-  return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-2xl mx-auto space-y-6">
-        <header>
-          <h1 className="text-2xl font-bold">Parking</h1>
-          <p className="text-sm text-gray-500">Availability by floor</p>
-        </header>
+      {loading ? <HomeSkeleton /> : <>
+        {activeReservations.length > 0 ? <section aria-labelledby="active-reservations" className="space-y-3"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">Priority</p><h2 id="active-reservations" className="text-lg font-semibold">Your active reservations</h2></div>{activeReservations.map((reservation) => <ActiveReservationCard key={reservation.id} reservation={reservation} onCancel={handleCancel} />)}</section> : <section className="rounded-2xl border border-primary/20 bg-primary/5 p-5 sm:p-6"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">No active reservation</p><h2 className="mt-1 text-xl font-semibold">Choose a spot when you are ready</h2><p className="mt-1 max-w-xl text-sm text-muted-foreground">Browse live floor availability, then reserve a linked vehicle in one step.</p><Button asChild className="mt-4 min-h-11"><Link to="/driver/reservations">Reserve a spot <ArrowRight className="ml-2 size-4" /></Link></Button></section>}
 
-        {loading && <p className="text-gray-500">Loading...</p>}
-        {error && <p className="text-red-600 text-sm">{error}</p>}
+        <section aria-labelledby="availability" className="space-y-3"><div className="flex items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">Live now</p><h2 id="availability" className="text-lg font-semibold">Availability</h2></div><span className="text-xs text-muted-foreground">Updates every 30 seconds</span></div><div className="grid gap-3 sm:grid-cols-2"><AvailabilitySummary items={availability.filter((item) => item.vehicleType === 'car')} vehicleType="car" rate={pricing.find((item) => item.vehicleType === 'car')?.hourlyRate ?? 20_000} /><AvailabilitySummary items={availability.filter((item) => item.vehicleType === 'motorbike')} vehicleType="motorbike" rate={pricing.find((item) => item.vehicleType === 'motorbike')?.hourlyRate ?? 10_000} /></div><div className="grid gap-3 md:grid-cols-2">{groupedFloors.map(([floorName, items]) => <FloorAvailabilityCard key={floorName} floorName={floorName} items={items} />)}</div>{availability.length === 0 ? <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">No availability data is available right now.</p> : null}</section>
 
-        {!loading && !error && (
-          <>
-            {/* Summary cards */}
-            <div className="grid grid-cols-2 gap-4">
-              <SummaryCard
-                label="Car (Zone A)"
-                available={totalAvailable(carSlots)}
-                total={totalSlots(carSlots)}
-                rate="20.000 VND/h"
-              />
-              <SummaryCard
-                label="Motorbike (Zone B)"
-                available={totalAvailable(motorbikeSlots)}
-                total={totalSlots(motorbikeSlots)}
-                rate="10.000 VND/h"
-              />
-            </div>
-
-            {/* Detail table */}
-            <div className="card overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-4 py-2 text-left font-medium text-gray-600">Floor</th>
-                    <th className="px-4 py-2 text-left font-medium text-gray-600">Zone</th>
-                    <th className="px-4 py-2 text-center font-medium text-gray-600">Available</th>
-                    <th className="px-4 py-2 text-center font-medium text-gray-600">Total</th>
-                    <th className="px-4 py-2 text-center font-medium text-gray-600">Rate</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {availability.map((item, idx) => {
-                    const pct = item.total > 0
-                      ? Math.round(((item.total - item.available) / item.total) * 100)
-                      : 0
-                    return (
-                      <tr key={idx}>
-                        <td className="px-4 py-2 font-medium">{item.floorName}</td>
-                        <td className="px-4 py-2">
-                          {item.zone === 'A' ? 'A (Car)' : 'B (Motorbike)'}
-                        </td>
-                        <td className="px-4 py-2 text-center">
-                          <span className={item.available === 0 ? 'text-red-600 font-bold' : 'text-green-700 font-bold'}>
-                            {item.available}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2 text-center text-gray-500">{item.total}</td>
-                        <td className="px-4 py-2 text-center">
-                          <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div
-                              className={`h-2 rounded-full ${pct > 80 ? 'bg-red-500' : pct > 50 ? 'bg-yellow-500' : 'bg-green-500'}`}
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                          <span className="text-xs text-gray-500">{pct}%</span>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pricing info */}
-            <div className="card">
-              <h2 className="text-lg font-semibold mb-3">Pricing</h2>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div className="space-y-1">
-                  <p className="font-medium">Car</p>
-                  <p className="text-gray-600">20.000 VND / hour</p>
-                  <p className="text-gray-600">Over 24h: +50.000 VND</p>
-                  <p className="text-gray-600">Lost ticket: +100.000 VND</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="font-medium">Motorbike</p>
-                  <p className="text-gray-600">10.000 VND / hour</p>
-                  <p className="text-gray-600">Over 24h: +50.000 VND</p>
-                  <p className="text-gray-600">Lost ticket: +100.000 VND</p>
-                </div>
-              </div>
-              <p className="text-xs text-gray-400 mt-3">
-                Parking time is rounded up to the nearest hour. e.g. 2h15m is charged as 3 hours.
-              </p>
-            </div>
-
-            <button onClick={loadData} className="btn-secondary text-sm">
-              Refresh
-            </button>
-          </>
-        )}
-      </div>
+        <section className="rounded-2xl border bg-background p-4 sm:p-5"><details><summary className="cursor-pointer list-none text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Pricing details</summary><div className="mt-4 grid gap-3 sm:grid-cols-2">{(['car', 'motorbike'] as const).map((type) => { const item = pricing.find((entry) => entry.vehicleType === type); return <div key={type} className="rounded-xl bg-muted/30 p-3 text-sm"><p className="font-semibold">{type === 'car' ? 'Car' : 'Motorbike'}</p><p className="mt-1 text-muted-foreground">{new Intl.NumberFormat('vi-VN').format(item?.hourlyRate ?? (type === 'car' ? 20_000 : 10_000))} VND / hour</p><p className="text-xs text-muted-foreground">Overtime: {new Intl.NumberFormat('vi-VN').format(item?.overtimePenalty ?? 50_000)} VND</p></div> })}</div></details></section>
+      </>}
     </div>
-  )
+  </div>
 }
 
-function SummaryCard({
-  label,
-  available,
-  total,
-  rate,
-}: {
-  label: string
-  available: number
-  total: number
-  rate: string
-}) {
-  return (
-    <div className="card text-center">
-      <p className="text-sm text-gray-500 mb-1">{label}</p>
-      <p className="text-3xl font-bold">
-        <span className={available === 0 ? 'text-red-600' : 'text-green-700'}>
-          {available}
-        </span>
-        <span className="text-gray-400 text-lg">/{total}</span>
-      </p>
-      <p className="text-xs text-gray-500 mt-1">{rate}</p>
-    </div>
-  )
-}
+function HomeSkeleton() { return <div className="space-y-4" aria-label="Loading driver home"><div className="h-28 animate-pulse rounded-2xl bg-muted" /><div className="grid gap-3 sm:grid-cols-2"><div className="h-20 animate-pulse rounded-xl bg-muted" /><div className="h-20 animate-pulse rounded-xl bg-muted" /></div><div className="h-40 animate-pulse rounded-2xl bg-muted" /></div> }

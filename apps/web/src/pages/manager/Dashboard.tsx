@@ -42,6 +42,8 @@ import { Badge } from '../../components/ui/badge'
 import { Button } from '../../components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../components/ui/dialog'
+import { CurrentGateCoverageCard } from '../../components/manager/CurrentGateCoverageCard'
+import { getCurrentGateCoverage, type CurrentGateCoverage } from '../../lib/gate-lanes-api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -162,6 +164,8 @@ export default function Dashboard() {
   const [occupancyMap, setOccupancyMap] = useState<AdminSlotOccupancyMap | null>(null)
   const [summary, setSummary] = useState<AdminSummary | null>(null)
   const [pendingPayments, setPendingPayments] = useState<AdminPendingPayments | null>(null)
+  const [gateCoverage, setGateCoverage] = useState<CurrentGateCoverage | null>(null)
+  const [gateCoverageError, setGateCoverageError] = useState<string | null>(null)
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -185,6 +189,20 @@ export default function Dashboard() {
     } finally {
       setLoading(false)
     }
+  }, [])
+
+  useEffect(() => {
+    const loadCoverage = async () => {
+      try {
+        setGateCoverage(await getCurrentGateCoverage())
+        setGateCoverageError(null)
+      } catch {
+        setGateCoverageError('Unable to load current gate coverage')
+      }
+    }
+    void loadCoverage()
+    const interval = window.setInterval(() => void loadCoverage(), POLL_INTERVAL_MS)
+    return () => window.clearInterval(interval)
   }, [])
 
   useEffect(() => {
@@ -261,6 +279,8 @@ export default function Dashboard() {
                 <KpiCard key={kpi.label} {...kpi} />
               ))}
             </section>
+
+            <CurrentGateCoverageCard coverage={gateCoverage} error={gateCoverageError} />
 
             <OperationsQueueCard
               issues={operationIssues}

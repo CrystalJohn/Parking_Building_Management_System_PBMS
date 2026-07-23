@@ -19,6 +19,20 @@ const laneSelect = {
   updatedAt: true,
 } as const;
 
+const COVERAGE_TIMEZONE = 'Asia/Ho_Chi_Minh';
+
+function getCurrentShift(now: Date) {
+  const localHour = Number(new Intl.DateTimeFormat('en-US', {
+    timeZone: COVERAGE_TIMEZONE,
+    hour: '2-digit',
+    hour12: false,
+  }).format(now));
+
+  if (localHour >= 6 && localHour < 14) return { code: 'morning', label: 'Morning', startsAt: '06:00', endsAt: '14:00' };
+  if (localHour >= 14 && localHour < 22) return { code: 'afternoon', label: 'Afternoon', startsAt: '14:00', endsAt: '22:00' };
+  return { code: 'night', label: 'Night', startsAt: '22:00', endsAt: '06:00' };
+}
+
 @Injectable()
 export class GateLanesService {
   constructor(private readonly prisma: PrismaService) {}
@@ -111,6 +125,58 @@ export class GateLanesService {
       where: { staffId },
       include: { gateLane: { select: laneSelect } },
     });
+  }
+
+  async getCurrentCoverage() {
+    const asOf = new Date();
+    const lanes = await this.prisma.gateLane.findMany({
+      orderBy: [{ vehicleType: 'asc' }, { code: 'asc' }],
+      select: {
+        ...laneSelect,
+        assignments: {
+          where: { staff: { role: Role.staff, isActive: true } },
+          orderBy: [{ staff: { fullName: 'asc' } }, { staff: { phone: 'asc' } }],
+          select: {
+            staffId: true,
+            assignedAt: true,
+            updatedAt: true,
+            staff: { select: { id: true, fullName: true, phone: true, username: true, isActive: true } },
+          },
+        },
+      },
+    });
+
+    const laneRows = lanes.map((lane) => {
+      const eligibleStaff = lane.assignments.map((assignment) => assignment.staff);
+      const status = !lane.isActive
+        ? 'inactive'
+        : eligibleStaff.length > 0
+          ? 'fixed_covered'
+          : 'fixed_unassigned';
+
+      return {
+        lane: { ...lane, assignments: undefined },
+        eligibleStaff,
+        scheduledStaff: null,
+        activeDuty: null,
+        lastActivity: null,
+        status,
+      };
+    });
+
+    return {
+      asOf,
+      timezone: COVERAGE_TIMEZONE,
+      mode: 'fixed_assignment',
+      currentShift: getCurrentShift(asOf),
+      summary: {
+        total: laneRows.length,
+        covered: laneRows.filter((lane) => lane.status === 'fixed_covered').length,
+        unassigned: laneRows.filter((lane) => lane.status === 'fixed_unassigned').length,
+        inactive: laneRows.filter((lane) => lane.status === 'inactive').length,
+      },
+      lanes: laneRows,
+    };
   }
 
   async requireActiveLane(staffId: string) {
