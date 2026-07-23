@@ -221,11 +221,7 @@ export async function createVehicleRegistrationRequest(plateNumber: string, vehi
   formData.append('vehicleType', vehicleType)
   formData.append('evidence', evidence)
 
-  const { data } = await api.post<VehicleRegistrationRequest>('/vehicle-registrations', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
-  })
+  const { data } = await api.post<VehicleRegistrationRequest>('/vehicle-registrations', formData)
   return data
 }
 
