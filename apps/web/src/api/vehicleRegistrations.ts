@@ -7,15 +7,25 @@ export interface VehicleRegistrationRequest {
   vehicleType: 'car' | 'motorbike'
   status: 'pending' | 'approved' | 'rejected' | 'expired'
   rejectReason: string | null
+  evidenceUrl: string | null
   createdAt: string
+  reviewedAt: string | null
   driver?: {
     fullName: string | null
     phone: string
+  }
+  reviewedBy?: {
+    fullName: string | null
   }
 }
 
 export const getPendingRequests = async () => {
   const { data } = await api.get<VehicleRegistrationRequest[]>('/vehicle-registrations/pending')
+  return data
+}
+
+export const getRegistrationHistory = async () => {
+  const { data } = await api.get<VehicleRegistrationRequest[]>('/vehicle-registrations/history')
   return data
 }
 

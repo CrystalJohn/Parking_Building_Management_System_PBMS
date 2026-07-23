@@ -31,7 +31,8 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { getPendingRequests, reviewRequest, VehicleRegistrationRequest } from '../../api/vehicleRegistrations'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { getPendingRequests, reviewRequest, getRegistrationHistory, VehicleRegistrationRequest } from '../../api/vehicleRegistrations'
 
 interface MatchedVehicleSummary {
   inputPlate: string
@@ -85,6 +86,10 @@ export default function Vehicles() {
   const [pendingRequests, setPendingRequests] = useState<VehicleRegistrationRequest[]>([])
   const [loadingRequests, setLoadingRequests] = useState(false)
   const [reviewingId, setReviewingId] = useState<string | null>(null)
+  const [historyRequests, setHistoryRequests] = useState<VehicleRegistrationRequest[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
+  const [activeTab, setActiveTab] = useState('requests')
+  const [evidenceViewerUrl, setEvidenceViewerUrl] = useState<string | null>(null)
 
   const fetchPendingRequests = async () => {
     setLoadingRequests(true)
@@ -98,9 +103,22 @@ export default function Vehicles() {
     }
   }
 
+  const fetchHistoryRequests = async () => {
+    setLoadingHistory(true)
+    try {
+      const data = await getRegistrationHistory()
+      setHistoryRequests(data)
+    } catch (err) {
+      toast.error('Failed to load vehicle registration history')
+    } finally {
+      setLoadingHistory(false)
+    }
+  }
+
   useEffect(() => {
-    fetchPendingRequests()
-  }, [])
+    if (activeTab === 'requests') fetchPendingRequests()
+    if (activeTab === 'history') fetchHistoryRequests()
+  }, [activeTab])
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -152,13 +170,14 @@ export default function Vehicles() {
         </p>
       </div>
 
-      <Tabs defaultValue="requests">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="mb-4">
           <TabsTrigger value="requests">Pending Requests
             {pendingRequests.length > 0 && (
               <Badge variant="secondary" className="ml-2 bg-primary-100 text-primary-700">{pendingRequests.length}</Badge>
             )}
           </TabsTrigger>
+          <TabsTrigger value="history">Request History</TabsTrigger>
           <TabsTrigger value="lookup">Vehicle Lookup</TabsTrigger>
         </TabsList>
 
@@ -180,6 +199,7 @@ export default function Vehicles() {
                       <TableHead>Plate Number</TableHead>
                       <TableHead>Vehicle Type</TableHead>
                       <TableHead>Driver</TableHead>
+                      <TableHead>Evidence</TableHead>
                       <TableHead>Submitted At</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
@@ -192,6 +212,15 @@ export default function Vehicles() {
                         <TableCell>
                           <div className="font-medium">{req.driver?.fullName || 'Unnamed'}</div>
                           <div className="text-xs text-muted-foreground">{req.driver?.phone}</div>
+                        </TableCell>
+                        <TableCell>
+                          {req.evidenceUrl ? (
+                            <Button variant="link" className="p-0 h-auto text-primary" onClick={() => setEvidenceViewerUrl(req.evidenceUrl!)}>
+                              View Image
+                            </Button>
+                          ) : (
+                            <span className="text-muted-foreground italic text-xs">No evidence</span>
+                          )}
                         </TableCell>
                         <TableCell>{new Date(req.createdAt).toLocaleString('vi-VN')}</TableCell>
                         <TableCell className="text-right">
@@ -217,6 +246,69 @@ export default function Vehicles() {
                               Reject
                             </Button>
                           </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="history" className="space-y-4">
+          <Card className="border-border">
+            <CardHeader>
+              <CardTitle>Registration History</CardTitle>
+              <CardDescription>Log of past vehicle registration reviews.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingHistory ? (
+                <div className="py-8 text-center text-muted-foreground">Loading history...</div>
+              ) : historyRequests.length === 0 ? (
+                <div className="py-8 text-center text-muted-foreground">No registration history available.</div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Plate Number</TableHead>
+                      <TableHead>Vehicle Type</TableHead>
+                      <TableHead>Driver</TableHead>
+                      <TableHead>Evidence</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Reviewed</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {historyRequests.map(req => (
+                      <TableRow key={req.id}>
+                        <TableCell className="font-mono font-medium">{req.plateNumber}</TableCell>
+                        <TableCell className="capitalize">{req.vehicleType}</TableCell>
+                        <TableCell>
+                          <div className="font-medium">{req.driver?.fullName || 'Unnamed'}</div>
+                          <div className="text-xs text-muted-foreground">{req.driver?.phone}</div>
+                        </TableCell>
+                        <TableCell>
+                          {req.evidenceUrl ? (
+                            <Button variant="link" className="p-0 h-auto text-primary" onClick={() => setEvidenceViewerUrl(req.evidenceUrl!)}>
+                              View Image
+                            </Button>
+                          ) : (
+                            <span className="text-muted-foreground italic text-xs">N/A</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={req.status === 'approved' ? 'default' : req.status === 'rejected' ? 'destructive' : 'secondary'} className="capitalize">
+                            {req.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {req.reviewedAt ? (
+                            <div>
+                              <div className="text-sm">{new Date(req.reviewedAt).toLocaleString('vi-VN')}</div>
+                              <div className="text-xs text-muted-foreground">by {req.reviewedBy?.fullName || 'System'}</div>
+                            </div>
+                          ) : '-'}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -427,6 +519,26 @@ export default function Vehicles() {
           )}
         </TabsContent>
       </Tabs>
+
+      <Dialog open={!!evidenceViewerUrl} onOpenChange={(open) => !open && setEvidenceViewerUrl(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Vehicle Evidence</DialogTitle>
+            <DialogDescription>
+              Image uploaded as proof of vehicle registration (Cà vẹt xe).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-center bg-muted/30 rounded-lg p-2 min-h-64">
+            {evidenceViewerUrl && (
+              <img
+                src={evidenceViewerUrl}
+                alt="Evidence Document"
+                className="max-h-[70vh] object-contain rounded-md shadow-sm"
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

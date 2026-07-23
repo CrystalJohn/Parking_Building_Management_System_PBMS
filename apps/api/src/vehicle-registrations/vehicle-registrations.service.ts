@@ -5,6 +5,8 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { createClient } from '@supabase/supabase-js';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateVehicleRegistrationDto, ReviewVehicleRegistrationDto } from './dto';
 import { VehicleRegistrationStatus, VehicleUserRole, NotificationType } from '@prisma/client';
@@ -19,9 +21,23 @@ export class VehicleRegistrationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
+    private readonly configService: ConfigService,
   ) {}
 
-  async createRequest(driverId: string, dto: CreateVehicleRegistrationDto) {
+  private getSupabaseClient() {
+    const supabaseUrl = this.configService.get<string>('SUPABASE_URL') || process.env.SUPABASE_URL;
+    const supabaseKey = this.configService.get<string>('SUPABASE_SERVICE_KEY') || process.env.SUPABASE_SERVICE_KEY;
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('Supabase credentials are not configured');
+    }
+    return createClient(supabaseUrl, supabaseKey);
+  }
+
+  async createRequest(
+    driverId: string, 
+    dto: CreateVehicleRegistrationDto, 
+    file: { buffer: Buffer; mimetype: string; originalname: string }
+  ) {
     const normalizedPlate = normalizePlateNumber(dto.plateNumber);
     if (!normalizedPlate) {
       throw new BadRequestException('Invalid plate number');
@@ -60,11 +76,32 @@ export class VehicleRegistrationsService {
       throw new ConflictException('Another user has a pending registration request for this vehicle');
     }
 
+    // Upload evidence to Supabase Storage
+    const supabase = this.getSupabaseClient();
+    const fileExt = file.originalname.split('.').pop();
+    const fileName = `${driverId}-${Date.now()}.${fileExt}`;
+    
+    const { data: uploadData, error } = await supabase.storage
+      .from('vehicle-evidences')
+      .upload(fileName, file.buffer, {
+        contentType: file.mimetype,
+      });
+
+    if (error) {
+      this.logger.error('Failed to upload evidence to Supabase', error);
+      throw new BadRequestException('Không thể tải lên ảnh chứng minh. Vui lòng thử lại.');
+    }
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('vehicle-evidences')
+      .getPublicUrl(fileName);
+
     const request = await this.prisma.vehicleRegistrationRequest.create({
       data: {
         driverId,
         plateNumber: normalizedPlate,
         vehicleType: dto.vehicleType,
+        evidenceUrl: publicUrl,
       },
     });
 
@@ -87,6 +124,21 @@ export class VehicleRegistrationsService {
         },
       },
       orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  async findHistoricalRequests() {
+    return this.prisma.vehicleRegistrationRequest.findMany({
+      where: { status: { not: VehicleRegistrationStatus.pending } },
+      include: {
+        driver: {
+          select: { fullName: true, phone: true },
+        },
+        reviewedBy: {
+          select: { fullName: true },
+        },
+      },
+      orderBy: { reviewedAt: 'desc' },
     });
   }
 

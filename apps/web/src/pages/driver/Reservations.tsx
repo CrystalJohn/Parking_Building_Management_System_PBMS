@@ -101,15 +101,18 @@ export default function Reservations() {
     }
   }
 
+  const [requestEvidence, setRequestEvidence] = useState<File | null>(null)
+
   const handleVehicleRequest = async () => {
     const plate = requestPlate.trim().toUpperCase().replace(/\s+/g, '')
-    if (!plate) return
+    if (!plate || !requestEvidence) return
     setRequestingVehicle(true)
     setActionError(null)
     try {
-      const request = await createVehicleRegistrationRequest(plate, requestType)
+      const request = await createVehicleRegistrationRequest(plate, requestType, requestEvidence)
       setRegistrationRequests((current) => [request, ...current])
       setRequestPlate('')
+      setRequestEvidence(null)
       setShowVehicleRequest(false)
     } catch (err) {
       applyApiError(err, 'Unable to submit the vehicle request. Please retry.')
@@ -127,7 +130,7 @@ export default function Reservations() {
       {!loading ? <ReservationHistoryList reservations={previousReservations} /> : null}
     </div>
     {activeReservation ? <Dialog open={showQr} onOpenChange={setShowQr}><DialogContent className="max-w-md"><DialogHeader><DialogTitle>Check-in QR</DialogTitle><DialogDescription>Show this QR to gate staff for {activeReservation.licensePlate ?? activeReservation.vehicle?.plateNumber ?? 'your linked vehicle'}.</DialogDescription></DialogHeader><ReservationCheckInQr reservation={activeReservation} /></DialogContent></Dialog> : null}
-    <Dialog open={showVehicleRequest} onOpenChange={setShowVehicleRequest}><DialogContent className="max-w-md"><DialogHeader><DialogTitle>Request a vehicle link</DialogTitle><DialogDescription>Submit your plate number for manager approval. You can reserve only after the vehicle is approved and linked.</DialogDescription></DialogHeader><div className="space-y-4"><label className="block text-sm font-medium" htmlFor="request-plate">Plate number<span className="text-destructive"> *</span></label><input id="request-plate" value={requestPlate} onChange={(event) => setRequestPlate(event.target.value.toUpperCase())} placeholder="59A12345" autoComplete="off" className="min-h-11 w-full rounded-lg border bg-background px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring" /><label className="block text-sm font-medium" htmlFor="request-type">Vehicle type</label><select id="request-type" value={requestType} onChange={(event) => setRequestType(event.target.value as VehicleType)} className="min-h-11 w-full rounded-lg border bg-background px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring"><option value="car">Car</option><option value="motorbike">Motorbike</option></select><Button type="button" className="min-h-11 w-full" disabled={requestingVehicle || !requestPlate.trim()} onClick={() => void handleVehicleRequest()}>{requestingVehicle ? 'Submitting request...' : 'Submit vehicle request'}</Button></div></DialogContent></Dialog>
+    <Dialog open={showVehicleRequest} onOpenChange={setShowVehicleRequest}><DialogContent className="max-w-md"><DialogHeader><DialogTitle>Request a vehicle link</DialogTitle><DialogDescription>Submit your plate number and vehicle registration document for manager approval.</DialogDescription></DialogHeader><div className="space-y-4"><label className="block text-sm font-medium" htmlFor="request-plate">Plate number<span className="text-destructive"> *</span></label><input id="request-plate" value={requestPlate} onChange={(event) => setRequestPlate(event.target.value.toUpperCase())} placeholder="59A12345" autoComplete="off" className="min-h-11 w-full rounded-lg border bg-background px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring" /><label className="block text-sm font-medium" htmlFor="request-type">Vehicle type</label><select id="request-type" value={requestType} onChange={(event) => setRequestType(event.target.value as VehicleType)} className="min-h-11 w-full rounded-lg border bg-background px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring"><option value="car">Car</option><option value="motorbike">Motorbike</option></select><label className="block text-sm font-medium" htmlFor="request-evidence">Vehicle Registration Image (Cà vẹt xe)<span className="text-destructive"> *</span></label><input id="request-evidence" type="file" accept="image/*" onChange={(event) => setRequestEvidence(event.target.files?.[0] || null)} className="w-full text-sm file:mr-4 file:rounded-full file:border-0 file:bg-primary/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary hover:file:bg-primary/20" /><Button type="button" className="min-h-11 w-full mt-4" disabled={requestingVehicle || !requestPlate.trim() || !requestEvidence} onClick={() => void handleVehicleRequest()}>{requestingVehicle ? 'Submitting request...' : 'Submit vehicle request'}</Button></div></DialogContent></Dialog>
     <AlertDialog open={Boolean(cancelId)} onOpenChange={(open) => { if (!open) setCancelId(null) }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Cancel this reservation?</AlertDialogTitle><AlertDialogDescription>Your reserved spot will be released. You can create another reservation after cancellation.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel className="min-h-11">Keep reservation</AlertDialogCancel><AlertDialogAction className="min-h-11 bg-rose-600 text-white hover:bg-rose-700" onClick={() => void handleCancel()}>Cancel reservation</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
   </div>
 }

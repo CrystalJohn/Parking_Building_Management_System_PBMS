@@ -215,8 +215,17 @@ export async function getMyVehicleRegistrationRequests(): Promise<VehicleRegistr
   return data
 }
 
-export async function createVehicleRegistrationRequest(plateNumber: string, vehicleType: VehicleType): Promise<VehicleRegistrationRequest> {
-  const { data } = await api.post<VehicleRegistrationRequest>('/vehicle-registrations', { plateNumber, vehicleType })
+export async function createVehicleRegistrationRequest(plateNumber: string, vehicleType: VehicleType, evidence: File): Promise<VehicleRegistrationRequest> {
+  const formData = new FormData()
+  formData.append('plateNumber', plateNumber)
+  formData.append('vehicleType', vehicleType)
+  formData.append('evidence', evidence)
+
+  const { data } = await api.post<VehicleRegistrationRequest>('/vehicle-registrations', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  })
   return data
 }
 
