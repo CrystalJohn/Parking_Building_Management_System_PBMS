@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { isAxiosError } from 'axios'
-import { CalendarClock, CheckCircle2, ChevronDown, ChevronUp, Clock3, QrCode, XCircle } from 'lucide-react'
+import { CalendarClock, CheckCircle2, ChevronDown, ChevronUp, Clock3, QrCode, UserPlus, XCircle } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { cancelReservation, createReservation, getMyReservations, getMyVehicles, getReservationQuota, type DriverVehicle, type Reservation, type ReservationQuotaSnapshot } from '../../lib/driver-api'
+import { cancelReservation, createReservation, createVehicleRegistrationRequest, getMyReservations, getMyVehicleRegistrationRequests, getMyVehicles, getReservationQuota, type DriverVehicle, type Reservation, type ReservationQuotaSnapshot, type VehicleRegistrationRequest, type VehicleType } from '../../lib/driver-api'
 import { ReservationCheckInQr } from '../../components/driver/ReservationCheckInQr'
 import { formatDateTimeVN } from '../../lib/date-time'
 
@@ -23,22 +23,28 @@ export default function Reservations() {
   const [vehicles, setVehicles] = useState<DriverVehicle[]>([])
   const [selectedVehicleId, setSelectedVehicleId] = useState('')
   const [quota, setQuota] = useState<ReservationQuotaSnapshot | null>(null)
+  const [registrationRequests, setRegistrationRequests] = useState<VehicleRegistrationRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [cancelId, setCancelId] = useState<string | null>(null)
   const [showQr, setShowQr] = useState(false)
+  const [showVehicleRequest, setShowVehicleRequest] = useState(false)
+  const [requestPlate, setRequestPlate] = useState('')
+  const [requestType, setRequestType] = useState<VehicleType>('car')
+  const [requestingVehicle, setRequestingVehicle] = useState(false)
   const paramVehicle = searchParams.get('vehicleId')
 
   const loadPage = async () => {
     setLoading(true)
     setError(null)
     try {
-      const [vehicleData, reservationData, quotaData] = await Promise.all([getMyVehicles(), getMyReservations(), getReservationQuota()])
+      const [vehicleData, reservationData, quotaData, requestData] = await Promise.all([getMyVehicles(), getMyReservations(), getReservationQuota(), getMyVehicleRegistrationRequests()])
       setVehicles(vehicleData)
       setReservations(reservationData)
       setQuota(quotaData)
+      setRegistrationRequests(requestData)
       setShowQr(false)
     } catch {
       setError('Unable to load reservation data. Retry to continue.')
@@ -95,14 +101,33 @@ export default function Reservations() {
     }
   }
 
+  const handleVehicleRequest = async () => {
+    const plate = requestPlate.trim().toUpperCase().replace(/\s+/g, '')
+    if (!plate) return
+    setRequestingVehicle(true)
+    setActionError(null)
+    try {
+      const request = await createVehicleRegistrationRequest(plate, requestType)
+      setRegistrationRequests((current) => [request, ...current])
+      setRequestPlate('')
+      setShowVehicleRequest(false)
+    } catch (err) {
+      applyApiError(err, 'Unable to submit the vehicle request. Please retry.')
+    } finally {
+      setRequestingVehicle(false)
+    }
+  }
+
   return <div className="min-h-[calc(100dvh-3.5rem)] bg-slate-50/70 dark:bg-slate-950/40">
     <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-5 sm:px-6 sm:py-7">
       <header><div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-primary"><CalendarClock className="size-4" />Driver reservations</div><h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Parking reservation</h1><p className="mt-1 text-sm text-muted-foreground">Reserve a linked vehicle for a smoother arrival at the gate.</p></header>
       {error ? <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200"><span>{error}</span><Button type="button" variant="outline" className="min-h-11 border-rose-300 text-rose-700 dark:border-rose-300/40 dark:text-rose-100" onClick={() => void loadPage()}>Retry</Button></div> : null}
       {loading ? <div className="space-y-4" aria-label="Loading reservations"><div className="h-56 animate-pulse rounded-2xl bg-muted" /><div className="h-32 animate-pulse rounded-2xl bg-muted" /></div> : activeReservation ? <CurrentReservationCard reservation={activeReservation} onShowQr={() => setShowQr(true)} onCancel={() => setCancelId(activeReservation.id)} /> : <ReserveVehicleForm vehicles={vehicles} selectedVehicle={selectedVehicle} selectedVehicleId={selectedVehicleId} creating={creating} quota={quota} actionError={actionError} onSelect={setSelectedVehicleId} onCreate={() => void handleCreate()} />}
+      {!loading && !activeReservation && vehicles.length === 0 ? <VehicleRequestEmptyState requests={registrationRequests} actionError={actionError} onRequestVehicle={() => setShowVehicleRequest(true)} /> : null}
       {!loading ? <ReservationHistoryList reservations={previousReservations} /> : null}
     </div>
     {activeReservation ? <Dialog open={showQr} onOpenChange={setShowQr}><DialogContent className="max-w-md"><DialogHeader><DialogTitle>Check-in QR</DialogTitle><DialogDescription>Show this QR to gate staff for {activeReservation.licensePlate ?? activeReservation.vehicle?.plateNumber ?? 'your linked vehicle'}.</DialogDescription></DialogHeader><ReservationCheckInQr reservation={activeReservation} /></DialogContent></Dialog> : null}
+    <Dialog open={showVehicleRequest} onOpenChange={setShowVehicleRequest}><DialogContent className="max-w-md"><DialogHeader><DialogTitle>Request a vehicle link</DialogTitle><DialogDescription>Submit your plate number for manager approval. You can reserve only after the vehicle is approved and linked.</DialogDescription></DialogHeader><div className="space-y-4"><label className="block text-sm font-medium" htmlFor="request-plate">Plate number<span className="text-destructive"> *</span></label><input id="request-plate" value={requestPlate} onChange={(event) => setRequestPlate(event.target.value.toUpperCase())} placeholder="59A12345" autoComplete="off" className="min-h-11 w-full rounded-lg border bg-background px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring" /><label className="block text-sm font-medium" htmlFor="request-type">Vehicle type</label><select id="request-type" value={requestType} onChange={(event) => setRequestType(event.target.value as VehicleType)} className="min-h-11 w-full rounded-lg border bg-background px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring"><option value="car">Car</option><option value="motorbike">Motorbike</option></select><Button type="button" className="min-h-11 w-full" disabled={requestingVehicle || !requestPlate.trim()} onClick={() => void handleVehicleRequest()}>{requestingVehicle ? 'Submitting request...' : 'Submit vehicle request'}</Button></div></DialogContent></Dialog>
     <AlertDialog open={Boolean(cancelId)} onOpenChange={(open) => { if (!open) setCancelId(null) }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Cancel this reservation?</AlertDialogTitle><AlertDialogDescription>Your reserved spot will be released. You can create another reservation after cancellation.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel className="min-h-11">Keep reservation</AlertDialogCancel><AlertDialogAction className="min-h-11 bg-rose-600 text-white hover:bg-rose-700" onClick={() => void handleCancel()}>Cancel reservation</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
   </div>
 }
@@ -128,6 +153,18 @@ function QuotaNote({ quota }: { quota: ReservationQuotaSnapshot | null }) {
   if (cooldownUntil && cooldownUntil.getTime() > Date.now()) return <p className="text-sm text-amber-700 dark:text-amber-200">You cancelled a reservation. Try again in {formatCountdown(cooldownUntil)}.</p>
   if (quota.remaining <= 0) return <p className="text-sm text-rose-700 dark:text-rose-200">Reservation limit reached. You can try again at {formatClock(quota.windowResetAt)}.</p>
   return <p className="text-sm text-muted-foreground">You can create {quota.remaining} more reservation{quota.remaining === 1 ? '' : 's'} before {formatClock(quota.windowResetAt)}.</p>
+}
+
+function VehicleRequestEmptyState({ requests, actionError, onRequestVehicle }: { requests: VehicleRegistrationRequest[]; actionError: string | null; onRequestVehicle: () => void }) {
+  const latest = requests[0]
+  const statusCopy = latest?.status === 'pending'
+    ? `Request ${latest.plateNumber} is waiting for manager approval.`
+    : latest?.status === 'rejected'
+      ? `Request ${latest.plateNumber} was rejected${latest.rejectReason ? `: ${latest.rejectReason}` : '.'}`
+      : latest?.status === 'expired'
+        ? `Request ${latest.plateNumber} expired. You can submit it again.`
+        : null
+  return <Card className="border-primary/20 bg-primary/5 shadow-none dark:bg-primary/10"><CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex gap-3"><UserPlus className="mt-0.5 size-5 shrink-0 text-primary" /><div><p className="font-semibold">Need to link a vehicle?</p><p className="mt-1 text-sm text-muted-foreground">Submit your plate number and a manager will review the request.</p>{statusCopy ? <p role="status" className="mt-2 text-sm font-medium text-primary">{statusCopy}</p> : null}{actionError ? <p role="alert" className="mt-2 text-sm font-medium text-destructive">{actionError}</p> : null}</div></div><Button type="button" variant="outline" className="min-h-11 shrink-0" onClick={onRequestVehicle}>{latest?.status === 'pending' ? 'Submit another request' : 'Request vehicle link'}</Button></CardContent></Card>
 }
 
 function ReservationHistoryList({ reservations }: { reservations: Reservation[] }) {

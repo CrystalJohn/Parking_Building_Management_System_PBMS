@@ -93,6 +93,15 @@ export interface DriverVehicle {
   } | null
 }
 
+export interface VehicleRegistrationRequest {
+  id: string
+  plateNumber: string
+  vehicleType: VehicleType
+  status: 'pending' | 'approved' | 'rejected' | 'expired'
+  rejectReason: string | null
+  createdAt: string
+}
+
 export interface CreateReservationResponse {
   quota: ReservationQuotaSnapshot
   reservation: {
@@ -198,6 +207,16 @@ export async function getMyReservations(): Promise<Reservation[]> {
 
 export async function getMyVehicles(): Promise<DriverVehicle[]> {
   const { data } = await api.get('/vehicles/my')
+  return data
+}
+
+export async function getMyVehicleRegistrationRequests(): Promise<VehicleRegistrationRequest[]> {
+  const { data } = await api.get<VehicleRegistrationRequest[]>('/vehicle-registrations/my')
+  return data
+}
+
+export async function createVehicleRegistrationRequest(plateNumber: string, vehicleType: VehicleType): Promise<VehicleRegistrationRequest> {
+  const { data } = await api.post<VehicleRegistrationRequest>('/vehicle-registrations', { plateNumber, vehicleType })
   return data
 }
 
