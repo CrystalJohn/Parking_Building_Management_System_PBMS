@@ -266,8 +266,8 @@ Mọi lần chụp OCR đều có thể được retain làm bằng chứng vậ
 
 ### 3.10 Đăng ký xe tự phục vụ (Self-service Vehicle Registration)
 
-- **Mobile App:** Tài xế có thể nộp yêu cầu đăng ký xe (Vehicle Registration Request) trực tiếp mà không cần sự can thiệp thủ công ban đầu của quản lý. App cung cấp lịch sử và trạng thái các yêu cầu (Pending, Approved, Rejected, Expired).
-- **Web Dashboard:** Yêu cầu được chuyển vào hàng đợi (Pending Requests) trên giao diện của Manager. Manager có thể Approve (tự động tạo liên kết xe - chủ sở hữu) hoặc Reject (có kèm lý do bắt buộc).
+- **Mobile App:** Tài xế có thể nộp yêu cầu đăng ký xe (Vehicle Registration Request) trực tiếp kèm theo hình ảnh Cà vẹt xe (Vehicle Registration Certificate) làm bằng chứng. App cung cấp lịch sử và trạng thái các yêu cầu (Pending, Approved, Rejected, Expired).
+- **Web Dashboard:** Yêu cầu được chuyển vào hàng đợi (Pending Requests) trên giao diện của Manager. Manager bắt buộc phải xem ảnh Cà vẹt xe do tài xế tải lên để xác minh tính hợp lệ trước khi quyết định Approve (tự động tạo liên kết xe - chủ sở hữu) hoặc Reject (có kèm lý do bắt buộc). Các file ảnh bằng chứng được lưu trữ an toàn trên dịch vụ đám mây (Supabase Storage).
 - **Automation:** Hệ thống tự động kiểm tra và hết hạn (Expire) các yêu cầu treo quá 24h thông qua CronJob.
 - **Thông báo:** Gửi Push Notification tự động cho tài xế về mọi thay đổi trạng thái.
 
