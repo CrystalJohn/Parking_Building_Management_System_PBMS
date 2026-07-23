@@ -623,6 +623,9 @@ export class SessionsService {
           session: this.mapReservationSessionSummary(session),
           slot: this.mapSessionSlot(session.slot),
         };
+      }, {
+        timeout: 15000,
+        maxWait: 20000,
       });
 
       if (!result.alreadyCheckedIn) {
