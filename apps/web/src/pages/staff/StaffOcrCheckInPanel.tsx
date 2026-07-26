@@ -229,6 +229,24 @@ export function StaffOcrCheckInPanel({
     setSkipDialogOpen(false)
     setTicketDialogOpen(false)
     setReviewDialogOpen(false)
+    // Restart camera
+    async function restartCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' },
+          audio: false,
+        })
+        streamRef.current = stream
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          await videoRef.current.play().catch(() => undefined)
+        }
+        setCameraError(null)
+      } catch (error) {
+        setCameraError(extractErrorMessage(error))
+      }
+    }
+    void restartCamera()
   }, [])
 
   const requestReset = useCallback(() => {
@@ -336,6 +354,10 @@ export function StaffOcrCheckInPanel({
       if (current) URL.revokeObjectURL(current)
       return capturedUrl
     })
+    // Stop camera after capturing
+    streamRef.current?.getTracks().forEach((track) => track.stop())
+    streamRef.current = null
+    if (videoRef.current) videoRef.current.srcObject = null
     setOcrResult(null)
     setStatus('OCR_PROCESSING')
 
