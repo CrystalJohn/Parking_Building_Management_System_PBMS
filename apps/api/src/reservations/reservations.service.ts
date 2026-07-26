@@ -637,6 +637,26 @@ export class ReservationsService {
         : null,
     };
   }
+
+  async findAll() {
+    const reservations = await this.prisma.reservation.findMany({
+      take: 100,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        driver: { select: { id: true, fullName: true, phone: true } },
+        vehicle: { select: { id: true, plateNumber: true, vehicleType: true } },
+        slot: {
+          select: {
+            id: true,
+            code: true,
+            zone: true,
+            floor: { select: { id: true, floorNumber: true, name: true } },
+          },
+        },
+      },
+    });
+    return reservations.map((r) => this.mapReservationDetail(r as any));
+  }
 }
 
 function isSerializationFailure(error: unknown): boolean {

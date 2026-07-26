@@ -890,9 +890,6 @@ export function ReservationOverviewCard({ summary }: { summary: AdminSummary | n
         <MiniMetric label="Cancelled" value={summary?.reservations.cancelledToday ?? 0} tone="muted" />
         <MiniMetric label="Expired" value={summary?.reservations.expiredToday ?? 0} tone="warning" />
       </div>
-      <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 dark:border-white/10 dark:bg-slate-950/50 p-3 text-xs font-semibold leading-5 text-muted-foreground">
-        Active reservation counts are available from backend summary. A reservation detail list is unavailable on this manager endpoint.
-      </div>
     </InfoCard>
   )
 }

@@ -57,6 +57,13 @@ export class ReservationsController {
     return this.reservationsService.findMyReservations(driverId);
   }
 
+  @Get('all')
+  @UseGuards(RolesGuard)
+  @Roles(Role.manager, Role.admin)
+  findAll() {
+    return this.reservationsService.findAll();
+  }
+
   /**
    * GET /reservations/:id
    * P0: Driver only — get a single reservation by ID.
