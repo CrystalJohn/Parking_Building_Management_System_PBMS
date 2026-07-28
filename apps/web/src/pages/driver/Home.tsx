@@ -87,11 +87,40 @@ export default function DriverHome() {
       {error ? <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100">{error} <button type="button" className="ml-2 min-h-11 font-semibold underline underline-offset-4" onClick={() => void loadAvailability(true)}>Retry</button></div> : null}
 
       {loading ? <HomeSkeleton /> : <>
-        {activeReservations.length > 0 ? <section aria-labelledby="active-reservations" className="space-y-3"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">Priority</p><h2 id="active-reservations" className="text-lg font-semibold">Your active reservations</h2></div>{activeReservations.map((reservation) => <ActiveReservationCard key={reservation.id} reservation={reservation} onCancel={handleCancel} />)}</section> : <section className="rounded-2xl border border-primary/20 bg-primary/5 p-5 sm:p-6"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">No active reservation</p><h2 className="mt-1 text-xl font-semibold">Choose a spot when you are ready</h2><p className="mt-1 max-w-xl text-sm text-muted-foreground">Browse live floor availability, then reserve a linked vehicle in one step.</p><Button asChild className="mt-4 min-h-11"><Link to="/driver/reservations">Reserve a spot <ArrowRight className="ml-2 size-4" /></Link></Button></section>}
+        {activeReservations.length > 0 ? (
+          <section aria-labelledby="active-reservations" className="space-y-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">Priority</p>
+              <h2 id="active-reservations" className="text-lg font-semibold">Your active reservations</h2>
+            </div>
+            {activeReservations.map((reservation) => (
+              <ActiveReservationCard key={reservation.id} reservation={reservation} onCancel={handleCancel} />
+            ))}
+          </section>
+        ) : (
+          <section className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/10 via-background to-background p-6 shadow-sm sm:p-8">
+            <div className="relative z-10">
+              <h2 className="text-2xl font-bold tracking-tight">Need a parking spot?</h2>
+              <p className="mt-2 max-w-xl text-muted-foreground">
+                You don't have any active reservations. Browse the live availability below and secure a spot for your vehicle before you arrive.
+              </p>
+              <div className="mt-6 flex flex-wrap items-center gap-3">
+                <Button asChild size="lg" className="rounded-full shadow-md">
+                  <Link to="/driver/reservations">Reserve now <ArrowRight className="ml-2 size-4" /></Link>
+                </Button>
+                <Button asChild variant="outline" size="lg" className="rounded-full bg-background/50 backdrop-blur">
+                  <Link to="/driver/my-qr">View my QR</Link>
+                </Button>
+              </div>
+            </div>
+            {/* Decorative background elements */}
+            <div className="pointer-events-none absolute -right-10 -top-10 z-0 h-40 w-40 rounded-full bg-primary/20 blur-3xl" />
+            <div className="pointer-events-none absolute -bottom-10 right-20 z-0 h-32 w-32 rounded-full bg-blue-500/10 blur-2xl" />
+          </section>
+        )}
 
         <section aria-labelledby="availability" className="space-y-3"><div className="flex items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">Live now</p><h2 id="availability" className="text-lg font-semibold">Availability</h2></div><span className="text-xs text-muted-foreground">Updates every 30 seconds</span></div><div className="grid gap-3 sm:grid-cols-2"><AvailabilitySummary items={availability.filter((item) => item.vehicleType === 'car')} vehicleType="car" rate={pricing.find((item) => item.vehicleType === 'car')?.hourlyRate ?? 20_000} /><AvailabilitySummary items={availability.filter((item) => item.vehicleType === 'motorbike')} vehicleType="motorbike" rate={pricing.find((item) => item.vehicleType === 'motorbike')?.hourlyRate ?? 10_000} /></div><div className="grid gap-3 md:grid-cols-2">{groupedFloors.map(([floorName, items]) => <FloorAvailabilityCard key={floorName} floorName={floorName} items={items} />)}</div>{availability.length === 0 ? <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">No availability data is available right now.</p> : null}</section>
 
-        <section className="rounded-2xl border bg-background p-4 sm:p-5"><details><summary className="cursor-pointer list-none text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Pricing details</summary><div className="mt-4 grid gap-3 sm:grid-cols-2">{(['car', 'motorbike'] as const).map((type) => { const item = pricing.find((entry) => entry.vehicleType === type); return <div key={type} className="rounded-xl bg-muted/30 p-3 text-sm"><p className="font-semibold">{type === 'car' ? 'Car' : 'Motorbike'}</p><p className="mt-1 text-muted-foreground">{new Intl.NumberFormat('vi-VN').format(item?.hourlyRate ?? (type === 'car' ? 20_000 : 10_000))} VND / hour</p><p className="text-xs text-muted-foreground">Overtime: {new Intl.NumberFormat('vi-VN').format(item?.overtimePenalty ?? 50_000)} VND</p></div> })}</div></details></section>
       </>}
     </div>
   </div>
