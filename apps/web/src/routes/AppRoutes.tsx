@@ -20,6 +20,7 @@ const Payments = lazy(() => import('../pages/manager/Payments'))
 const ManagerReservations = lazy(() => import('../pages/manager/Reservations'))
 const Reports = lazy(() => import('../pages/manager/Reports'))
 const Config = lazy(() => import('../pages/manager/Config'))
+const GateLanes = lazy(() => import('../pages/manager/GateLanes'))
 const Vehicles = lazy(() => import('../pages/manager/Vehicles'))
 
 // Admin
@@ -131,6 +132,14 @@ export default function AppRoutes() {
         }
       />
       <Route
+        path="/manager/lanes"
+        element={
+          <RequireAuth allowedRoles={['manager']}>
+            <GateLanes />
+          </RequireAuth>
+        }
+      />
+      <Route
         path="/manager/vehicles"
         element={
           <RequireAuth allowedRoles={['manager']}>
@@ -209,6 +218,14 @@ export default function AppRoutes() {
       />
       <Route
         path="/driver/my-session"
+        element={
+          <RequireAuth allowedRoles={['driver']}>
+            <MySession />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/driver/my-qr"
         element={
           <RequireAuth allowedRoles={['driver']}>
             <MySession />

@@ -1,4 +1,4 @@
-import { CarFront, CircleDot } from 'lucide-react'
+import { Bike, CarFront } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import type { AvailabilityItem, VehicleType } from '@/lib/driver-api'
 
@@ -11,7 +11,7 @@ export function AvailabilitySummary({ items, vehicleType, rate }: { items: Avail
     <Card className="overflow-hidden shadow-sm transition-all hover:shadow-md">
       <CardContent className="flex items-center gap-4 p-5 sm:p-6">
         <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-          {vehicleType === 'car' ? <CarFront className="size-6" /> : <CircleDot className="size-6" />}
+          {vehicleType === 'car' ? <CarFront className="size-6" /> : <Bike className="size-6" />}
         </div>
         <div className="min-w-0 flex-1">
           <h3 className="text-base font-semibold text-foreground">

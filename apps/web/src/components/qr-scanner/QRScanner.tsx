@@ -134,11 +134,6 @@ export function QRScanner({
           },
           {
             fps: 20,
-            qrbox: (vw, vh) => {
-              const min = Math.min(vw, vh)
-              const size = Math.floor(Math.min(Math.max(min * 0.7, 220), 320))
-              return { width: size, height: size }
-            },
             aspectRatio: 1,
             disableFlip: true,
             videoConstraints: {

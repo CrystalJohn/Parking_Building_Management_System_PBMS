@@ -10,6 +10,7 @@ import {
   LogOut,
   Moon,
   QrCode,
+  Radio,
   ScanLine,
   Settings,
   ShieldCheck,
@@ -99,6 +100,7 @@ const NAV_BY_ROLE: Record<AuthUser['role'], NavGroup[]> = {
       label: 'Operations',
       items: [
         { to: '/manager/operations', label: 'Operations', icon: ClipboardList },
+        { to: '/manager/lanes', label: 'Gate Lanes', icon: Radio },
         { to: '/manager/reservations', label: 'Reservations', icon: CalendarClock },
       ],
     },

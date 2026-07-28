@@ -67,8 +67,14 @@ export function Receipt({ data, sessionCode }: ReceiptProps) {
       <div className="border-t border-gray-200 mt-4 pt-4 space-y-1 text-sm">
         <div className="flex justify-between">
           <span className="text-gray-500">Base fee</span>
-          <span>{VND(data.fee.baseFee)}</span>
+          <span>{VND(data.fee.originalBaseFee ?? data.fee.baseFee)}</span>
         </div>
+        {Boolean(data.fee.reservationDiscountAmount && data.fee.reservationDiscountAmount > 0) && (
+          <div className="flex justify-between text-emerald-600 font-medium">
+            <span>Reservation discount (-{data.fee.reservationDiscountPercent ?? 20}%)</span>
+            <span>-{VND(data.fee.reservationDiscountAmount!)}</span>
+          </div>
+        )}
         {data.fee.penalty > 0 && (
           <div className="flex justify-between">
             <span className="text-gray-500">

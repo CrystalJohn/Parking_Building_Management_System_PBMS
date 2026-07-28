@@ -1,4 +1,4 @@
-import { IsInt, IsPositive, IsEnum } from 'class-validator';
+import { IsInt, IsPositive, IsEnum, Min, Max } from 'class-validator';
 import { VehicleType } from '@prisma/client';
 
 export class UpdatePricingDto {
@@ -20,4 +20,9 @@ export class UpdatePricingDto {
   @IsInt()
   @IsPositive()
   overtimeThresholdHours: number;
+
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  reservationDiscountPercent: number;
 }

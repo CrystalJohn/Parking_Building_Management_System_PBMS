@@ -455,6 +455,7 @@ model PricingConfig {
   overtimePenalty        Int         @map("overtime_penalty")
   lostTicketPenalty      Int         @map("lost_ticket_penalty")
   overtimeThresholdHours Int         @default(24) @map("overtime_threshold_hours")
+  reservationDiscountPercent Int     @default(20) @map("reservation_discount_percent")
   monthlyRate            Int         @default(300000) @map("monthly_rate")
   yearlyRate             Int         @default(3000000) @map("yearly_rate")
   updatedAt              DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)

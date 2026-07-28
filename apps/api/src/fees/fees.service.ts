@@ -11,6 +11,9 @@ export interface FeeBreakdown {
   durationHours: number;
   roundedHours: number;
   hourlyRate: number;
+  originalBaseFee: number;
+  reservationDiscountPercent: number;
+  reservationDiscountAmount: number;
   baseFee: number;
   isOvertime: boolean;
   overtimePenalty: number;
@@ -18,6 +21,7 @@ export interface FeeBreakdown {
   lostTicketPenalty: number;
   totalFee: number;
   isSubscriber: boolean;
+  hasReservation: boolean;
 }
 
 @Injectable()
@@ -32,18 +36,21 @@ export class FeesService {
    * - 14.3: Add overtime penalty when duration > threshold (default 24h)
    * - 14.4: Add lost ticket penalty when flagged
    * - 14.5: Read rates from PricingConfig (not hard-coded)
+   * - 14.6: Apply reservation discount (20% off base fee) when session comes from a reservation
    *
    * @param session - The parking session (must have checkInTime)
    * @param isLost - Whether the ticket is lost
    * @param checkOutTime - Override check-out time (defaults to now)
+   * @param hasReservationOverride - Explicit reservation flag override
    */
   async calculate(
     session: Pick<
       ParkingSession,
       'id' | 'vehicleType' | 'checkInTime' | 'checkOutTime' | 'vehicleId'
-    >,
+    > & { reservationId?: string | null },
     isLost: boolean = false,
     checkOutTime?: Date,
+    hasReservationOverride?: boolean,
   ): Promise<FeeBreakdown> {
     // 14.5: Read pricing config from DB
     const pricing = await this.prisma.pricingConfig.findFirst({
@@ -80,8 +87,16 @@ export class FeesService {
       isSubscriber = !!activeSub;
     }
 
+    const hasReservation = hasReservationOverride ?? !!session.reservationId;
+    const discountPercent = pricing.reservationDiscountPercent ?? 20;
+
     // Base fee = rounded hours * hourly rate (waived for subscribers)
-    const baseFee = isSubscriber ? 0 : roundedHours * pricing.hourlyRate;
+    const originalBaseFee = isSubscriber ? 0 : roundedHours * pricing.hourlyRate;
+    const reservationDiscountAmount =
+      !isSubscriber && hasReservation && originalBaseFee > 0
+        ? Math.round(originalBaseFee * (discountPercent / 100))
+        : 0;
+    const baseFee = originalBaseFee - reservationDiscountAmount;
 
     // 14.3: Overtime penalty when duration exceeds threshold
     const isOvertime = durationHours > pricing.overtimeThresholdHours;
@@ -101,6 +116,9 @@ export class FeesService {
       durationHours,
       roundedHours,
       hourlyRate: pricing.hourlyRate,
+      originalBaseFee,
+      reservationDiscountPercent: discountPercent,
+      reservationDiscountAmount,
       baseFee,
       isOvertime,
       overtimePenalty,
@@ -108,6 +126,7 @@ export class FeesService {
       lostTicketPenalty,
       totalFee,
       isSubscriber,
+      hasReservation,
     };
   }
 
@@ -125,6 +144,7 @@ export class FeesService {
         id: true,
         vehicleType: true,
         vehicleId: true,
+        reservationId: true,
         checkInTime: true,
         checkOutTime: true,
         status: true,

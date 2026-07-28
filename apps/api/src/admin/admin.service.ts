@@ -722,6 +722,7 @@ export class AdminService {
         slotCode: session.slot?.code ?? null,
         floorName: session.slot?.floor?.name ?? null,
         isLostTicket: session.isLostTicket,
+        reservationId: session.reservationId ?? null,
         driverName,
         driverPhone,
         payment: session.payment

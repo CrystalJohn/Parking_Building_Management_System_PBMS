@@ -14,6 +14,7 @@ const makePricing = (
     overtimePenalty: number;
     lostTicketPenalty: number;
     overtimeThresholdHours: number;
+    reservationDiscountPercent: number;
   }> = {},
 ) => ({
   id: 1,
@@ -22,6 +23,7 @@ const makePricing = (
   overtimePenalty: 50000,
   lostTicketPenalty: 100000,
   overtimeThresholdHours: 24,
+  reservationDiscountPercent: 20,
   updatedAt: new Date(),
   updatedBy: null,
   ...overrides,
@@ -32,6 +34,7 @@ const makeSession = (
     id: string;
     vehicleType: VehicleType;
     vehicleId: string | null;
+    reservationId: string | null;
     checkInTime: Date;
     checkOutTime: Date | null;
     status: SessionStatus;
@@ -40,6 +43,7 @@ const makeSession = (
   id: 'session-uuid-1',
   vehicleType: VehicleType.car,
   vehicleId: null,
+  reservationId: null,
   checkInTime: new Date('2024-01-01T08:00:00Z'),
   checkOutTime: null,
   status: SessionStatus.active,
@@ -76,8 +80,6 @@ describe('FeesService', () => {
   describe('calculate()', () => {
     it('should round up partial hours (14.2)', async () => {
       prisma.pricingConfig.findFirst.mockResolvedValue(makePricing());
-
-      // 2h 15min parked → should round to 3h
       const checkIn = new Date('2024-01-01T08:00:00Z');
       const checkOut = new Date('2024-01-01T10:15:00Z');
       const session = makeSession({ checkInTime: checkIn, checkOutTime: checkOut });
@@ -244,6 +246,32 @@ describe('FeesService', () => {
       const mockNow = new Date('2024-01-01T10:30:00Z');
       jest.useFakeTimers().setSystemTime(mockNow);
 
+    });
+
+    it('should throw NotFoundException when PricingConfig missing', async () => {
+      prisma.pricingConfig.findFirst.mockResolvedValue(null);
+
+      const session = makeSession();
+
+      await expect(service.calculate(session, false)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  // ─── preview() ───────────────────────────────────────────────────────────
+
+  describe('preview()', () => {
+    it('should look up session and calculate fee (14.6)', async () => {
+      const checkIn = new Date('2024-01-01T08:00:00Z');
+      const sessionData = makeSession({ checkInTime: checkIn });
+      prisma.parkingSession.findUnique.mockResolvedValue(sessionData);
+      prisma.pricingConfig.findFirst.mockResolvedValue(makePricing());
+
+      // Mock Date.now for consistent "now" calculation
+      const mockNow = new Date('2024-01-01T10:30:00Z');
+      jest.useFakeTimers().setSystemTime(mockNow);
+
       const result = await service.preview('session-uuid-1', false);
 
       expect(prisma.parkingSession.findUnique).toHaveBeenCalledWith({
@@ -252,6 +280,7 @@ describe('FeesService', () => {
           id: true,
           vehicleType: true,
           vehicleId: true,
+          reservationId: true,
           checkInTime: true,
           checkOutTime: true,
           status: true,
@@ -259,6 +288,21 @@ describe('FeesService', () => {
       });
       expect(result.roundedHours).toBe(3); // 2.5h → ceil → 3
       expect(result.baseFee).toBe(60000);
+      jest.useRealTimers();
+    });
+
+    it('should throw NotFoundException when session not found', async () => {
+      prisma.parkingSession.findUnique.mockResolvedValue(null);
+
+      await expect(service.preview('non-existent', false)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('should pass isLost flag to calculate', async () => {
+      const checkIn = new Date('2024-01-01T08:00:00Z');
+      const checkOut = new Date('2024-01-01T10:00:00Z');
+      const sessionData = makeSession({ checkInTime: checkIn, checkOutTime: checkOut });
 
       jest.useRealTimers();
     });
@@ -282,6 +326,25 @@ describe('FeesService', () => {
 
       expect(result.isLostTicket).toBe(true);
       expect(result.lostTicketPenalty).toBe(100000);
+    });
+
+    it('should apply 20% discount on base fee when session comes from a reservation', async () => {
+      const checkIn = new Date('2024-01-01T08:00:00Z');
+      const checkOut = new Date('2024-01-01T10:00:00Z'); // 2 hours = 40,000 VND
+      const sessionData = makeSession({
+        checkInTime: checkIn,
+        checkOutTime: checkOut,
+        reservationId: 'res-123',
+      });
+      prisma.pricingConfig.findFirst.mockResolvedValue(makePricing({ reservationDiscountPercent: 20 }));
+
+      const result = await service.calculate(sessionData as any);
+
+      expect(result.hasReservation).toBe(true);
+      expect(result.originalBaseFee).toBe(40000);
+      expect(result.reservationDiscountAmount).toBe(8000); // 20% of 40,000
+      expect(result.baseFee).toBe(32000); // 40,000 - 8,000
+      expect(result.totalFee).toBe(32000);
     });
   });
 });

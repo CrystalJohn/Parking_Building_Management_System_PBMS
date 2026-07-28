@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarClock, CheckCircle2, DollarSign, Eye, RefreshCw } from 'lucide-react'
+import { BookmarkCheck, CalendarClock, CheckCircle2, DollarSign, Eye, RefreshCw } from 'lucide-react'
 import { format } from 'date-fns'
 import { useSearchParams } from 'react-router-dom'
 import {
@@ -226,6 +226,14 @@ export default function AdminSessions() {
                         <div className="mt-1 text-xs text-muted-foreground">
                           {item.slotCode}
                         </div>
+                        {item.reservationId && (
+                          <div className="mt-1.5">
+                            <span className="inline-flex items-center gap-0.5 rounded-sm bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                              <BookmarkCheck className="size-2.5" />
+                              Reservation
+                            </span>
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="px-5 py-3">
                         <div className="font-semibold">{formatPlateForDisplay(item.licensePlate)}</div>
@@ -257,20 +265,25 @@ export default function AdminSessions() {
                       <TableCell className="px-5 py-3 text-right">
                         {item.payment ? (
                           <div className="flex flex-col items-end gap-1">
-                            <span className="font-semibold">{item.payment.amount.toLocaleString()} VND</span>
-                            <div className="flex flex-col items-end gap-1 mt-0.5">
-                              {item.isLostTicket && (
-                                <Badge variant="destructive" className="h-4 px-1 text-[9px] uppercase tracking-wider">
-                                  Lost Ticket
-                                </Badge>
-                              )}
-                              {(item.durationMinutes ?? 0) > 24 * 60 && (
-                                <Badge variant="secondary" className="h-4 px-1 text-[9px] uppercase tracking-wider bg-orange-100 text-orange-700 hover:bg-orange-200 border-orange-200">
-                                  Overtime
-                                </Badge>
-                              )}
+                              <span className="font-semibold">{item.payment.amount.toLocaleString()} VND</span>
+                              <div className="flex flex-col items-end gap-1 mt-0.5">
+                                {item.reservationId && (
+                                  <Badge className="h-4 border-emerald-500/30 bg-emerald-500/10 px-1 text-[9px] uppercase tracking-wider text-emerald-700">
+                                    -20% disc.
+                                  </Badge>
+                                )}
+                                {item.isLostTicket && (
+                                  <Badge variant="destructive" className="h-4 px-1 text-[9px] uppercase tracking-wider">
+                                    Lost Ticket
+                                  </Badge>
+                                )}
+                                {(item.durationMinutes ?? 0) > 24 * 60 && (
+                                  <Badge variant="secondary" className="h-4 px-1 text-[9px] uppercase tracking-wider bg-orange-100 text-orange-700 hover:bg-orange-200 border-orange-200">
+                                    Overtime
+                                  </Badge>
+                                )}
+                              </div>
                             </div>
-                          </div>
                         ) : (
                           <span className="text-muted-foreground">-</span>
                         )}

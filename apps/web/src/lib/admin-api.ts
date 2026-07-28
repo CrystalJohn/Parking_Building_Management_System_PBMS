@@ -362,6 +362,7 @@ export interface AdminSessionHistoryItem {
   slotCode: string | null
   floorName: string | null
   isLostTicket: boolean
+  reservationId: string | null
   driverName: string | null
   driverPhone: string | null
   payment: {

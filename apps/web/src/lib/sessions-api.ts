@@ -215,6 +215,9 @@ export interface CheckOutRequest {
 
 export interface FeeBreakdown {
   durationHours: number
+  originalBaseFee?: number
+  reservationDiscountPercent?: number
+  reservationDiscountAmount?: number
   baseFee: number
   penalty: number
   total: number
@@ -222,6 +225,7 @@ export interface FeeBreakdown {
   isLostTicket: boolean
   checkOutTime?: string
   isSubscriber?: boolean
+  hasReservation?: boolean
 }
 
 export interface CheckoutLookupInput {

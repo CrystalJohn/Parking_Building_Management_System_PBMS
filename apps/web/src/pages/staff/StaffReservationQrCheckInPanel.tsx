@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import { QRScanner } from '../../components/qr-scanner/QRScanner'
 import { formatDateTimeVN } from '../../lib/date-time'
-import { formatPlateForDisplay } from '../../lib/plate-format'
+import { formatPlateForDisplay, formatVehicleType } from '../../lib/plate-format'
 import {
   normalizeReservationPaymentBadge,
   normalizeReservationQrError,
@@ -160,7 +160,7 @@ export function StaffReservationQrCheckInPanel({ onSwitchToOcr, toasts }: Props)
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-5 pt-5">
+      <CardContent className="p-5 sm:p-6 space-y-6">
         {confirmData ? (
           <div className="space-y-5">
             <div className={`rounded-xl border px-4 py-3 ${summaryTone}`}>
@@ -183,7 +183,7 @@ export function StaffReservationQrCheckInPanel({ onSwitchToOcr, toasts }: Props)
             <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
               <Metric label="Plate" value={formatPlateForDisplay(confirmData.session.licensePlate)} mono strong />
               <Metric label="Slot" value={confirmData.slot.code} />
-              <Metric label="Vehicle type" value={confirmData.session.vehicleType} />
+              <Metric label="Vehicle type" value={formatVehicleType(confirmData.session.vehicleType)} />
               <Metric label="Check-in time" value={formatDateTimeVN(confirmData.session.checkInTime)} />
             </div>
 
@@ -216,7 +216,7 @@ export function StaffReservationQrCheckInPanel({ onSwitchToOcr, toasts }: Props)
 
             <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
               <Metric label="Driver name" value={scanData.driverName} />
-              <Metric label="Vehicle type" value={scanData.vehicleType} />
+              <Metric label="Vehicle type" value={formatVehicleType(scanData.vehicleType)} />
               <Metric label="Reserved slot" value={scanData.slotLabel} />
               <Metric label="QR expiry" value={formatDateTimeVN(scanData.expiresAt)} />
             </div>

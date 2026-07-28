@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { ActiveReservationCard } from '@/components/driver/ActiveReservationCard'
 import { AvailabilitySummary } from '@/components/driver/AvailabilitySummary'
-import { FloorAvailabilityCard } from '@/components/driver/FloorAvailabilityCard'
 import { cancelReservation, getAvailability, getMyReservations, getPricing, type AvailabilityItem, type PricingInfo, type Reservation } from '@/lib/driver-api'
 
 const ACTIVE_REFRESH_MS = 30_000
@@ -60,11 +59,6 @@ export default function DriverHome() {
   }, [loadAvailability])
 
   const activeReservations = useMemo(() => reservations.filter((reservation) => reservation.status === 'active'), [reservations])
-  const groupedFloors = useMemo(() => {
-    const grouped = new Map<string, AvailabilityItem[]>()
-    for (const item of availability) grouped.set(item.floorName, [...(grouped.get(item.floorName) ?? []), item])
-    return [...grouped.entries()]
-  }, [availability])
 
   const handleCancel = async (id: string) => {
     if (!window.confirm('Cancel this active reservation? The reserved slot will be released.')) return
@@ -119,7 +113,20 @@ export default function DriverHome() {
           </section>
         )}
 
-        <section aria-labelledby="availability" className="space-y-3"><div className="flex items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">Live now</p><h2 id="availability" className="text-lg font-semibold">Availability</h2></div><span className="text-xs text-muted-foreground">Updates every 30 seconds</span></div><div className="grid gap-3 sm:grid-cols-2"><AvailabilitySummary items={availability.filter((item) => item.vehicleType === 'car')} vehicleType="car" rate={pricing.find((item) => item.vehicleType === 'car')?.hourlyRate ?? 20_000} /><AvailabilitySummary items={availability.filter((item) => item.vehicleType === 'motorbike')} vehicleType="motorbike" rate={pricing.find((item) => item.vehicleType === 'motorbike')?.hourlyRate ?? 10_000} /></div><div className="grid gap-3 md:grid-cols-2">{groupedFloors.map(([floorName, items]) => <FloorAvailabilityCard key={floorName} floorName={floorName} items={items} />)}</div>{availability.length === 0 ? <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">No availability data is available right now.</p> : null}</section>
+        <section aria-labelledby="availability" className="space-y-3">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">Live now</p>
+              <h2 id="availability" className="text-lg font-semibold">Availability</h2>
+            </div>
+            <span className="text-xs text-muted-foreground">Updates every 30 seconds</span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <AvailabilitySummary items={availability.filter((item) => item.vehicleType === 'car')} vehicleType="car" rate={pricing.find((item) => item.vehicleType === 'car')?.hourlyRate ?? 20_000} />
+            <AvailabilitySummary items={availability.filter((item) => item.vehicleType === 'motorbike')} vehicleType="motorbike" rate={pricing.find((item) => item.vehicleType === 'motorbike')?.hourlyRate ?? 10_000} />
+          </div>
+          {availability.length === 0 ? <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">No availability data is available right now.</p> : null}
+        </section>
 
       </>}
     </div>

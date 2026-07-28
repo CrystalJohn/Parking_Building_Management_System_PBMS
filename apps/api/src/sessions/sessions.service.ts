@@ -868,6 +868,9 @@ export class SessionsService {
   private mapBreakdownToCheckoutFee(breakdown: FeeBreakdown) {
     return {
       durationHours: breakdown.roundedHours,
+      originalBaseFee: breakdown.originalBaseFee,
+      reservationDiscountPercent: breakdown.reservationDiscountPercent,
+      reservationDiscountAmount: breakdown.reservationDiscountAmount,
       baseFee: breakdown.baseFee,
       penalty: breakdown.overtimePenalty + breakdown.lostTicketPenalty,
       total: breakdown.totalFee,
@@ -875,6 +878,7 @@ export class SessionsService {
       isLostTicket: breakdown.isLostTicket,
       checkOutTime: breakdown.checkOutTime,
       isSubscriber: breakdown.isSubscriber,
+      hasReservation: breakdown.hasReservation,
     };
   }
 
@@ -1388,12 +1392,16 @@ export class SessionsService {
         breakdown: {
           hourlyRate: breakdown.hourlyRate,
           roundedHours: breakdown.roundedHours,
+          originalBaseFee: breakdown.originalBaseFee,
+          reservationDiscountPercent: breakdown.reservationDiscountPercent,
+          reservationDiscountAmount: breakdown.reservationDiscountAmount,
           baseFee: breakdown.baseFee,
           isOvertime: breakdown.isOvertime,
           overtimePenalty: breakdown.overtimePenalty,
           isLostTicket: isLost,
           lostTicketPenalty: breakdown.lostTicketPenalty,
           totalFee: breakdown.totalFee,
+          hasReservation: breakdown.hasReservation,
         },
         payment: {
           id: result.payment.id,

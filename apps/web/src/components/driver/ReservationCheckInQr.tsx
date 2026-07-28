@@ -1,75 +1,179 @@
 import { useCallback, useEffect, useState } from 'react'
 import QRCode from 'qrcode'
-import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react'
+import {
+  AlertTriangle,
+  Building2,
+  Download,
+  Loader2,
+  RefreshCw,
+  Shield,
+  ShieldCheck,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { getReservationCheckInQr, type Reservation, type ReservationCheckInQr } from '@/lib/driver-api'
+import { formatPlateForDisplay } from '@/lib/plate-format'
+import { formatDateTimeVN } from '@/lib/date-time'
 
-type QrState = { data: ReservationCheckInQr; image: string } | null
+type QrState = { data: ReservationCheckInQr; pngDataUrl: string } | null
 
-export function ReservationCheckInQr({ reservation }: { reservation: Reservation }) {
+export function ReservationCheckInQr({
+  reservation,
+  onClose,
+}: {
+  reservation: Reservation
+  onClose?: () => void
+}) {
   const [qr, setQr] = useState<QrState>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [now, setNow] = useState(Date.now())
 
-  const refresh = useCallback(async () => {
+  const fetchQr = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       const data = await getReservationCheckInQr(reservation.id)
-      const image = await QRCode.toDataURL(data.token, {
-        width: 240,
-        margin: 2,
+      const pngDataUrl = await QRCode.toDataURL(data.token, {
+        width: 320,
+        margin: 4,
         errorCorrectionLevel: 'M',
-        color: { dark: '#102a43', light: '#ffffff' },
+        color: { dark: '#000000', light: '#ffffff' },
       })
-      setQr({ data, image })
+      setQr({ data, pngDataUrl })
     } catch {
-      setError('Unable to refresh the check-in QR. Retry before showing it at the gate.')
-      setQr((current) => {
-        if (current && new Date(current.data.expiresAt).getTime() > Date.now()) return current
-        return null
-      })
+      setError('Unable to load check-in pass. Please retry.')
     } finally {
       setLoading(false)
     }
   }, [reservation.id])
 
   useEffect(() => {
-    void refresh()
-  }, [refresh])
+    void fetchQr()
+  }, [fetchQr])
 
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(timer)
-  }, [])
+  const rawPlate = reservation.licensePlate ?? reservation.vehicle?.plateNumber ?? ''
+  const formattedPlate = formatPlateForDisplay(rawPlate)
+  const reservationId = `RSV-2026-${reservation.id.slice(-5).toUpperCase()}`
 
-  useEffect(() => {
-    if (!qr) return
-    const delay = Math.max(1000, qr.data.refreshAfterMs)
-    const timer = window.setTimeout(() => void refresh(), delay)
-    return () => window.clearTimeout(timer)
-  }, [qr, refresh])
-
-  const expiresAt = qr ? new Date(qr.data.expiresAt).getTime() : 0
-  const remaining = Math.max(0, Math.ceil((expiresAt - now) / 1000))
-  const isExpired = Boolean(qr) && remaining <= 0
+  const handleDownload = () => {
+    if (!qr?.pngDataUrl) return
+    const a = document.createElement('a')
+    a.href = qr.pngDataUrl
+    a.download = `Check-in-Pass-${rawPlate}.png`
+    a.click()
+  }
 
   return (
-    <div className="rounded-2xl border border-sky-200 bg-sky-50/70 p-4 dark:border-sky-400/20 dark:bg-sky-500/10">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-sky-950 dark:text-sky-100">Check-in QR</p>
-          <p className="text-xs text-sky-800/75 dark:text-sky-100/70">Show this code to gate staff</p>
+    <div className="w-full rounded-2xl bg-[#0B1220] p-6 font-sans text-slate-100 shadow-2xl">
+      {/* Header */}
+      <div className="border-b border-white/10 pb-4">
+        <div className="flex items-center gap-2">
+          <span className="flex size-7 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400">
+            <Shield className="size-4" />
+          </span>
+          <h2 className="text-xl font-bold tracking-tight text-white">Check-in Pass</h2>
         </div>
-        {qr && !isExpired ? <span className="font-mono text-xs font-semibold text-sky-800 dark:text-sky-100">Refreshes in {remaining}s</span> : null}
+        <p className="mt-1.5 text-xs text-slate-400 leading-relaxed">
+          Present this QR code at the entrance gate if license plate recognition is unavailable.
+        </p>
       </div>
-      <div className="flex min-h-[260px] items-center justify-center rounded-xl bg-white p-3">
-        {loading && !qr ? <Loader2 className="size-7 animate-spin text-sky-600" aria-label="Loading check-in QR" /> : null}
-        {qr && !isExpired ? <img src={qr.image} alt={`Check-in QR for ${qr.data.vehicle.plateNumber}`} className="size-56 max-w-full" /> : null}
-        {!loading && (!qr || isExpired) ? <div className="space-y-3 text-center"><AlertTriangle className="mx-auto size-7 text-amber-600" /><p className="text-sm font-medium text-slate-700">QR expired or unavailable</p><Button type="button" variant="outline" className="min-h-11" onClick={() => void refresh()}><RefreshCw className="mr-2 size-4" />Retry</Button></div> : null}
+
+      {/* Vehicle Information Card (Apple Wallet / Tesla Style) */}
+      <div className="mt-5 rounded-xl border border-white/10 bg-[#111827] p-4 shadow-lg">
+        <div className="flex items-center justify-between border-b border-white/10 pb-3">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Vehicle Plate</span>
+            <p className="font-mono text-xl font-extrabold tracking-wider text-white">{formattedPlate}</p>
+          </div>
+          <Badge className="border-emerald-500/30 bg-emerald-500/15 px-2.5 py-0.5 text-xs font-semibold text-emerald-400">
+            Reserved
+          </Badge>
+        </div>
+
+        <div className="mt-3 grid grid-cols-3 gap-2 text-left">
+          <div>
+            <span className="block text-[10px] font-medium uppercase tracking-wider text-slate-400">Reservation ID</span>
+            <span className="mt-0.5 block font-mono text-xs font-semibold text-slate-200">{reservationId}</span>
+          </div>
+          <div>
+            <span className="block text-[10px] font-medium uppercase tracking-wider text-slate-400">Building</span>
+            <span className="mt-0.5 flex items-center gap-1 font-mono text-xs font-semibold text-slate-200">
+              <Building2 className="size-3 text-slate-400" />
+              PBMS Tower
+            </span>
+          </div>
+          <div className="text-right">
+            <span className="block text-[10px] font-medium uppercase tracking-wider text-slate-400">Reservation Time</span>
+            <span className="mt-0.5 block text-xs font-semibold text-slate-200">
+              {formatDateTimeVN(reservation.createdAt)}
+            </span>
+          </div>
+        </div>
       </div>
-      {error ? <p role="alert" className="mt-3 text-xs font-medium text-rose-700 dark:text-rose-200">{error}</p> : null}
+
+      {/* QR Section */}
+      <div className="mt-5 flex flex-col items-center justify-center">
+        {/* Large White QR Background Card with 24px padding & rounded 16px */}
+        <div className="relative flex min-h-[270px] w-full max-w-[270px] flex-col items-center justify-center rounded-2xl border border-slate-200/80 bg-white p-6 shadow-2xl">
+          {loading && !qr ? (
+            <Loader2 className="size-10 animate-spin text-[#0B1220]" aria-label="Loading check-in pass" />
+          ) : null}
+
+          {qr ? (
+            <div className="relative flex items-center justify-center">
+              <img
+                src={qr.pngDataUrl}
+                alt={`Check-in QR for ${formattedPlate}`}
+                className="size-56 max-w-full object-contain"
+              />
+            </div>
+          ) : null}
+
+          {!loading && !qr ? (
+            <div className="space-y-3 text-center">
+              <AlertTriangle className="mx-auto size-8 text-amber-500" />
+              <p className="text-sm font-medium text-slate-800">Pass unavailable</p>
+              <Button type="button" variant="outline" className="min-h-10 border-slate-300 text-xs text-slate-800" onClick={() => void fetchQr()}>
+                <RefreshCw className="mr-1.5 size-3.5" />
+                Retry
+              </Button>
+            </div>
+          ) : null}
+        </div>
+
+        {/* Security Label */}
+        <p className="mt-3.5 flex items-center gap-1.5 text-xs font-medium text-slate-400">
+          <ShieldCheck className="size-3.5 text-emerald-400" />
+          Secure QR • Valid for Gate Entrance
+        </p>
+      </div>
+
+      {error ? (
+        <p role="alert" className="mt-3 text-center text-xs font-medium text-rose-400">
+          {error}
+        </p>
+      ) : null}
+
+      {/* Footer Actions */}
+      <div className="mt-6 flex items-center gap-3 border-t border-white/10 pt-4">
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-11 flex-1 border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 hover:text-white"
+          onClick={handleDownload}
+          disabled={!qr}
+        >
+          <Download className="mr-2 size-4" />
+          Download Pass
+        </Button>
+        <Button
+          type="button"
+          className="min-h-11 flex-1 bg-emerald-600 font-semibold text-white hover:bg-emerald-500"
+          onClick={onClose}
+        >
+          Close
+        </Button>
+      </div>
     </div>
   )
 }

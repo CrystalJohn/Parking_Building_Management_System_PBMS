@@ -304,11 +304,9 @@ export class ReservationsService {
       driverId,
     };
     const issuedAt = new Date();
-    const expiresAt = new Date(
-      issuedAt.getTime() + RESERVATION_CHECKIN_TOKEN_TTL_SECONDS * 1000,
-    );
+    const expiresAt = new Date(issuedAt.getTime() + 300 * 1000);
     const token = await this.jwtService.signAsync(tokenPayload, {
-      expiresIn: `${RESERVATION_CHECKIN_TOKEN_TTL_SECONDS}s`,
+      expiresIn: '300s',
     });
 
     return {
@@ -316,7 +314,7 @@ export class ReservationsService {
       token,
       issuedAt,
       expiresAt,
-      refreshAfterMs: RESERVATION_CHECKIN_TOKEN_REFRESH_MS,
+      refreshAfterMs: 270_000,
       vehicle: {
         id: reservation.vehicle.id,
         plateNumber: reservation.vehicle.plateNumber,

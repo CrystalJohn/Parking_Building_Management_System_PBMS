@@ -11,6 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@base-ui/react": "^1.6.0",
     "@fontsource-variable/geist": "^5.2.9",
     "@gsap/react": "^2.1.2",
     "@radix-ui/themes": "^3.1.0",
@@ -22,6 +23,7 @@
     "gsap": "^3.15.0",
     "html5-qrcode": "^2.3.8",
     "lucide-react": "^1.17.0",
+    "motion": "^12.43.0",
     "qrcode": "^1.5.4",
     "radix-ui": "^1.6.0",
     "react": "^19.1.0",

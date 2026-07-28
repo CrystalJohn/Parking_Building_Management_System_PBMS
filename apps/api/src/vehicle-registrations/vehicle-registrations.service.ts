@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient } from '@supabase/supabase-js';
+import ws from 'ws';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateVehicleRegistrationDto, ReviewVehicleRegistrationDto } from './dto';
 import { VehicleRegistrationStatus, VehicleUserRole, NotificationType } from '@prisma/client';
@@ -30,7 +31,10 @@ export class VehicleRegistrationsService {
     if (!supabaseUrl || !supabaseKey) {
       throw new Error('Supabase credentials are not configured');
     }
-    return createClient(supabaseUrl, supabaseKey);
+    return createClient(supabaseUrl, supabaseKey, {
+      auth: { persistSession: false },
+      realtime: { transport: ws as any },
+    });
   }
 
   async createRequest(

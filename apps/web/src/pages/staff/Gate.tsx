@@ -49,7 +49,7 @@ import { RequestManagerReviewDialog } from '../../components/operation-issues/Re
 import { QRScanner } from '../../components/qr-scanner/QRScanner'
 import { RecentSessionsCard } from '../../components/ui/RecentSessionsCard'
 import { formatDateTimeVN } from '../../lib/date-time'
-import { formatPlateForDisplay, normalizePlateForApi } from '../../lib/plate-format'
+import { formatPlateForDisplay, formatVehicleType, normalizePlateForApi } from '../../lib/plate-format'
 import { StaffOcrCheckInPanel } from './StaffOcrCheckInPanel'
 import { StaffReservationQrCheckInPanel } from './StaffReservationQrCheckInPanel'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -231,34 +231,34 @@ export default function Gate() {
   }, [])
 
   const lane = laneAssignment?.gateLane
+  const vehicleLabel = lane ? formatVehicleType(lane.vehicleType) : ''
   const laneLabel = lane
-    ? `${lane.name} · ${lane.vehicleType === 'car' ? 'Car' : 'Motorbike'}`
+    ? lane.name.toLowerCase().includes(lane.vehicleType.toLowerCase()) || lane.name.toLowerCase().includes('motobike')
+      ? lane.name.replace(/\b(car|motorbike|motobike)\b/gi, vehicleLabel)
+      : `${lane.name} · ${vehicleLabel}`
     : null
 
   return (
-    <div className="min-h-[calc(100svh-5rem)] bg-muted/40">
-      <div className="mx-auto max-w-7xl px-4 pb-4 pt-4 sm:px-6 print:hidden">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-              Gate Operations
-            </h1>
-            <Badge variant="outline" className="bg-background">
-              Staff console
-            </Badge>
-            {laneLabel ? <Badge variant="secondary">{laneLabel}</Badge> : null}
-          </div>
+    <main className="space-y-6">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            Gate Operations
+          </h1>
+          <Badge variant="outline" className="bg-background">
+            Staff console
+          </Badge>
+          {laneLabel ? <Badge variant="secondary">{laneLabel}</Badge> : null}
         </div>
-      </div>
+      </header>
 
-      <div className="mx-auto max-w-7xl px-4 pb-4 sm:px-6 print:max-w-none print:p-0">
-        <div
-          id={`gate-panel-${gateRoute.renderLegacyCheckout ? 'check-out' : 'gate-operations'}`}
-          role="tabpanel"
-          className={cn(
-            "print:rounded-none print:border-0 print:p-0 print:shadow-none",
-          )}
-        >
+      <div
+        id={`gate-panel-${gateRoute.renderLegacyCheckout ? 'check-out' : 'gate-operations'}`}
+        role="tabpanel"
+        className={cn(
+          "print:rounded-none print:border-0 print:p-0 print:shadow-none",
+        )}
+      >
           {laneLoading ? (
             <Card className="flex min-h-48 items-center justify-center">
               <Loader2 className="size-6 animate-spin text-muted-foreground" />
@@ -278,8 +278,7 @@ export default function Gate() {
             <GateOperationsPanel toasts={toasts} laneVehicleType={lane.vehicleType} />
           )}
         </div>
-      </div>
-    </div>
+      </main>
   )
 }
 

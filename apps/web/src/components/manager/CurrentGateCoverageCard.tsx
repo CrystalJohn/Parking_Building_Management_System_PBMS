@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { AlertTriangle, CheckCircle2, CircleDot, Settings2 } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, CircleDot, Radio } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -30,7 +30,7 @@ export function CurrentGateCoverageCard({ coverage, error }: { coverage: Current
           </CardDescription>
         </div>
         <Button asChild variant="outline" size="sm">
-          <Link to="/manager/config"><Settings2 className="mr-1.5 size-4" />Gate lanes</Link>
+          <Link to="/manager/lanes"><Radio className="mr-1.5 size-4" />Gate lanes</Link>
         </Button>
       </CardHeader>
       <CardContent>

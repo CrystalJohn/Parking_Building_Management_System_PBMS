@@ -45,6 +45,7 @@ export class ConfigMgmtService {
         overtimePenalty: dto.overtimePenalty,
         lostTicketPenalty: dto.lostTicketPenalty,
         overtimeThresholdHours: dto.overtimeThresholdHours,
+        reservationDiscountPercent: dto.reservationDiscountPercent,
         updatedBy: userId,
       },
     });

@@ -32,6 +32,7 @@ const PAGE_LABELS: Record<string, string> = {
   home: 'Availability',
   history: 'History',
   'my-session': 'My QR',
+  'my-qr': 'My QR',
   profile: 'Profile',
 }
 
