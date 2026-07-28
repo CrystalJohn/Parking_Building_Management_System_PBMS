@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Bike, Car, Clock3, RefreshCw, WalletCards } from 'lucide-react'
 import { getRecentSessions, type RecentSession, type SessionStatus } from '../../lib/sessions-api'
 import { formatDateTimeVN } from '../../lib/date-time'
-import { formatPlateForDisplay } from '../../lib/plate-format'
+import { formatPlateForDisplay, formatVehicleType } from '@/lib/plate-format'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -179,9 +179,9 @@ export function RecentSessionsCard({ type, refreshTrigger = 0, limit }: Props) {
                           {session.slot.code}
                         </span>
                         <span>/</span>
-                        <span className="inline-flex items-center gap-1 capitalize">
+                        <span className="inline-flex items-center gap-1">
                           <VehicleIcon className="size-3.5" />
-                          {session.vehicleType}
+                          {formatVehicleType(session.vehicleType)}
                         </span>
                         {isCheckoutHistory ? (
                           <>

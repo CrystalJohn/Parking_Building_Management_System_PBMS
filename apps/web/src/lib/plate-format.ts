@@ -24,3 +24,13 @@ export function formatPlateForDisplay(value: string | null | undefined): string 
 
   return normalized
 }
+
+export function formatVehicleType(value: string | null | undefined): string {
+  if (!value) return ''
+  const str = value.trim()
+  if (!str) return ''
+  const lower = str.toLowerCase()
+  if (lower === 'car') return 'Car'
+  if (lower === 'motorbike' || lower === 'motobike' || lower === 'bike') return 'Motorbike'
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase()
+}

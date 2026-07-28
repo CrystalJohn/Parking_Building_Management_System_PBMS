@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useMemo } from 'react'
 import {
   getAdminSummary,
   type AdminSummary,
@@ -8,27 +8,59 @@ import {
   type ManagerReservation,
 } from '../../lib/manager-reservations-api'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { formatDateTimeVN } from '../../lib/date-time'
+import { formatPlateForDisplay, formatVehicleType } from '../../lib/plate-format'
 import { Button } from '@/components/ui/button'
-import { RefreshCw, Loader2, CalendarClock, CheckCircle2, XCircle, Clock } from 'lucide-react'
+import { RefreshCw, Loader2, CalendarClock, CheckCircle2, XCircle, Clock, Search, Filter } from 'lucide-react'
 
 const POLL_INTERVAL_MS = 30000
 
-function getStatusBadgeVariant(status: string) {
-  switch (status) {
+
+
+function StatusBadge({ status }: { status: string }) {
+  let theme = ''
+  let icon = null
+  let label = status
+  let pulse = false
+
+  switch (status.toLowerCase()) {
     case 'active':
-      return 'default'
+      theme = 'bg-cyan-50 text-cyan-700 ring-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-400 dark:ring-cyan-500/20'
+      pulse = true
+      break
     case 'fulfilled':
-      return 'outline'
+      theme = 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-emerald-500/20'
+      icon = <CheckCircle2 className="h-3.5 w-3.5" />
+      break
     case 'expired':
-      return 'destructive'
+      theme = 'bg-rose-50 text-rose-700 ring-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:ring-rose-500/20'
+      icon = <Clock className="h-3.5 w-3.5" />
+      break
     case 'cancelled':
-      return 'secondary'
+      theme = 'bg-slate-50 text-slate-700 ring-slate-200 dark:bg-slate-500/10 dark:text-slate-400 dark:ring-slate-500/20'
+      icon = <XCircle className="h-3.5 w-3.5" />
+      break
     default:
-      return 'outline'
+      theme = 'bg-slate-50 text-slate-700 ring-slate-200 dark:bg-slate-500/10 dark:text-slate-400 dark:ring-slate-500/20'
   }
+
+  return (
+    <Badge
+      variant="outline"
+      className={`inline-flex items-center justify-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset border-transparent hover:${theme.split(' ')[0]} ${theme} capitalize min-w-[80px]`}
+    >
+      {pulse && (
+        <span className="relative flex h-2 w-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+        </span>
+      )}
+      {icon}
+      {label}
+    </Badge>
+  )
 }
 
 export default function Reservations() {
@@ -37,6 +69,9 @@ export default function Reservations() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  
+  // Filter State
+  const [filter, setFilter] = useState<'all' | 'active' | 'fulfilled' | 'expired' | 'cancelled'>('all')
 
   const loadReservations = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
@@ -62,31 +97,44 @@ export default function Reservations() {
     return () => window.clearInterval(interval)
   }, [loadReservations])
 
+  // Apply Filter
+  const filteredReservations = useMemo(() => {
+    if (filter === 'all') return reservations
+    return reservations.filter(r => r.status.toLowerCase() === filter)
+  }, [reservations, filter])
+
   return (
     <>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
               Reservations
             </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Daily reservation statistics and system-wide reservation management.
+            <p className="mt-1 text-sm text-muted-foreground font-medium">
+              Daily reservation statistics and system-wide booking management.
             </p>
           </div>
           <Button
             variant="outline"
             size="sm"
+            className="rounded-full px-4 shadow-sm"
             onClick={() => void loadReservations(true)}
             disabled={loading || refreshing}
           >
-            {refreshing ? <Loader2 className="mr-2 size-4 animate-spin" /> : <RefreshCw className="mr-2 size-4" />}
-            Refresh
+            {refreshing ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin text-cyan-600" />
+            ) : (
+              <RefreshCw className="mr-2 h-4 w-4 text-cyan-600" />
+            )}
+            Refresh Data
           </Button>
         </div>
-        
+
         {error ? (
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-700 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-100">
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-700 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-100 flex items-center gap-2">
+            <XCircle className="h-5 w-5" />
             {error}
           </div>
         ) : null}
@@ -170,57 +218,124 @@ export default function Reservations() {
           </Card>
         </section>
 
-        {/* Detailed Reservations Table */}
+        {/* Filter Bar & Data Table */}
         {!loading ? (
-          <div className="rounded-xl border bg-card">
+          <div className="rounded-2xl border border-slate-200 bg-white/60 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/60 flex flex-col">
+            
+            {/* Filter Segment */}
+            <div className="flex flex-col sm:flex-row sm:items-center p-4 border-b border-slate-100 dark:border-white/5 gap-4">
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-semibold text-foreground">Filter by Status:</span>
+              </div>
+              
+              <div className="flex flex-wrap items-center gap-1 bg-slate-100/80 p-1 rounded-xl dark:bg-slate-900 ring-1 ring-slate-200 dark:ring-white/10">
+                {['all', 'active', 'fulfilled', 'expired', 'cancelled'].map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setFilter(f as typeof filter)}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all duration-200 ${
+                      filter === f
+                        ? 'bg-white shadow-sm text-foreground ring-1 ring-slate-200/50 dark:bg-slate-800 dark:ring-white/10 dark:text-white'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-slate-200/50 dark:hover:bg-slate-800/50'
+                    }`}
+                  >
+                    {f.charAt(0).toUpperCase() + f.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Table */}
             <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="px-4 py-3">Customer</TableHead>
-                  <TableHead className="px-4 py-3">Vehicle</TableHead>
-                  <TableHead className="px-4 py-3">Slot Assignment</TableHead>
-                  <TableHead className="px-4 py-3">Timing</TableHead>
-                  <TableHead className="px-4 py-3 text-right">Status</TableHead>
+              <TableHeader className="bg-slate-50/50 dark:bg-slate-900/50">
+                <TableRow className="hover:bg-transparent border-b-slate-100 dark:border-b-white/5">
+                  <TableHead className="px-5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">Customer</TableHead>
+                  <TableHead className="px-5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">Vehicle</TableHead>
+                  <TableHead className="px-5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">Slot Assignment</TableHead>
+                  <TableHead className="px-5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">Timing</TableHead>
+                  <TableHead className="px-5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-foreground text-center">Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {reservations.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
-                      No reservations found in the system.
+                {filteredReservations.length === 0 ? (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={5} className="py-16 text-center">
+                      <div className="flex flex-col items-center justify-center text-muted-foreground">
+                        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-900 mb-4 ring-1 ring-slate-200 dark:ring-white/10">
+                          <Search className="h-6 w-6 text-slate-400" />
+                        </div>
+                        <p className="text-base font-semibold text-foreground">No reservations found</p>
+                        <p className="text-sm mt-1">There are no reservations matching the current filter criteria.</p>
+                        {filter !== 'all' && (
+                          <Button variant="outline" size="sm" className="mt-4 rounded-full" onClick={() => setFilter('all')}>
+                            Clear filters
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ) : (
-                  reservations.map((reservation) => (
-                    <TableRow key={reservation.id}>
-                      <TableCell className="px-4 py-3">
-                        <div className="font-medium">{reservation.driver.fullName || 'Unnamed'}</div>
-                        <div className="text-xs text-muted-foreground">{reservation.driver.phone || 'No phone'}</div>
+                  filteredReservations.map((reservation) => (
+                    <TableRow 
+                      key={reservation.id} 
+                      className="group hover:bg-slate-50/80 dark:hover:bg-slate-900/80 transition-colors duration-200 border-b-slate-100 dark:border-b-white/5"
+                    >
+                      <TableCell className="px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs text-slate-500 font-bold dark:bg-slate-800 dark:text-slate-400 ring-1 ring-slate-200 dark:ring-white/10 group-hover:bg-white dark:group-hover:bg-slate-700 transition-colors">
+                            {reservation.driver.fullName?.charAt(0).toUpperCase() || 'U'}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-foreground leading-none mb-1">
+                              {reservation.driver.fullName || 'Unnamed'}
+                            </div>
+                            <div className="text-xs font-medium text-muted-foreground">
+                              {reservation.driver.phone || 'No phone'}
+                            </div>
+                          </div>
+                        </div>
                       </TableCell>
-                      <TableCell className="px-4 py-3">
-                        <div className="font-medium uppercase">{reservation.licensePlate || 'N/A'}</div>
-                        <div className="text-xs text-muted-foreground capitalize">{reservation.vehicleType}</div>
+
+                      <TableCell className="px-5 py-4">
+                        <div>
+                          <div className="font-semibold text-foreground leading-none mb-1 uppercase tracking-tight">
+                            {formatPlateForDisplay(reservation.licensePlate) || 'N/A'}
+                          </div>
+                          <div className="text-xs font-semibold text-muted-foreground">
+                            {formatVehicleType(reservation.vehicleType)}
+                          </div>
+                        </div>
                       </TableCell>
-                      <TableCell className="px-4 py-3">
+
+                      <TableCell className="px-5 py-4">
                         {reservation.slot ? (
-                          <>
-                            <div className="font-medium">Slot {reservation.slot.code}</div>
-                            <div className="text-xs text-muted-foreground">
+                          <div>
+                            <div className="font-semibold text-foreground leading-none mb-1">
+                              Slot {reservation.slot.code}
+                            </div>
+                            <div className="text-xs font-medium text-muted-foreground">
                               {reservation.slot.floor ? `Floor ${reservation.slot.floor.floorNumber} (${reservation.slot.floor.name})` : 'Unknown Floor'} · Zone {reservation.slot.zone}
                             </div>
-                          </>
+                          </div>
                         ) : (
-                          <span className="text-muted-foreground">Unassigned</span>
+                          <span className="text-sm font-medium text-muted-foreground">
+                            Unassigned
+                          </span>
                         )}
                       </TableCell>
-                      <TableCell className="px-4 py-3">
-                        <div className="text-sm">{formatDateTimeVN(reservation.createdAt)}</div>
-                        <div className="text-xs text-muted-foreground">Expires: {formatDateTimeVN(reservation.expiresAt)}</div>
+
+                      <TableCell className="px-5 py-4">
+                        <div className="text-sm font-medium text-foreground">
+                          {formatDateTimeVN(reservation.createdAt)}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          Expires: {formatDateTimeVN(reservation.expiresAt)}
+                        </div>
                       </TableCell>
-                      <TableCell className="px-4 py-3 text-right">
-                        <Badge variant={getStatusBadgeVariant(reservation.status)} className="capitalize">
-                          {reservation.status}
-                        </Badge>
+
+                      <TableCell className="px-5 py-4 text-center">
+                        <StatusBadge status={reservation.status} />
                       </TableCell>
                     </TableRow>
                   ))
@@ -237,3 +352,4 @@ export default function Reservations() {
     </>
   )
 }
+

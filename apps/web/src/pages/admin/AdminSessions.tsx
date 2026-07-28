@@ -9,6 +9,7 @@ import {
   type AdminSessionEvidence,
 } from '../../lib/admin-api'
 import { formatDateTimeVN } from '../../lib/date-time'
+import { formatPlateForDisplay, formatVehicleType } from '../../lib/plate-format'
 import { EvidenceComparisonPanel } from '@/components/evidence/EvidenceComparisonPanel'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -31,7 +32,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { formatPlateForDisplay } from '@/lib/plate-format'
 
 function formatDuration(minutes: number | null | undefined): string {
   if (minutes == null) return '-'
@@ -230,7 +230,7 @@ export default function AdminSessions() {
                       <TableCell className="px-5 py-3">
                         <div className="font-semibold">{formatPlateForDisplay(item.licensePlate)}</div>
                         <div className="mt-1 text-xs text-muted-foreground">
-                          {item.vehicleType}
+                          {formatVehicleType(item.vehicleType)}
                         </div>
                       </TableCell>
                       <TableCell className="px-5 py-3">

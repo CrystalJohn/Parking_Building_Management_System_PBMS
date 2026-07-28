@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import type { CurrentGateCoverage, GateCoverageStatus } from '@/lib/gate-lanes-api'
+import { formatVehicleType } from '@/lib/plate-format'
 
 const statusText: Record<GateCoverageStatus, string> = {
   fixed_covered: 'Covered',
@@ -41,11 +42,12 @@ export function CurrentGateCoverageCard({ coverage, error }: { coverage: Current
               const lanes = coverage.lanes.filter((item) => item.lane.vehicleType === vehicleType)
               return (
                 <div key={vehicleType} className="space-y-2 rounded-xl border bg-muted/20 p-3">
-                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{vehicleType === 'car' ? 'Car' : 'Motorbike'}</p>
+                  <p className="text-xs font-bold tracking-wider text-muted-foreground">{formatVehicleType(vehicleType)}</p>
                   {lanes.length === 0 ? <p className="text-sm text-muted-foreground">No lanes</p> : lanes.map((item) => {
                     const warning = item.status !== 'fixed_covered'
+                    const formattedName = item.lane.name.replace(/\b(car|motorbike|motobike)\b/gi, (m) => formatVehicleType(m))
                     return <div key={item.lane.id} className="flex items-center justify-between gap-3 rounded-lg bg-background p-2.5">
-                      <div className="min-w-0"><p className="truncate text-sm font-semibold">{item.lane.name} <span className="font-mono text-xs text-muted-foreground">({item.lane.code})</span></p><p className="text-xs text-muted-foreground">{item.eligibleStaff.length ? item.eligibleStaff.map((staff) => staff.fullName || staff.phone).join(', ') : 'No active eligible staff'}</p></div>
+                      <div className="min-w-0"><p className="truncate text-sm font-semibold">{formattedName} <span className="font-mono text-xs text-muted-foreground">({item.lane.code})</span></p><p className="text-xs text-muted-foreground">{item.eligibleStaff.length ? item.eligibleStaff.map((staff) => staff.fullName || staff.phone).join(', ') : 'No active eligible staff'}</p></div>
                       <Badge variant={warning ? 'outline' : 'secondary'} className={warning ? 'shrink-0 border-amber-300 text-amber-700 dark:text-amber-300' : 'shrink-0'}>{warning ? <AlertTriangle className="mr-1 size-3" /> : <CheckCircle2 className="mr-1 size-3" />}{statusText[item.status]}</Badge>
                     </div>
                   })}
