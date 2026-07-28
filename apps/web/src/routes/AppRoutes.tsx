@@ -1,47 +1,56 @@
+import { Suspense, lazy } from 'react'
 import { Navigate, Routes, Route } from 'react-router-dom'
 import RequireAuth from '../components/auth/RequireAuth'
 
 // Landing
-import Landing from '../pages/Landing'
+const Landing = lazy(() => import('../pages/Landing'))
 
 // Auth
-import Login from '../pages/auth/Login'
-import Register from '../pages/auth/Register'
+const Login = lazy(() => import('../pages/auth/Login'))
+const Register = lazy(() => import('../pages/auth/Register'))
 
 // Staff
-import Gate from '../pages/staff/Gate'
-import LostTicket from '../pages/staff/LostTicket'
+const Gate = lazy(() => import('../pages/staff/Gate'))
+const LostTicket = lazy(() => import('../pages/staff/LostTicket'))
 
 // Manager
-import Dashboard from '../pages/manager/Dashboard'
-import Operations from '../pages/manager/Operations'
-import Payments from '../pages/manager/Payments'
-import ManagerReservations from '../pages/manager/Reservations'
-import Reports from '../pages/manager/Reports'
-import Config from '../pages/manager/Config'
-import Vehicles from '../pages/manager/Vehicles'
+const Dashboard = lazy(() => import('../pages/manager/Dashboard'))
+const Operations = lazy(() => import('../pages/manager/Operations'))
+const Payments = lazy(() => import('../pages/manager/Payments'))
+const ManagerReservations = lazy(() => import('../pages/manager/Reservations'))
+const Reports = lazy(() => import('../pages/manager/Reports'))
+const Config = lazy(() => import('../pages/manager/Config'))
+const Vehicles = lazy(() => import('../pages/manager/Vehicles'))
 
 // Admin
-import Users from '../pages/admin/Users'
-import AdminDashboard from '../pages/admin/AdminDashboard'
-import AdminReservations from '../pages/admin/AdminReservations'
-import AdminSessions from '../pages/admin/AdminSessions'
-import AdminReportsFlags from '../pages/admin/AdminReportsFlags'
+const Users = lazy(() => import('../pages/admin/Users'))
+const AdminDashboard = lazy(() => import('../pages/admin/AdminDashboard'))
+const AdminReservations = lazy(() => import('../pages/admin/AdminReservations'))
+const AdminSessions = lazy(() => import('../pages/admin/AdminSessions'))
+const AdminReportsFlags = lazy(() => import('../pages/admin/AdminReportsFlags'))
 
 // Driver
-import DriverHome from '../pages/driver/Home'
-import Reservations from '../pages/driver/Reservations'
-import History from '../pages/driver/History'
-import MySession from '../pages/driver/MySession'
-import Profile from '../pages/driver/Profile'
-import Subscriptions from '../pages/driver/Subscriptions'
+const DriverHome = lazy(() => import('../pages/driver/Home'))
+const Reservations = lazy(() => import('../pages/driver/Reservations'))
+const History = lazy(() => import('../pages/driver/History'))
+const MySession = lazy(() => import('../pages/driver/MySession'))
+const Profile = lazy(() => import('../pages/driver/Profile'))
+const Subscriptions = lazy(() => import('../pages/driver/Subscriptions'))
 
 /**
  * Central route configuration for the Parking Building Management System.
  */
 export default function AppRoutes() {
   return (
-    <Routes>
+    <Suspense
+      fallback={
+        <div className="min-h-[100dvh] flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950">
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-cyan-600 dark:border-slate-800 dark:border-t-cyan-500"></div>
+          <p className="mt-4 text-sm font-semibold text-muted-foreground animate-pulse">Loading module...</p>
+        </div>
+      }
+    >
+      <Routes>
       {/* Public */}
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
@@ -235,6 +244,7 @@ export default function AppRoutes() {
           </div>
         }
       />
-    </Routes>
+      </Routes>
+    </Suspense>
   )
 }

@@ -60,47 +60,102 @@ const HOME_BY_ROLE: Record<AuthUser['role'], string> = {
   driver: '/driver/home',
 }
 
-const NAV_BY_ROLE: Record<AuthUser['role'], NavItem[]> = {
+interface NavGroup {
+  label: string
+  items: NavItem[]
+}
+
+const NAV_BY_ROLE: Record<AuthUser['role'], NavGroup[]> = {
   admin: [
-    { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { to: '/admin/users', label: 'Users', icon: Users },
-    { to: '/admin/reservations', label: 'Reservations', icon: CalendarClock },
-    { to: '/admin/sessions', label: 'Session History', icon: History },
-    { to: '/admin/reports', label: 'Reports & Flags', icon: BarChart3 },
+    {
+      label: 'Overview',
+      items: [
+        { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      ],
+    },
+    {
+      label: 'Management',
+      items: [
+        { to: '/admin/users', label: 'Users', icon: Users },
+        { to: '/admin/reservations', label: 'Reservations', icon: CalendarClock },
+        { to: '/admin/sessions', label: 'Session History', icon: History },
+      ],
+    },
+    {
+      label: 'Analytics',
+      items: [
+        { to: '/admin/reports', label: 'Reports & Flags', icon: BarChart3 },
+      ],
+    }
   ],
   manager: [
-    { to: '/manager/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { to: '/manager/operations', label: 'Operations', icon: ClipboardList },
-    { to: '/manager/payments', label: 'Payments', icon: CircleDollarSign },
-    { to: '/manager/reservations', label: 'Reservations', icon: CalendarClock },
-    { to: '/manager/sessions', label: 'Session History', icon: History },
-    { to: '/manager/reports', label: 'Reports', icon: BarChart3 },
-    { to: '/manager/vehicles', label: 'Vehicles', icon: Car },
-    { to: '/manager/config', label: 'Config', icon: Settings },
+    {
+      label: 'Overview',
+      items: [
+        { to: '/manager/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      ],
+    },
+    {
+      label: 'Operations',
+      items: [
+        { to: '/manager/operations', label: 'Operations', icon: ClipboardList },
+        { to: '/manager/reservations', label: 'Reservations', icon: CalendarClock },
+      ],
+    },
+    {
+      label: 'Data & Records',
+      items: [
+        { to: '/manager/sessions', label: 'Session History', icon: History },
+        { to: '/manager/payments', label: 'Payments', icon: CircleDollarSign },
+        { to: '/manager/vehicles', label: 'Vehicles', icon: Car },
+        { to: '/manager/reports', label: 'Reports', icon: BarChart3 },
+      ],
+    },
+    {
+      label: 'System',
+      items: [
+        { to: '/manager/config', label: 'Config', icon: Settings },
+      ],
+    }
   ],
   staff: [
     {
-      to: '/staff/gate',
-      label: 'Gate',
-      icon: ScanLine,
-      match: (pathname) => pathname === '/staff/gate',
-    },
-    { to: '/staff/lost-ticket', label: 'Lost Ticket', icon: Ticket },
+      label: 'Gate Control',
+      items: [
+        {
+          to: '/staff/gate',
+          label: 'Gate',
+          icon: ScanLine,
+          match: (pathname) => pathname === '/staff/gate',
+        },
+        { to: '/staff/lost-ticket', label: 'Lost Ticket', icon: Ticket },
+      ]
+    }
   ],
   driver: [
-    { to: '/driver/home', label: 'Availability', icon: Car },
-    { to: '/driver/reservations', label: 'Reserve', icon: CalendarClock },
-    { to: '/driver/subscriptions', label: 'Subscriptions', icon: Zap },
-    { to: '/driver/my-session', label: 'My QR', icon: QrCode },
-    { to: '/driver/history', label: 'History', icon: History },
-    { to: '/driver/profile', label: 'Profile', icon: Users },
+    {
+      label: 'Parking',
+      items: [
+        { to: '/driver/home', label: 'Availability', icon: Car },
+        { to: '/driver/reservations', label: 'Reserve', icon: CalendarClock },
+        { to: '/driver/my-session', label: 'My QR', icon: QrCode },
+      ]
+    },
+    {
+      label: 'Account',
+      items: [
+        { to: '/driver/subscriptions', label: 'Subscriptions', icon: Zap },
+        { to: '/driver/history', label: 'History', icon: History },
+        { to: '/driver/profile', label: 'Profile', icon: Users },
+      ]
+    }
   ],
 }
 
 export default function AppSidebar() {
   const user = getUser()
   const role = user?.role ?? 'driver'
-  const navItems = NAV_BY_ROLE[role]
+  const navGroups = NAV_BY_ROLE[role]
   const navigate = useNavigate()
   const { theme, toggle } = useTheme()
   const initial = (user?.fullName || user?.phone || role)[0].toUpperCase()
@@ -133,16 +188,18 @@ export default function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>Navigation</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {navItems.map((item) => (
-                <AppSidebarItem key={item.to} item={item} />
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {navGroups.map((group) => (
+          <SidebarGroup key={group.label}>
+            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {group.items.map((item) => (
+                  <AppSidebarItem key={item.to} item={item} />
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
       </SidebarContent>
 
       <SidebarFooter>
