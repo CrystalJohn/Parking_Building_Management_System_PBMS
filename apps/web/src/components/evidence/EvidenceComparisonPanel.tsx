@@ -44,7 +44,7 @@ export function EvidenceComparisonPanel({
   checkOutEvidence: EvidenceAuditItem | null
 }) {
   return (
-    <div className="grid gap-3 lg:grid-cols-2">
+    <div className="flex flex-col gap-6">
       <EvidenceCard title="Check-in Captured" evidence={checkInEvidence} />
       <EvidenceCard title="Check-out Captured" evidence={checkOutEvidence} />
     </div>
@@ -78,40 +78,41 @@ function EvidenceCard({
             {preview.status === 'loading' ? 'Loading' : evidence ? labelImageStatus(evidence.imageStatus, preview.url) : 'No evidence'}
           </Badge>
         </div>
-        <div className="grid gap-4 p-4 sm:grid-cols-[160px_minmax(0,1fr)]">
+        <div className="flex flex-col gap-4 p-4">
           {preview.url ? (
             <img
               src={preview.url}
               alt={plate ? `${title} ${plate}` : title}
-              className="h-36 w-full rounded-xl border object-cover"
+              className="h-52 w-full rounded-xl border object-cover shadow-sm cursor-pointer hover:opacity-95 transition-opacity"
+              onClick={() => setOpen(true)}
               onError={() => preview.setFailed()}
             />
           ) : (
-            <div className="grid h-36 place-items-center rounded-xl border border-dashed bg-muted/35 p-4 text-center text-xs font-medium text-muted-foreground">
+            <div className="grid h-52 place-items-center rounded-xl border border-dashed bg-muted/35 p-4 text-center text-xs font-medium text-muted-foreground">
               <div className="space-y-2">
                 <ImageOff className="mx-auto size-5" strokeWidth={1.8} />
                 <p>{statusText}</p>
               </div>
             </div>
           )}
-          <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3">
             <EvidenceFact label="Plate" value={plate || 'Not available'} mono={Boolean(plate)} />
             <EvidenceFact label="Confidence" value={confidence} />
             <EvidenceFact label="Captured at" value={capturedAt} />
             <EvidenceFact label="Staff" value={staff} />
-            <div className="pt-1">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setOpen(true)}
-                disabled={!evidence || (!evidence.imageUrl && !evidence.thumbnailUrl)}
-                className="gap-2"
-              >
-                <Expand className="size-4" strokeWidth={1.8} />
-                View full image
-              </Button>
-            </div>
+          </div>
+          <div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setOpen(true)}
+              disabled={!evidence || (!evidence.imageUrl && !evidence.thumbnailUrl)}
+              className="gap-2"
+            >
+              <Expand className="size-4" strokeWidth={1.8} />
+              View full image
+            </Button>
           </div>
         </div>
       </section>
