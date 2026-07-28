@@ -11,6 +11,8 @@
     "lint": "npm run lint --workspace=apps/web"
   },
   "devDependencies": {
+    "@swc/cli": "^0.5.0",
+    "@swc/core": "^1.15.46",
     "prettier": "^3.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
