@@ -61,12 +61,21 @@ const MAP_THRESHOLDS = {
 
 @Injectable()
 export class AdminService {
+  private summaryCache: { data: AdminSummaryDto; expiresAt: number } | null = null;
+  private flagsCache: { data: AdminOperationsFlagsDto; expiresAt: number } | null = null;
+  private pendingPaymentsCache: { data: AdminPendingPaymentsDto; expiresAt: number } | null = null;
+
   constructor(private readonly prisma: PrismaService) {}
 
   async getSummary(now = new Date()): Promise<AdminSummaryDto> {
+    if (this.summaryCache && Date.now() < this.summaryCache.expiresAt) {
+      return this.summaryCache.data;
+    }
+
     const today = getHoChiMinhDayRange(now);
 
-    const [slots, sessions, reservations, payments] = await Promise.all([
+    // ── Single raw SQL: compute ALL session + payment + reservation metrics in 1 round-trip ──
+    const [slots, metrics] = await Promise.all([
       this.prisma.slot.findMany({
         select: {
           status: true,
@@ -75,47 +84,96 @@ export class AdminService {
           floor: { select: { floorNumber: true, name: true } },
         },
       }),
-      this.prisma.parkingSession.findMany({
-        select: {
-          status: true,
-          checkInTime: true,
-          checkOutTime: true,
-          reservationId: true,
-        },
-      }),
-      this.prisma.reservation.findMany({
-        select: {
-          status: true,
-          createdAt: true,
-          expiresAt: true,
-          session: {
-            select: {
-              checkInTime: true,
-            },
-          },
-        },
-      }),
-      this.prisma.payment.findMany({
-        select: {
-          amount: true,
-          method: true,
-          status: true,
-          paidAt: true,
-          provider: true,
-          expiredAt: true,
-        },
-      }),
+      this.prisma.$queryRaw<
+        {
+          active_sessions: bigint;
+          checkout_pending: bigint;
+          exit_authorized: bigint;
+          today_check_ins: bigint;
+          today_check_outs: bigint;
+          today_completed: bigint;
+          pending_payments: bigint;
+          failed_payments: bigint;
+          warning_bank_qr: bigint;
+          paid_count: bigint;
+          revenue_total: bigint;
+          revenue_cash: bigint;
+          revenue_bank_qr: bigint;
+          revenue_vnpay: bigint;
+          reservation_check_ins: bigint;
+          expired_reservations: bigint;
+        }[]
+      >`
+        SELECT
+          -- Session counts
+          COUNT(*) FILTER (WHERE t = 's' AND s_status = 'active')::bigint AS active_sessions,
+          COUNT(*) FILTER (WHERE t = 's' AND s_status = 'checkout_pending')::bigint AS checkout_pending,
+          COUNT(*) FILTER (WHERE t = 's' AND s_status = 'exit_authorized')::bigint AS exit_authorized,
+          COUNT(*) FILTER (WHERE t = 's' AND s_checkin >= ${today.start} AND s_checkin < ${today.end})::bigint AS today_check_ins,
+          COUNT(*) FILTER (WHERE t = 's' AND s_checkout >= ${today.start} AND s_checkout < ${today.end})::bigint AS today_check_outs,
+          COUNT(*) FILTER (WHERE t = 's' AND s_status = 'completed' AND s_checkout >= ${today.start} AND s_checkout < ${today.end})::bigint AS today_completed,
+          -- Payment counts
+          COUNT(*) FILTER (WHERE t = 'p' AND p_status = 'pending')::bigint AS pending_payments,
+          COUNT(*) FILTER (WHERE t = 'p' AND p_status = 'failed')::bigint AS failed_payments,
+          COUNT(*) FILTER (WHERE t = 'p' AND p_status = 'pending' AND p_method = 'bank_qr' AND p_expired <= ${now})::bigint AS warning_bank_qr,
+          COUNT(*) FILTER (WHERE t = 'p' AND p_status = 'paid' AND p_paid >= ${today.start} AND p_paid < ${today.end})::bigint AS paid_count,
+          COALESCE(SUM(p_amount) FILTER (WHERE t = 'p' AND p_status = 'paid' AND p_paid >= ${today.start} AND p_paid < ${today.end}), 0)::bigint AS revenue_total,
+          COALESCE(SUM(p_amount) FILTER (WHERE t = 'p' AND p_status = 'paid' AND p_method = 'cash' AND p_paid >= ${today.start} AND p_paid < ${today.end}), 0)::bigint AS revenue_cash,
+          COALESCE(SUM(p_amount) FILTER (WHERE t = 'p' AND p_status = 'paid' AND p_method = 'bank_qr' AND p_paid >= ${today.start} AND p_paid < ${today.end}), 0)::bigint AS revenue_bank_qr,
+          COALESCE(SUM(p_amount) FILTER (WHERE t = 'p' AND p_status = 'paid' AND LOWER(p_provider) = 'vnpay' AND p_paid >= ${today.start} AND p_paid < ${today.end}), 0)::bigint AS revenue_vnpay,
+          -- Reservation counts
+          COUNT(*) FILTER (WHERE t = 'r' AND r_type = 'checkin')::bigint AS reservation_check_ins,
+          COUNT(*) FILTER (WHERE t = 'r' AND r_type = 'expired')::bigint AS expired_reservations
+        FROM (
+          SELECT 's' AS t,
+            status AS s_status, check_in_time AS s_checkin, check_out_time AS s_checkout,
+            NULL::text AS p_status, NULL::text AS p_method, NULL::text AS p_provider,
+            NULL::timestamptz AS p_paid, NULL::timestamptz AS p_expired, NULL::int AS p_amount,
+            NULL::text AS r_type
+          FROM parking_sessions
+          UNION ALL
+          SELECT 'p' AS t,
+            NULL, NULL, NULL,
+            status::text, method::text, provider,
+            paid_at, expired_at, amount,
+            NULL
+          FROM payments
+          UNION ALL
+          SELECT 'r' AS t,
+            NULL, NULL, NULL,
+            NULL, NULL, NULL,
+            NULL, NULL, NULL,
+            'checkin'
+          FROM reservations res
+          WHERE EXISTS (
+            SELECT 1 FROM parking_sessions ps
+            WHERE ps.reservation_id = res.id
+              AND ps.check_in_time >= ${today.start}
+              AND ps.check_in_time < ${today.end}
+          )
+          UNION ALL
+          SELECT 'r' AS t,
+            NULL, NULL, NULL,
+            NULL, NULL, NULL,
+            NULL, NULL, NULL,
+            'expired'
+          FROM reservations
+          WHERE expires_at >= ${today.start} AND expires_at < ${today.end}
+        ) combined
+      `,
     ]);
 
     const reportDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(now);
-    const activeSessions = sessions.filter((s) => s.status === SessionStatus.active).length;
-    const checkoutPending = sessions.filter((s) => s.status === SessionStatus.checkout_pending).length;
-    const exitAuthorized = sessions.filter((s) => s.status === SessionStatus.exit_authorized).length;
-    const paidPayments = payments.filter(
-      (p) => p.status === PaymentStatus.paid && isWithinRange(p.paidAt, today.start, today.end),
-    );
+    const m = metrics[0];
+    const activeSessions = Number(m.active_sessions);
+    const checkoutPending = Number(m.checkout_pending);
+    const exitAuthorized = Number(m.exit_authorized);
+    const pendingPayments = Number(m.pending_payments);
+    const failedPayments = Number(m.failed_payments);
+    const warningBankQrPayments = Number(m.warning_bank_qr);
+    const normalPayments = Math.max(0, pendingPayments - warningBankQrPayments);
 
-    return {
+    const result: AdminSummaryDto = {
       meta: {
         selectedDate: reportDate,
         timezone: 'Asia/Ho_Chi_Minh',
@@ -132,37 +190,41 @@ export class AdminService {
           exitAuthorized,
           total: activeSessions + checkoutPending + exitAuthorized,
         },
-        pendingPayments: payments.filter((p) => p.status === PaymentStatus.pending).length,
-        paymentRisk: buildPaymentRiskSummary(payments, now),
+        pendingPayments,
+        paymentRisk: {
+          normal: normalPayments,
+          warning: warningBankQrPayments,
+          critical: failedPayments,
+          total: normalPayments + warningBankQrPayments + failedPayments,
+        },
       },
       report: {
-        checkIns: sessions.filter((s) => isWithinRange(s.checkInTime, today.start, today.end)).length,
-        checkOuts: sessions.filter((s) => isWithinRange(s.checkOutTime, today.start, today.end)).length,
-        completedSessions: sessions.filter(
-          (s) => s.status === SessionStatus.completed && isWithinRange(s.checkOutTime, today.start, today.end),
-        ).length,
-        paidPayments: paidPayments.length,
-        revenue: sumAmount(paidPayments),
+        checkIns: Number(m.today_check_ins),
+        checkOuts: Number(m.today_check_outs),
+        completedSessions: Number(m.today_completed),
+        paidPayments: Number(m.paid_count),
+        revenue: Number(m.revenue_total),
         revenueByMethod: {
-          cash: sumAmount(paidPayments.filter((p) => p.method === PaymentMethod.cash)),
-          bankQr: sumAmount(paidPayments.filter((p) => p.method === PaymentMethod.bank_qr)),
+          cash: Number(m.revenue_cash),
+          bankQr: Number(m.revenue_bank_qr),
         },
         revenueByProvider: {
-          vnpay: sumAmount(
-            paidPayments.filter((p) => (p.provider ?? '').toLowerCase() === 'vnpay'),
-          ),
+          vnpay: Number(m.revenue_vnpay),
         },
-        reservationCheckIns: reservations.filter((r) =>
-          isWithinRange(r.session?.checkInTime, today.start, today.end),
-        ).length,
-        expiredReservations: reservations.filter((r) =>
-          isWithinRange(r.expiresAt, today.start, today.end),
-        ).length,
+        reservationCheckIns: Number(m.reservation_check_ins),
+        expiredReservations: Number(m.expired_reservations),
       },
     };
+
+    this.summaryCache = { data: result, expiresAt: Date.now() + 10000 };
+    return result;
   }
 
   async getOperationsFlags(now = new Date()): Promise<AdminOperationsFlagsDto> {
+    if (this.flagsCache && Date.now() < this.flagsCache.expiresAt) {
+      return this.flagsCache.data;
+    }
+
     const today = getHoChiMinhDayRange(now);
     const flags: AdminOperationFlagDto[] = [];
 
@@ -383,7 +445,7 @@ export class AdminService {
       })
       .slice(0, 50);
 
-    return {
+    const result: AdminOperationsFlagsDto = {
       summary: {
         totalFlags: sortedFlags.length,
         critical: sortedFlags.filter((f) => f.severity === 'critical').length,
@@ -393,9 +455,14 @@ export class AdminService {
       thresholds: FLAG_THRESHOLDS,
       flags: sortedFlags,
     };
+    this.flagsCache = { data: result, expiresAt: Date.now() + 10000 };
+    return result;
   }
 
   async getPendingPayments(now = new Date()): Promise<AdminPendingPaymentsDto> {
+    if (this.pendingPaymentsCache && Date.now() < this.pendingPaymentsCache.expiresAt) {
+      return this.pendingPaymentsCache.data;
+    }
     const payments = await this.prisma.payment.findMany({
       where: {
         OR: [
@@ -486,7 +553,7 @@ export class AdminService {
       })
       .slice(0, 50);
 
-    return {
+    const result: AdminPendingPaymentsDto = {
       summary: {
         total: items.length,
         normal: items.filter((item) => item.risk === 'normal').length,
@@ -499,6 +566,8 @@ export class AdminService {
       },
       items,
     };
+    this.pendingPaymentsCache = { data: result, expiresAt: Date.now() + 10000 };
+    return result;
   }
 
   async getReservationAudit(now = new Date()): Promise<AdminReservationAuditDto> {

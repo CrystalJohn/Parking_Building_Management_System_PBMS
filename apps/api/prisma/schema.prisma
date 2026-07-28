@@ -330,6 +330,9 @@ model ParkingSession {
   @@index([driverId], map: "idx_active_sessions_by_driver")
   @@index([reservationId], map: "idx_session_reservation")
   @@index([allocationStrategy], map: "idx_session_strategy")
+  @@index([status], map: "idx_session_status")
+  @@index([status, checkInTime], map: "idx_session_status_checkin")
+  @@index([checkInTime], map: "idx_session_checkin_time")
   @@map("parking_sessions")
 }
 
@@ -404,6 +407,8 @@ model Payment {
 
   @@index([providerOrderCode], map: "idx_payment_provider_order_code")
   @@index([providerRef], map: "idx_payment_provider_ref")
+  @@index([status], map: "idx_payment_status")
+  @@index([status, paidAt], map: "idx_payment_status_paid_at")
   @@map("payments")
 }
 
