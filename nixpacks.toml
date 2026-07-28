@@ -5,7 +5,7 @@ nixPkgs = ["nodejs_20"]
 cmds = ["npm install"]
 
 [phases.build]
-cmds = ["npm run build"]
+cmds = ["npm run build:api"]
 
 [start]
-cmd = "node dist/src/main.js"
+cmd = "npm run start:api"

@@ -8,6 +8,8 @@
   "scripts": {
     "dev": "npm run dev --workspace=apps/web",
     "build": "npm run build --workspace=apps/web",
+    "build:api": "npm run build --workspace=apps/api",
+    "start:api": "npm run start:prod --workspace=apps/api",
     "lint": "npm run lint --workspace=apps/web"
   },
   "devDependencies": {
