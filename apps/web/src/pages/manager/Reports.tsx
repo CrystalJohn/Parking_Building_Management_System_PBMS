@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Calendar as CalendarIcon, Sparkles, TrendingUp, Clock, Building2, Info, ArrowUpRight } from 'lucide-react'
+import { Calendar as CalendarIcon, Sparkles, TrendingUp, Clock, Building2, Info } from 'lucide-react'
 import api from '../../lib/api'
 import { formatDateTimeVN } from '../../lib/date-time'
 import { formatVehicleType } from '../../lib/plate-format'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type Tab = 'revenue' | 'traffic' | 'occupancy'
+
 type Period = 'daily' | 'weekly' | 'monthly'
 
 interface RevenueRow {
