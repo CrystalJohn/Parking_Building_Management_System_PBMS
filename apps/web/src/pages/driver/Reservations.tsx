@@ -202,6 +202,7 @@ export default function Reservations() {
     try {
       const request = await createVehicleRegistrationRequest(plate, requestType, requestEvidence)
       setRegistrationRequests((current) => [request, ...current])
+      await loadPage()
       setRequestPlate('')
       setRequestEvidence(null)
       setRequestVehiclePhoto(null)
@@ -713,7 +714,7 @@ function ReserveVehicleForm({
   const quotaReached = quota?.remaining === 0
   const disabled = creating || !selectedVehicle || cooldownActive || quotaReached
 
-  const pendingRequest = requests.find((r) => r.status === 'pending')
+  const pendingRequests = requests.filter((r) => r.status === 'pending')
 
   return (
     <Card className="shadow-sm">
@@ -725,54 +726,58 @@ function ReserveVehicleForm({
 
       <CardContent className="space-y-5 p-6 pt-0">
         {vehicles.length === 0 ? (
-          pendingRequest ? (
-            <div className="rounded-2xl border border-sky-500/30 bg-gradient-to-br from-sky-500/10 via-sky-500/5 to-transparent p-5 sm:p-6 shadow-sm dark:border-sky-400/20 dark:from-sky-500/15">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-sky-500/20 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-sky-500/20 text-sky-600 dark:text-sky-300">
-                    <Clock3 className="size-5" />
-                  </div>
-                  <div>
-                    <h4 className="text-base font-bold text-foreground">Vehicle Registration Pending Review</h4>
-                    <p className="text-xs text-muted-foreground">Your document has been submitted for manager verification.</p>
-                  </div>
-                </div>
-                <Badge className="border-sky-500/40 bg-sky-500/20 text-sky-700 dark:text-sky-300 font-bold text-xs px-3 py-1 self-start sm:self-auto">
-                  <span className="mr-1.5 size-2 rounded-full bg-sky-500 animate-ping inline-block" />
-                  Pending Approval
-                </Badge>
-              </div>
-
-              <div className="mt-4 grid gap-3 sm:grid-cols-3 rounded-xl border bg-background/80 p-3.5 backdrop-blur">
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Plate Number</p>
-                  <p className="mt-0.5 font-mono text-base font-black tracking-wider text-foreground">{formatPlateForDisplay(pendingRequest.plateNumber)}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Vehicle Type</p>
-                  <p className="mt-0.5 text-sm font-semibold text-foreground">{formatVehicleType(pendingRequest.vehicleType)}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Submitted At</p>
-                  <p className="mt-0.5 text-xs font-medium text-muted-foreground">{formatDateTimeVN(pendingRequest.createdAt)}</p>
-                </div>
-              </div>
-
-              <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-                <p className="text-xs text-muted-foreground">
-                  Once approved by manager, this vehicle will appear in your reservation list.
+          pendingRequests.length > 0 ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Pending Vehicle Registrations ({pendingRequests.length})
                 </p>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="min-h-9 font-semibold text-xs border-sky-500/30 text-sky-700 hover:bg-sky-500/10 dark:text-sky-300 shrink-0"
+                  className="h-8 font-semibold text-xs border-sky-500/30 text-sky-700 hover:bg-sky-500/10 dark:text-sky-300"
                   onClick={onRequestVehicle}
                 >
                   <Plus className="mr-1.5 size-3.5" />
                   Register Another Vehicle
                 </Button>
               </div>
+
+              {pendingRequests.map((pendingReq) => (
+                <div key={pendingReq.id} className="rounded-2xl border border-sky-500/30 bg-gradient-to-br from-sky-500/10 via-sky-500/5 to-transparent p-5 sm:p-6 shadow-sm dark:border-sky-400/20 dark:from-sky-500/15">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-sky-500/20 pb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-sky-500/20 text-sky-600 dark:text-sky-300">
+                        <Clock3 className="size-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-base font-bold text-foreground">Vehicle Registration Pending Review</h4>
+                        <p className="text-xs text-muted-foreground">Your document has been submitted for manager verification.</p>
+                      </div>
+                    </div>
+                    <Badge className="border-sky-500/40 bg-sky-500/20 text-sky-700 dark:text-sky-300 font-bold text-xs px-3 py-1 self-start sm:self-auto">
+                      <span className="mr-1.5 size-2 rounded-full bg-sky-500 animate-ping inline-block" />
+                      Pending Approval
+                    </Badge>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3 rounded-xl border bg-background/80 p-3.5 backdrop-blur">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Plate Number</p>
+                      <p className="mt-0.5 font-mono text-base font-black tracking-wider text-foreground">{formatPlateForDisplay(pendingReq.plateNumber)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Vehicle Type</p>
+                      <p className="mt-0.5 text-sm font-semibold text-foreground">{formatVehicleType(pendingReq.vehicleType)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Submitted At</p>
+                      <p className="mt-0.5 text-xs font-medium text-muted-foreground">{formatDateTimeVN(pendingReq.createdAt)}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100">
@@ -837,9 +842,9 @@ function ReserveVehicleForm({
               </div>
             </div>
 
-            {pendingRequest ? (
+            {pendingRequests.length > 0 ? (
               <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs text-sky-800 dark:border-sky-400/20 dark:bg-sky-500/10 dark:text-sky-200">
-                <span>Request for <strong>{formatPlateForDisplay(pendingRequest.plateNumber)}</strong> is pending manager review.</span>
+                <span>You have <strong>{pendingRequests.length} vehicle registration request(s)</strong> ({pendingRequests.map(r => formatPlateForDisplay(r.plateNumber)).join(', ')}) pending manager review.</span>
               </div>
             ) : null}
 
