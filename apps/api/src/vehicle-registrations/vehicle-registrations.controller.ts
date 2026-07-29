@@ -9,11 +9,11 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
-  UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { Role } from '@prisma/client';
 import { CurrentUser, Roles } from '../auth/decorators';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
@@ -21,7 +21,7 @@ import { VehicleRegistrationsService } from './vehicle-registrations.service';
 import { CreateVehicleRegistrationDto, ReviewVehicleRegistrationDto } from './dto';
 
 // Evidence photos are small JPEG/PNG frames; cap to avoid abuse.
-const MAX_UPLOAD_BYTES = 6 * 1024 * 1024; // 6 MB
+const MAX_UPLOAD_BYTES = 6 * 1024 * 1024; // 6 MB per file
 
 interface UploadedImage {
   buffer: Buffer;
@@ -39,22 +39,43 @@ export class VehicleRegistrationsController {
   @HttpCode(HttpStatus.CREATED)
   @Roles(Role.driver)
   @UseInterceptors(
-    FileInterceptor('evidence', {
+    FileFieldsInterceptor([
+      { name: 'evidenceCaVant', maxCount: 1 },
+      { name: 'evidenceOverall', maxCount: 1 },
+      { name: 'evidencePlate', maxCount: 1 },
+    ], {
       limits: { fileSize: MAX_UPLOAD_BYTES },
     }),
   )
   createRequest(
     @CurrentUser('id') driverId: string,
     @Body() dto: CreateVehicleRegistrationDto,
-    @UploadedFile() file?: UploadedImage,
+    @UploadedFiles()
+    files: {
+      evidenceCaVant?: UploadedImage[];
+      evidenceOverall?: UploadedImage[];
+      evidencePlate?: UploadedImage[];
+    },
   ) {
-    if (!file || !file.buffer?.length) {
-      throw new BadRequestException('Vui lòng tải lên ảnh bằng chứng (Cà vẹt xe)');
+    const caVant = files?.evidenceCaVant?.[0]
+    const overall = files?.evidenceOverall?.[0]
+    const plate = files?.evidencePlate?.[0]
+
+    if (!caVant || !caVant.buffer?.length) {
+      throw new BadRequestException('Vui lòng tải lên ảnh Cà vẹt xe');
     }
-    if (!file.mimetype?.startsWith('image/')) {
-      throw new BadRequestException('File tải lên phải là hình ảnh');
+    if (!overall || !overall.buffer?.length) {
+      throw new BadRequestException('Vui lòng tải lên ảnh tổng thể xe');
     }
-    return this.vehicleRegistrationsService.createRequest(driverId, dto, file);
+    if (!plate || !plate.buffer?.length) {
+      throw new BadRequestException('Vui lòng tải lên ảnh cận cảnh biển số');
+    }
+    for (const f of [caVant, overall, plate]) {
+      if (!f.mimetype?.startsWith('image/')) {
+        throw new BadRequestException('File tải lên phải là hình ảnh');
+      }
+    }
+    return this.vehicleRegistrationsService.createRequest(driverId, dto, caVant, overall, plate);
   }
 
   @Get('my')

@@ -553,7 +553,9 @@ model VehicleRegistrationRequest {
   driverId     String                    @map("driver_id")
   plateNumber  String                    @map("plate_number")
   vehicleType  VehicleType               @map("vehicle_type")
-  evidenceUrl  String?                   @map("evidence_url") // Added field for Supabase Storage URL
+  evidenceUrlCaVant  String?            @map("evidence_url_ca_vant")
+  evidenceUrlOverall String?             @map("evidence_url_overall")
+  evidenceUrlPlate   String?             @map("evidence_url_plate")
   status       VehicleRegistrationStatus @default(pending)
   reviewedById String?                   @map("reviewed_by_id")
   reviewedAt   DateTime?                 @map("reviewed_at") @db.Timestamptz(3)

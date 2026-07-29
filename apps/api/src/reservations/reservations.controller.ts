@@ -5,6 +5,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   ParseUUIDPipe,
   HttpException,
@@ -60,8 +61,8 @@ export class ReservationsController {
   @Get('all')
   @UseGuards(RolesGuard)
   @Roles(Role.manager, Role.admin)
-  findAll() {
-    return this.reservationsService.findAll();
+  findAll(@Query('date') date?: string) {
+    return this.reservationsService.findAll(date);
   }
 
   /**

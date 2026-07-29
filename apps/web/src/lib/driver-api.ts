@@ -215,11 +215,19 @@ export async function getMyVehicleRegistrationRequests(): Promise<VehicleRegistr
   return data
 }
 
-export async function createVehicleRegistrationRequest(plateNumber: string, vehicleType: VehicleType, evidence: File): Promise<VehicleRegistrationRequest> {
+export async function createVehicleRegistrationRequest(
+  plateNumber: string,
+  vehicleType: VehicleType,
+  caVant: File,
+  overall: File,
+  plate: File,
+): Promise<VehicleRegistrationRequest> {
   const formData = new FormData()
   formData.append('plateNumber', plateNumber)
   formData.append('vehicleType', vehicleType)
-  formData.append('evidence', evidence)
+  formData.append('evidenceCaVant', caVant)
+  formData.append('evidenceOverall', overall)
+  formData.append('evidencePlate', plate)
 
   const { data } = await api.post<VehicleRegistrationRequest>('/vehicle-registrations', formData)
   return data

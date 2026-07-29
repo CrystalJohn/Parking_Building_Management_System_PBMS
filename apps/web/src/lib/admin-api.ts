@@ -40,6 +40,8 @@ export interface AdminSummary {
     }
     reservationCheckIns: number
     expiredReservations: number
+    activeReservations: number
+    cancelledToday: number
   }
   slots: SlotSummary
   sessions: {
@@ -183,9 +185,9 @@ function normalizeAdminSummary(data: AdminSummary): AdminSummary {
       completedToday: data.report.completedSessions,
     },
     reservations: data.reservations ?? {
-      active: 0,
+      active: data.report.activeReservations,
       fulfilledToday: data.report.reservationCheckIns,
-      cancelledToday: 0,
+      cancelledToday: data.report.cancelledToday,
       expiredToday: data.report.expiredReservations,
     },
     payments: data.payments ?? {
@@ -316,6 +318,16 @@ export interface SlotOccupancyMapSession {
   thumbnailUrl: string | null
 }
 
+export interface SlotOccupancyMapReservation {
+  id: string
+  driverName: string | null
+  driverPhone: string
+  plateNumber: string
+  vehicleType: 'car' | 'motorbike'
+  reservedAt: string
+  expiresAt: string
+}
+
 export interface SlotOccupancyMapSlot {
   id: number
   code: string
@@ -325,6 +337,7 @@ export interface SlotOccupancyMapSlot {
   floorName: string
   zone: 'A' | 'B'
   session: SlotOccupancyMapSession | null
+  reservation: SlotOccupancyMapReservation | null
   risk: SlotOccupancyMapRisk
 }
 

@@ -452,9 +452,9 @@ export default function AdminSessions() {
                     <TableCell className="px-4 py-3">
                       {item.checkOutTime ? (
                         <div className="text-sm tabular-nums">{formatDuration(item.durationMinutes)}</div>
-                      ) : item.durationMinutes != null ? (
+                      ) : item.checkInTime ? (
                         <div className="text-sm text-emerald-700 dark:text-emerald-400 tabular-nums font-medium">
-                          {formatDuration(item.durationMinutes)}
+                          {formatDuration(Math.max(0, Math.floor((Date.now() - new Date(item.checkInTime).getTime()) / 60000)))}
                           <span className="ml-1 text-[10px] text-muted-foreground font-normal">elapsed</span>
                         </div>
                       ) : (

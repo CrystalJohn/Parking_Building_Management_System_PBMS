@@ -7,7 +7,9 @@ export interface VehicleRegistrationRequest {
   vehicleType: 'car' | 'motorbike'
   status: 'pending' | 'approved' | 'rejected' | 'expired'
   rejectReason: string | null
-  evidenceUrl: string | null
+  evidenceUrlCaVant: string | null
+  evidenceUrlOverall: string | null
+  evidenceUrlPlate: string | null
   createdAt: string
   reviewedAt: string | null
   driver?: {

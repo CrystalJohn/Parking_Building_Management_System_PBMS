@@ -38,6 +38,8 @@ export interface AdminSummaryDto {
     };
     reservationCheckIns: number;
     expiredReservations: number;
+    activeReservations: number;
+    cancelledToday: number;
   };
 }
 

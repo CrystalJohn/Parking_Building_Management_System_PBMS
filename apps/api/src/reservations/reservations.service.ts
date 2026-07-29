@@ -636,8 +636,15 @@ export class ReservationsService {
     };
   }
 
-  async findAll() {
+  async findAll(date?: string) {
+    const where: any = {};
+    if (date) {
+      const dayStart = new Date(date + 'T00:00:00+07:00');
+      const dayEnd = new Date(date + 'T23:59:59.999+07:00');
+      where.createdAt = { gte: dayStart, lte: dayEnd };
+    }
     const reservations = await this.prisma.reservation.findMany({
+      where,
       take: 100,
       orderBy: { createdAt: 'desc' },
       include: {

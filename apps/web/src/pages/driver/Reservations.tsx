@@ -97,8 +97,8 @@ export default function Reservations() {
   const actionParam = searchParams.get('action')
   const mountRef = useRef(false)
 
-  const loadPage = async () => {
-    setLoading(true)
+  const loadPage = async (silent = false) => {
+    if (!silent) setLoading(true)
     setError(null)
     try {
       const [vehicleData, reservationData, quotaData, requestData] = await Promise.all([
@@ -116,9 +116,9 @@ export default function Reservations() {
         setShowNewAccountPrompt(true)
       }
     } catch {
-      setError('Unable to load reservation data. Retry to continue.')
+      if (!silent) setError('Unable to load reservation data. Retry to continue.')
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
@@ -131,17 +131,13 @@ export default function Reservations() {
   useEffect(() => {
     if (!mountRef.current) {
       mountRef.current = true
-      void loadPage()
+      void loadPage(false)
     }
-    const timer = setInterval(() => {
-      void loadPage()
-    }, 10000)
     const onFocus = () => {
-      void loadPage()
+      void loadPage(true)
     }
     window.addEventListener('focus', onFocus)
     return () => {
-      clearInterval(timer)
       window.removeEventListener('focus', onFocus)
     }
   }, [])
@@ -211,7 +207,7 @@ export default function Reservations() {
     setRequestingVehicle(true)
     setActionError(null)
     try {
-      const request = await createVehicleRegistrationRequest(plate, requestType, requestEvidence)
+      const request = await createVehicleRegistrationRequest(plate, requestType, requestEvidence, requestVehiclePhoto, requestPlatePhoto)
       setRegistrationRequests((current) => [request, ...current])
       await loadPage()
       setRequestPlate('')

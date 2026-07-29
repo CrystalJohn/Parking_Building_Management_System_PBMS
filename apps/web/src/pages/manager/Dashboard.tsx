@@ -395,7 +395,7 @@ function OccupancySlotTile({
   // Available / reserved / maintenance — compact
   const styleClass =
     slot.status === 'available'
-      ? 'bg-white text-foreground dark:bg-white dark:text-foreground ring-1 ring-black/5'
+      ? 'border border-slate-200 bg-white text-slate-800 hover:border-emerald-500/40 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-emerald-500/40 shadow-xs'
       : slot.status === 'reserved'
         ? 'border border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-400/30 dark:bg-amber-500/15 dark:text-amber-100'
         : 'border border-slate-300 bg-slate-100 text-muted-foreground dark:border-slate-500/40 dark:bg-slate-800/80 dark:text-slate-300'
@@ -404,12 +404,12 @@ function OccupancySlotTile({
     <button
       type="button"
       onClick={onSelect}
-      className={`flex aspect-[3/2] flex-col items-center justify-center rounded-xl transition hover:-translate-y-0.5 shadow-sm ${styleClass} ${selected ? 'ring-4 ring-blue-500/50' : ''}`}
+      className={`flex aspect-[3/2] flex-col items-center justify-center rounded-xl transition hover:-translate-y-0.5 shadow-xs ${styleClass} ${selected ? 'ring-4 ring-blue-500/50' : ''}`}
     >
-      <span className="text-[10px] md:text-xs font-medium capitalize opacity-70">
+      <span className="text-[10px] md:text-xs font-semibold capitalize opacity-80">
         {selected ? 'Selected' : STATUS_LABELS[slot.status]}
       </span>
-      <span className="font-bold text-sm">{slot.code}</span>
+      <span className="font-bold text-sm md:text-base tracking-tight">{slot.code}</span>
     </button>
   )
 }
@@ -516,11 +516,30 @@ function SlotInspectModal({ slot }: { slot: SlotOccupancyMapSlot }) {
         {/* Body */}
         <div className="p-5">
           {slot.status !== 'occupied' || !session ? (
-            <div className="rounded-xl border border-dashed border-border bg-muted/50 p-6 text-sm font-semibold text-muted-foreground text-center">
-              {slot.status === 'available' && 'Slot is available — no active session.'}
-              {slot.status === 'reserved' && 'Slot is reserved — vehicle has not checked in yet.'}
-              {slot.status === 'maintenance' && 'Slot is under maintenance.'}
-              {slot.status === 'occupied' && !session && 'Slot is occupied but session data is unavailable.'}
+            <div className="space-y-3">
+              {slot.status === 'reserved' && slot.reservation ? (
+                <>
+                  <div className="rounded-xl border border-amber-200/60 bg-amber-50 dark:bg-amber-500/10 dark:border-amber-400/20 p-4">
+                    <p className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300 mb-3">Reserved by</p>
+                    <dl className="space-y-2">
+                      <InspectRow label="Driver" value={slot.reservation.driverName || 'N/A'} />
+                      <InspectRow label="Phone" value={slot.reservation.driverPhone} />
+                      <InspectRow label="Plate number" value={slot.reservation.plateNumber} mono />
+                      <InspectRow label="Vehicle type" value={titleCase(slot.reservation.vehicleType)} />
+                      <InspectRow label="Reserved at" value={formatDateTimeVN(slot.reservation.reservedAt)} />
+                      <InspectRow label="Expires at" value={formatDateTimeVN(slot.reservation.expiresAt)} />
+                    </dl>
+                  </div>
+                  <p className="text-xs text-muted-foreground text-center">Vehicle has not checked in yet.</p>
+                </>
+              ) : (
+                <div className="rounded-xl border border-dashed border-border bg-muted/50 p-6 text-sm font-semibold text-muted-foreground text-center">
+                  {slot.status === 'available' && 'Slot is available — no active session.'}
+                  {slot.status === 'reserved' && 'Slot is reserved — no reservation data available.'}
+                  {slot.status === 'maintenance' && 'Slot is under maintenance.'}
+                  {slot.status === 'occupied' && !session && 'Slot is occupied but session data is unavailable.'}
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-3">

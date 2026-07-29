@@ -102,6 +102,8 @@ export class AdminService {
           revenue_vnpay: bigint;
           reservation_check_ins: bigint;
           expired_reservations: bigint;
+          active_reservations: bigint;
+          cancelled_today: bigint;
         }[]
       >`
         SELECT
@@ -123,7 +125,9 @@ export class AdminService {
           COALESCE(SUM(p_amount) FILTER (WHERE t = 'p' AND p_status = 'paid' AND LOWER(p_provider) = 'vnpay' AND p_paid >= ${today.start} AND p_paid < ${today.end}), 0)::bigint AS revenue_vnpay,
           -- Reservation counts
           COUNT(*) FILTER (WHERE t = 'r' AND r_type = 'checkin')::bigint AS reservation_check_ins,
-          COUNT(*) FILTER (WHERE t = 'r' AND r_type = 'expired')::bigint AS expired_reservations
+          COUNT(*) FILTER (WHERE t = 'r' AND r_type = 'expired')::bigint AS expired_reservations,
+          COUNT(*) FILTER (WHERE t = 'r' AND r_type = 'active')::bigint AS active_reservations,
+          COUNT(*) FILTER (WHERE t = 'r' AND r_type = 'cancelled')::bigint AS cancelled_today
         FROM (
           SELECT 's' AS t,
             status AS s_status, check_in_time AS s_checkin, check_out_time AS s_checkout,
@@ -159,6 +163,24 @@ export class AdminService {
             'expired'
           FROM reservations
           WHERE expires_at >= ${today.start} AND expires_at < ${today.end}
+          UNION ALL
+          SELECT 'r' AS t,
+            NULL, NULL, NULL,
+            NULL, NULL, NULL,
+            NULL, NULL, NULL,
+            'active'
+          FROM reservations
+          WHERE status = 'active'
+          UNION ALL
+          SELECT 'r' AS t,
+            NULL, NULL, NULL,
+            NULL, NULL, NULL,
+            NULL, NULL, NULL,
+            'cancelled'
+          FROM reservations
+          WHERE status = 'cancelled'
+            AND cancelled_at >= ${today.start}
+            AND cancelled_at < ${today.end}
         ) combined
       `,
     ]);
@@ -213,6 +235,8 @@ export class AdminService {
         },
         reservationCheckIns: Number(m.reservation_check_ins),
         expiredReservations: Number(m.expired_reservations),
+        activeReservations: Number(m.active_reservations),
+        cancelledToday: Number(m.cancelled_today),
       },
     };
 
@@ -580,7 +604,6 @@ export class AdminService {
       this.prisma.reservation.findMany({
         where: {
           status: ReservationStatus.active,
-          slot: { status: SlotStatus.reserved },
         },
         include: reservationAuditInclude,
         orderBy: { expiresAt: 'asc' },
@@ -710,9 +733,11 @@ export class AdminService {
           (session.checkOutTime.getTime() - session.checkInTime.getTime()) / 1000 / 60,
         );
       } else if (session.checkInTime && session.status !== 'completed') {
-        // For active sessions, compute live duration from now
-        durationMinutes = Math.floor(
-          (now.getTime() - session.checkInTime.getTime()) / 1000 / 60,
+        // For active sessions, compute live duration from current real-time clock
+        const realNow = new Date();
+        durationMinutes = Math.max(
+          0,
+          Math.floor((realNow.getTime() - session.checkInTime.getTime()) / 1000 / 60),
         );
       }
 
@@ -947,6 +972,21 @@ export class AdminService {
     // Index sessions by slotId for O(1) lookup
     const sessionBySlotId = new Map(openSessions.map((s) => [s.slotId, s]));
 
+    // 2b. Fetch active reservations keyed by slotId
+    const activeReservations = await this.prisma.reservation.findMany({
+      where: { status: 'active', expiresAt: { gt: now } },
+      select: {
+        id: true,
+        slotId: true,
+        createdAt: true,
+        expiresAt: true,
+        driver: { select: { fullName: true, phone: true } },
+        vehicle: { select: { plateNumber: true, vehicleType: true } },
+      },
+    });
+
+    const reservationBySlotId = new Map(activeReservations.map((r) => [r.slotId, r]));
+
     // 3. Build grouped response
     const floorDtos: SlotOccupancyMapFloorDto[] = floors.map((floor) => {
       const zoneMap = new Map<'A' | 'B', SlotOccupancyMapSlotDto[]>([
@@ -981,8 +1021,23 @@ export class AdminService {
           floorName: floor.name,
           zone: slot.zone as 'A' | 'B',
           session: sessionDto,
+          reservation: null,
           risk,
         };
+
+        // Attach reservation data for reserved slots
+        const reservation = reservationBySlotId.get(slot.id);
+        if (reservation && slot.status === 'reserved') {
+          slotDto.reservation = {
+            id: reservation.id,
+            driverName: reservation.driver.fullName,
+            driverPhone: reservation.driver.phone,
+            plateNumber: reservation.vehicle?.plateNumber ?? '',
+            vehicleType: (reservation.vehicle?.vehicleType ?? slot.vehicleType) as 'car' | 'motorbike',
+            reservedAt: reservation.createdAt.toISOString(),
+            expiresAt: reservation.expiresAt.toISOString(),
+          };
+        }
 
         const zoneSlots = zoneMap.get(slot.zone as 'A' | 'B');
         if (zoneSlots) zoneSlots.push(slotDto);

@@ -241,7 +241,7 @@ export default function Vehicles() {
                           <div className="text-xs text-muted-foreground">{req.driver?.phone}</div>
                         </TableCell>
                         <TableCell>
-                          {req.evidenceUrl ? (
+                          {req.evidenceUrlCaVant || req.evidenceUrlOverall || req.evidenceUrlPlate ? (
                             <Button
                               variant="outline"
                               size="sm"
@@ -323,7 +323,7 @@ export default function Vehicles() {
                           <div className="text-xs text-muted-foreground">{req.driver?.phone}</div>
                         </TableCell>
                         <TableCell>
-                          {req.evidenceUrl ? (
+                          {req.evidenceUrlCaVant || req.evidenceUrlOverall || req.evidenceUrlPlate ? (
                             <Button
                               variant="outline"
                               size="sm"
@@ -658,22 +658,30 @@ export default function Vehicles() {
 
           {/* Photo Container */}
           <div className="relative flex flex-col items-center justify-center rounded-xl border bg-slate-950/90 p-4 min-h-[380px] overflow-hidden">
-            {selectedViewerRequest?.evidenceUrl ? (
-              <>
-                <img
-                  src={selectedViewerRequest.evidenceUrl}
-                  alt={activeViewerTab}
-                  className="max-h-[55vh] max-w-full rounded-lg object-contain shadow-md transition-all duration-300"
-                />
-                <div className="absolute bottom-3 left-3 rounded-md bg-black/70 backdrop-blur px-3 py-1.5 text-xs font-semibold text-white">
-                  {activeViewerTab === 'cavet' && '📄 Document 1/3: Registration Certificate (Cà vẹt xe)'}
-                  {activeViewerTab === 'vehicle' && '🚗 Document 2/3: Overall Vehicle Photo'}
-                  {activeViewerTab === 'plate' && '📷 Document 3/3: License Plate Close-up Photo'}
-                </div>
-              </>
-            ) : (
-              <p className="text-xs text-muted-foreground italic">No image uploaded</p>
-            )}
+            {(() => {
+              const src =
+                activeViewerTab === 'cavet'
+                  ? selectedViewerRequest?.evidenceUrlCaVant
+                  : activeViewerTab === 'vehicle'
+                  ? selectedViewerRequest?.evidenceUrlOverall
+                  : selectedViewerRequest?.evidenceUrlPlate
+              return src ? (
+                <>
+                  <img
+                    src={src}
+                    alt={activeViewerTab}
+                    className="max-h-[55vh] max-w-full rounded-lg object-contain shadow-md transition-all duration-300"
+                  />
+                  <div className="absolute bottom-3 left-3 rounded-md bg-black/70 backdrop-blur px-3 py-1.5 text-xs font-semibold text-white">
+                    {activeViewerTab === 'cavet' && '📄 Document 1/3: Registration Certificate (Cà vẹt xe)'}
+                    {activeViewerTab === 'vehicle' && '🚗 Document 2/3: Overall Vehicle Photo'}
+                    {activeViewerTab === 'plate' && '📷 Document 3/3: License Plate Close-up Photo'}
+                  </div>
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground italic">No image uploaded</p>
+              )
+            })()}
           </div>
 
           {/* Footer Action Bar */}

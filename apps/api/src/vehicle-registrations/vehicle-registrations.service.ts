@@ -37,10 +37,32 @@ export class VehicleRegistrationsService {
     });
   }
 
+  private async uploadFile(
+    supabase: ReturnType<typeof this.getSupabaseClient>,
+    file: { buffer: Buffer; mimetype: string; originalname: string },
+    prefix: string,
+  ): Promise<string> {
+    const fileExt = file.originalname.split('.').pop();
+    const fileName = `${prefix}-${Date.now()}.${fileExt}`;
+    const { error } = await supabase.storage
+      .from('vehicle-evidences')
+      .upload(fileName, file.buffer, { contentType: file.mimetype });
+    if (error) {
+      this.logger.error(`Failed to upload ${prefix} to Supabase`, error);
+      throw new BadRequestException('Không thể tải lên ảnh chứng minh. Vui lòng thử lại.');
+    }
+    const { data: { publicUrl } } = supabase.storage
+      .from('vehicle-evidences')
+      .getPublicUrl(fileName);
+    return publicUrl;
+  }
+
   async createRequest(
     driverId: string, 
     dto: CreateVehicleRegistrationDto, 
-    file: { buffer: Buffer; mimetype: string; originalname: string }
+    caVantFile: { buffer: Buffer; mimetype: string; originalname: string },
+    overallFile: { buffer: Buffer; mimetype: string; originalname: string },
+    plateFile: { buffer: Buffer; mimetype: string; originalname: string },
   ) {
     const normalizedPlate = normalizePlateNumber(dto.plateNumber);
     if (!normalizedPlate) {
@@ -58,7 +80,6 @@ export class VehicleRegistrationsService {
     });
 
     if (existingVehicle && existingVehicle.vehicleUsers.length > 0) {
-      // If the current driver is the owner, return conflict
       if (existingVehicle.vehicleUsers[0].userId === driverId) {
         throw new ConflictException('You are already the owner of this vehicle');
       }
@@ -80,32 +101,22 @@ export class VehicleRegistrationsService {
       throw new ConflictException('Another user has a pending registration request for this vehicle');
     }
 
-    // Upload evidence to Supabase Storage
+    // Upload 3 evidence files to Supabase Storage
     const supabase = this.getSupabaseClient();
-    const fileExt = file.originalname.split('.').pop();
-    const fileName = `${driverId}-${Date.now()}.${fileExt}`;
-    
-    const { data: uploadData, error } = await supabase.storage
-      .from('vehicle-evidences')
-      .upload(fileName, file.buffer, {
-        contentType: file.mimetype,
-      });
-
-    if (error) {
-      this.logger.error('Failed to upload evidence to Supabase', error);
-      throw new BadRequestException('Không thể tải lên ảnh chứng minh. Vui lòng thử lại.');
-    }
-
-    const { data: { publicUrl } } = supabase.storage
-      .from('vehicle-evidences')
-      .getPublicUrl(fileName);
+    const [caVantUrl, overallUrl, plateUrl] = await Promise.all([
+      this.uploadFile(supabase, caVantFile, `${driverId}-cavant`),
+      this.uploadFile(supabase, overallFile, `${driverId}-overall`),
+      this.uploadFile(supabase, plateFile, `${driverId}-plate`),
+    ]);
 
     const request = await this.prisma.vehicleRegistrationRequest.create({
       data: {
         driverId,
         plateNumber: normalizedPlate,
         vehicleType: dto.vehicleType,
-        evidenceUrl: publicUrl,
+        evidenceUrlCaVant: caVantUrl,
+        evidenceUrlOverall: overallUrl,
+        evidenceUrlPlate: plateUrl,
       },
     });
 

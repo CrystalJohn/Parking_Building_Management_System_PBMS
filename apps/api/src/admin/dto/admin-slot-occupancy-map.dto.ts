@@ -32,6 +32,16 @@ export interface SlotOccupancyMapSessionDto {
   thumbnailUrl: string | null;
 }
 
+export interface SlotOccupancyMapReservationDto {
+  id: string;
+  driverName: string | null;
+  driverPhone: string;
+  plateNumber: string;
+  vehicleType: 'car' | 'motorbike';
+  reservedAt: string;
+  expiresAt: string;
+}
+
 export interface SlotOccupancyMapSlotDto {
   id: number;
   code: string;
@@ -42,6 +52,7 @@ export interface SlotOccupancyMapSlotDto {
   floorName: string;
   zone: SlotOccupancyMapZoneId;
   session: SlotOccupancyMapSessionDto | null;
+  reservation: SlotOccupancyMapReservationDto | null;
   risk: SlotOccupancyMapRiskDto;
 }
 

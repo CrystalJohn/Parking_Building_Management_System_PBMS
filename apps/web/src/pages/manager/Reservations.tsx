@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, useMemo } from 'react'
+import { format } from 'date-fns'
 import {
   getAdminSummary,
   type AdminSummary,
@@ -10,10 +11,13 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Calendar } from '@/components/ui/calendar'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { formatDateTimeVN } from '../../lib/date-time'
 import { formatPlateForDisplay, formatVehicleType } from '../../lib/plate-format'
-import { Button } from '@/components/ui/button'
-import { RefreshCw, Loader2, CalendarClock, CheckCircle2, XCircle, Clock, Search, Filter } from 'lucide-react'
+import { cn } from '../../lib/utils'
+import { RefreshCw, Loader2, CalendarClock, CheckCircle2, XCircle, Clock, Search, Filter, CalendarIcon } from 'lucide-react'
 
 const POLL_INTERVAL_MS = 30000
 
@@ -72,13 +76,16 @@ export default function Reservations() {
   
   // Filter State
   const [filter, setFilter] = useState<'all' | 'active' | 'fulfilled' | 'expired' | 'cancelled'>('all')
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date())
+  const [dateOpen, setDateOpen] = useState(false)
 
   const loadReservations = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
     try {
+      const dateStr = format(selectedDate, 'yyyy-MM-dd')
       const [summaryData, reservationsData] = await Promise.all([
-        getAdminSummary(),
-        getAllReservations(),
+        getAdminSummary(dateStr),
+        getAllReservations(dateStr),
       ])
       setSummary(summaryData)
       setReservations(reservationsData)
@@ -89,7 +96,7 @@ export default function Reservations() {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [])
+  }, [selectedDate])
 
   useEffect(() => {
     void loadReservations()
@@ -116,13 +123,39 @@ export default function Reservations() {
               Daily reservation statistics and system-wide booking management.
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-full px-4 shadow-sm"
-            onClick={() => void loadReservations(true)}
-            disabled={loading || refreshing}
-          >
+          <div className="flex items-center gap-2">
+            <Popover open={dateOpen} onOpenChange={setDateOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    'rounded-full px-4 shadow-sm justify-start font-normal',
+                    !selectedDate && 'text-muted-foreground'
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {selectedDate ? format(selectedDate, 'dd/MM/yyyy') : 'Pick a date'}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="end">
+                <Calendar
+                  mode="single"
+                  selected={selectedDate}
+                  onSelect={(date) => {
+                    setSelectedDate(date ?? new Date())
+                    setDateOpen(false)
+                  }}
+                />
+              </PopoverContent>
+            </Popover>
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-full px-4 shadow-sm"
+              onClick={() => void loadReservations(true)}
+              disabled={loading || refreshing}
+            >
             {refreshing ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin text-cyan-600" />
             ) : (
@@ -130,6 +163,7 @@ export default function Reservations() {
             )}
             Refresh Data
           </Button>
+          </div>
         </div>
 
         {error ? (

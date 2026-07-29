@@ -30,7 +30,9 @@ export interface ManagerReservation {
   } | null
 }
 
-export async function getAllReservations(): Promise<ManagerReservation[]> {
-  const { data } = await api.get<ManagerReservation[]>('/reservations/all')
+export async function getAllReservations(date?: string): Promise<ManagerReservation[]> {
+  const { data } = await api.get<ManagerReservation[]>('/reservations/all', {
+    params: date ? { date } : {},
+  })
   return data
 }
