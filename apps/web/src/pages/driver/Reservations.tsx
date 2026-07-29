@@ -663,18 +663,45 @@ function ReserveVehicleForm({
 
       <CardContent className="space-y-5 p-6 pt-0">
         {vehicles.length === 0 ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100">
-            <div className="flex items-center justify-between">
-              <p className="font-semibold">No Linked Vehicles Available</p>
-              <Button type="button" size="sm" onClick={onRequestVehicle}>
-                <Plus className="mr-1 size-3.5" />
-                Request Link
-              </Button>
+          pendingRequest ? (
+            <div className="rounded-xl border border-sky-200 bg-sky-50/80 p-4.5 text-sm text-sky-900 dark:border-sky-400/20 dark:bg-sky-500/10 dark:text-sky-100 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="relative flex size-2.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75" />
+                    <span className="relative inline-flex size-2.5 rounded-full bg-sky-500" />
+                  </span>
+                  <p className="font-bold text-sky-900 dark:text-sky-200">Vehicle Registration Pending Review</p>
+                </div>
+                <Badge className="border-sky-300 bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200 font-semibold text-xs font-mono">
+                  {formatPlateForDisplay(pendingRequest.plateNumber)}
+                </Badge>
+              </div>
+              <p className="mt-2.5 text-xs text-sky-800/90 dark:text-sky-200/90 leading-relaxed">
+                Your registration request for plate <strong className="font-mono text-foreground">{formatPlateForDisplay(pendingRequest.plateNumber)}</strong> ({formatVehicleType(pendingRequest.vehicleType)}) with Cà vẹt document is submitted and currently awaiting Manager approval.
+              </p>
+              <div className="mt-3.5 flex items-center justify-between pt-2.5 border-t border-sky-200/60 dark:border-sky-800/40">
+                <span className="text-[11px] text-sky-700 dark:text-sky-300">Submitted: {formatDateTimeVN(pendingRequest.createdAt)}</span>
+                <Button type="button" variant="outline" size="sm" className="h-8 text-xs border-sky-300 text-sky-800 dark:border-sky-700 dark:text-sky-200" onClick={onRequestVehicle}>
+                  <Plus className="mr-1 size-3" />
+                  Request Another Link
+                </Button>
+              </div>
             </div>
-            <p className="mt-1 text-xs text-amber-800/90 dark:text-amber-200/90">
-              Reservations require a verified vehicle linked to your account.
-            </p>
-          </div>
+          ) : (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100">
+              <div className="flex items-center justify-between">
+                <p className="font-semibold">No Linked Vehicles Available</p>
+                <Button type="button" size="sm" onClick={onRequestVehicle}>
+                  <Plus className="mr-1 size-3.5" />
+                  Request Link
+                </Button>
+              </div>
+              <p className="mt-1 text-xs text-amber-800/90 dark:text-amber-200/90">
+                Reservations require a verified vehicle linked to your account.
+              </p>
+            </div>
+          )
         ) : (
           <>
             <div>
