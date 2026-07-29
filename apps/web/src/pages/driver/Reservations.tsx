@@ -77,6 +77,7 @@ export default function Reservations() {
   const [selectedVehicleId, setSelectedVehicleId] = useState('')
   const [quota, setQuota] = useState<ReservationQuotaSnapshot | null>(null)
   const [registrationRequests, setRegistrationRequests] = useState<VehicleRegistrationRequest[]>([])
+  const [showNewAccountPrompt, setShowNewAccountPrompt] = useState(false)
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -89,6 +90,7 @@ export default function Reservations() {
   const [requestEvidence, setRequestEvidence] = useState<File | null>(null)
   const [requestingVehicle, setRequestingVehicle] = useState(false)
   const paramVehicle = searchParams.get('vehicleId')
+  const actionParam = searchParams.get('action')
   const mountRef = useRef(false)
 
   const loadPage = async () => {
@@ -106,12 +108,21 @@ export default function Reservations() {
       setQuota(quotaData)
       setRegistrationRequests(requestData)
       setShowQr(false)
+      if (vehicleData.length === 0 && requestData.length === 0) {
+        setShowNewAccountPrompt(true)
+      }
     } catch {
       setError('Unable to load reservation data. Retry to continue.')
     } finally {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (actionParam === 'register') {
+      setShowVehicleRequest(true)
+    }
+  }, [actionParam])
 
   useEffect(() => {
     if (!mountRef.current) {
@@ -369,6 +380,38 @@ export default function Reservations() {
               onClick={() => void handleCancel()}
             >
               Cancel reservation
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* New Account Onboarding Prompt Dialog */}
+      <AlertDialog open={showNewAccountPrompt} onOpenChange={setShowNewAccountPrompt}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <div className="mx-auto mb-2 flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <Car className="size-6" />
+            </div>
+            <AlertDialogTitle className="text-center text-xl font-bold">
+              Welcome to PBMS!
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-center text-sm leading-relaxed">
+              We noticed your account doesn't have a linked vehicle yet. Register your vehicle now by uploading your <strong>Vehicle Registration Certificate (Cà vẹt xe)</strong> to unlock 20% discount parking spot reservations.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-center">
+            <AlertDialogCancel className="min-h-11 w-full sm:w-auto">
+              Maybe later
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="min-h-11 w-full font-semibold sm:w-auto"
+              onClick={() => {
+                setShowNewAccountPrompt(false)
+                setShowVehicleRequest(true)
+              }}
+            >
+              <Plus className="mr-1.5 size-4" />
+              Register Vehicle Now
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

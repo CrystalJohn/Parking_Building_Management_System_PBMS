@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowRight, RefreshCw, Sparkles } from 'lucide-react'
+import { ArrowRight, Car, Plus, RefreshCw, Sparkles } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { ActiveReservationCard } from '@/components/driver/ActiveReservationCard'
 import { AvailabilitySummary } from '@/components/driver/AvailabilitySummary'
-import { cancelReservation, getAvailability, getMyReservations, getPricing, type AvailabilityItem, type PricingInfo, type Reservation } from '@/lib/driver-api'
+import { cancelReservation, getAvailability, getMyReservations, getMyVehicles, getPricing, type AvailabilityItem, type DriverVehicle, type PricingInfo, type Reservation } from '@/lib/driver-api'
 
 const ACTIVE_REFRESH_MS = 30_000
 
 export default function DriverHome() {
   const [availability, setAvailability] = useState<AvailabilityItem[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
+  const [vehicles, setVehicles] = useState<DriverVehicle[]>([])
   const [pricing, setPricing] = useState<PricingInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -34,7 +35,9 @@ export default function DriverHome() {
 
   const loadReservations = useCallback(async () => {
     try {
-      setReservations(await getMyReservations())
+      const [resData, vehData] = await Promise.all([getMyReservations(), getMyVehicles()])
+      setReservations(resData)
+      setVehicles(vehData)
       setReservationError(null)
     } catch {
       setReservationError('Unable to load your reservations. Retry to see your latest booking.')
@@ -79,6 +82,28 @@ export default function DriverHome() {
 
       {reservationError ? <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200"><span>{reservationError}</span><Button type="button" variant="outline" className="min-h-11 border-rose-300 text-rose-700 dark:border-rose-300/40 dark:text-rose-100" onClick={() => void loadReservations()}>Retry reservations</Button></div> : null}
       {error ? <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100">{error} <button type="button" className="ml-2 min-h-11 font-semibold underline underline-offset-4" onClick={() => void loadAvailability(true)}>Retry</button></div> : null}
+
+      {!loading && vehicles.length === 0 ? (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 sm:p-5 text-amber-900 dark:text-amber-100 shadow-sm">
+          <div className="flex items-start gap-3.5">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400">
+              <Car className="size-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold">New Account Notice: Link Your Vehicle</h3>
+              <p className="mt-0.5 text-xs text-amber-800/90 dark:text-amber-200/90 max-w-xl">
+                You haven't linked a vehicle yet. Submit your vehicle plate & Cà vẹt document to unlock 20% OFF spot reservations.
+              </p>
+            </div>
+          </div>
+          <Button asChild size="sm" className="min-h-10 shrink-0 font-semibold shadow-sm w-full sm:w-auto">
+            <Link to="/driver/reservations?action=register">
+              <Plus className="mr-1.5 size-4" />
+              Register Vehicle Now
+            </Link>
+          </Button>
+        </div>
+      ) : null}
 
       {loading ? <HomeSkeleton /> : <>
         {activeReservations.length > 0 ? (
