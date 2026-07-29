@@ -599,7 +599,7 @@ export default function Vehicles() {
       </Tabs>
 
       <Dialog open={!!selectedViewerRequest} onOpenChange={(open) => !open && setSelectedViewerRequest(null)}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="sm:max-w-4xl max-w-[95vw] p-6">
           <DialogHeader>
             <div className="flex items-center justify-between pr-4">
               <div>

@@ -133,6 +133,17 @@ export default function Reservations() {
       mountRef.current = true
       void loadPage()
     }
+    const timer = setInterval(() => {
+      void loadPage()
+    }, 10000)
+    const onFocus = () => {
+      void loadPage()
+    }
+    window.addEventListener('focus', onFocus)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
+    }
   }, [])
 
   const activeReservation = useMemo(
@@ -715,6 +726,7 @@ function ReserveVehicleForm({
   const disabled = creating || !selectedVehicle || cooldownActive || quotaReached
 
   const pendingRequests = requests.filter((r) => r.status === 'pending')
+  const rejectedRequests = requests.filter((r) => r.status === 'rejected')
 
   return (
     <Card className="shadow-sm">
@@ -726,58 +738,138 @@ function ReserveVehicleForm({
 
       <CardContent className="space-y-5 p-6 pt-0">
         {vehicles.length === 0 ? (
-          pendingRequests.length > 0 ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Pending Vehicle Registrations ({pendingRequests.length})
-                </p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 font-semibold text-xs border-sky-500/30 text-sky-700 hover:bg-sky-500/10 dark:text-sky-300"
-                  onClick={onRequestVehicle}
-                >
-                  <Plus className="mr-1.5 size-3.5" />
-                  Register Another Vehicle
-                </Button>
-              </div>
-
-              {pendingRequests.map((pendingReq) => (
-                <div key={pendingReq.id} className="rounded-2xl border border-sky-500/30 bg-gradient-to-br from-sky-500/10 via-sky-500/5 to-transparent p-5 sm:p-6 shadow-sm dark:border-sky-400/20 dark:from-sky-500/15">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-sky-500/20 pb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-sky-500/20 text-sky-600 dark:text-sky-300">
-                        <Clock3 className="size-5" />
-                      </div>
-                      <div>
-                        <h4 className="text-base font-bold text-foreground">Vehicle Registration Pending Review</h4>
-                        <p className="text-xs text-muted-foreground">Your document has been submitted for manager verification.</p>
-                      </div>
-                    </div>
-                    <Badge className="border-sky-500/40 bg-sky-500/20 text-sky-700 dark:text-sky-300 font-bold text-xs px-3 py-1 self-start sm:self-auto">
-                      <span className="mr-1.5 size-2 rounded-full bg-sky-500 animate-ping inline-block" />
-                      Pending Approval
-                    </Badge>
+          pendingRequests.length > 0 || rejectedRequests.length > 0 ? (
+            <div className="space-y-5">
+              {/* Pending Requests Section */}
+              {pendingRequests.length > 0 ? (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                      Pending Vehicle Registrations ({pendingRequests.length})
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 font-semibold text-xs border-sky-500/30 text-sky-700 hover:bg-sky-500/10 dark:text-sky-300"
+                      onClick={onRequestVehicle}
+                    >
+                      <Plus className="mr-1.5 size-3.5" />
+                      Register Another Vehicle
+                    </Button>
                   </div>
 
-                  <div className="mt-4 grid gap-3 sm:grid-cols-3 rounded-xl border bg-background/80 p-3.5 backdrop-blur">
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Plate Number</p>
-                      <p className="mt-0.5 font-mono text-base font-black tracking-wider text-foreground">{formatPlateForDisplay(pendingReq.plateNumber)}</p>
+                  {pendingRequests.map((pendingReq) => (
+                    <div key={pendingReq.id} className="rounded-2xl border border-sky-500/30 bg-gradient-to-br from-sky-500/10 via-sky-500/5 to-transparent p-5 sm:p-6 shadow-sm dark:border-sky-400/20 dark:from-sky-500/15">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-sky-500/20 pb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-sky-500/20 text-sky-600 dark:text-sky-300">
+                            <Clock3 className="size-5" />
+                          </div>
+                          <div>
+                            <h4 className="text-base font-bold text-foreground">Vehicle Registration Pending Review</h4>
+                            <p className="text-xs text-muted-foreground">Your document has been submitted for manager verification.</p>
+                          </div>
+                        </div>
+                        <Badge className="border-sky-500/40 bg-sky-500/20 text-sky-700 dark:text-sky-300 font-bold text-xs px-3 py-1 self-start sm:self-auto">
+                          <span className="mr-1.5 size-2 rounded-full bg-sky-500 animate-ping inline-block" />
+                          Pending Approval
+                        </Badge>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 sm:grid-cols-3 rounded-xl border bg-background/80 p-3.5 backdrop-blur">
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Plate Number</p>
+                          <p className="mt-0.5 font-mono text-base font-black tracking-wider text-foreground">{formatPlateForDisplay(pendingReq.plateNumber)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Vehicle Type</p>
+                          <p className="mt-0.5 text-sm font-semibold text-foreground">{formatVehicleType(pendingReq.vehicleType)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Submitted At</p>
+                          <p className="mt-0.5 text-xs font-medium text-muted-foreground">{formatDateTimeVN(pendingReq.createdAt)}</p>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Vehicle Type</p>
-                      <p className="mt-0.5 text-sm font-semibold text-foreground">{formatVehicleType(pendingReq.vehicleType)}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Submitted At</p>
-                      <p className="mt-0.5 text-xs font-medium text-muted-foreground">{formatDateTimeVN(pendingReq.createdAt)}</p>
-                    </div>
-                  </div>
+                  ))}
                 </div>
-              ))}
+              ) : null}
+
+              {/* Rejected Requests Section */}
+              {rejectedRequests.length > 0 ? (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">
+                      Rejected Vehicle Registrations ({rejectedRequests.length})
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8 font-semibold text-xs bg-rose-600 hover:bg-rose-700 text-white"
+                      onClick={onRequestVehicle}
+                    >
+                      <Plus className="mr-1.5 size-3.5" />
+                      Re-submit Vehicle Request
+                    </Button>
+                  </div>
+
+                  {rejectedRequests.map((rejReq) => (
+                    <div key={rejReq.id} className="rounded-2xl border border-rose-500/30 bg-gradient-to-br from-rose-500/10 via-rose-500/5 to-transparent p-5 sm:p-6 shadow-sm dark:border-rose-400/20 dark:from-rose-500/15">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-rose-500/20 pb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-rose-500/20 text-rose-600 dark:text-rose-400">
+                            <XCircle className="size-5" />
+                          </div>
+                          <div>
+                            <h4 className="text-base font-bold text-foreground">Vehicle Registration Request Rejected</h4>
+                            <p className="text-xs text-muted-foreground">Your registration request was reviewed and rejected by Manager.</p>
+                          </div>
+                        </div>
+                        <Badge variant="destructive" className="font-bold text-xs px-3 py-1 self-start sm:self-auto">
+                          Request Rejected
+                        </Badge>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 sm:grid-cols-3 rounded-xl border bg-background/80 p-3.5 backdrop-blur">
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Plate Number</p>
+                          <p className="mt-0.5 font-mono text-base font-black tracking-wider text-foreground">{formatPlateForDisplay(rejReq.plateNumber)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Vehicle Type</p>
+                          <p className="mt-0.5 text-sm font-semibold text-foreground">{formatVehicleType(rejReq.vehicleType)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Submitted At</p>
+                          <p className="mt-0.5 text-xs font-medium text-muted-foreground">{formatDateTimeVN(rejReq.createdAt)}</p>
+                        </div>
+                      </div>
+
+                      {rejReq.rejectReason ? (
+                        <div className="mt-3.5 rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-xs text-rose-800 dark:text-rose-200">
+                          <strong className="font-bold">Manager Reason:</strong> {rejReq.rejectReason}
+                        </div>
+                      ) : null}
+
+                      <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                        <p className="text-xs text-muted-foreground">
+                          Please check your 3 verification photos and submit a new request.
+                        </p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="min-h-9 font-semibold text-xs bg-rose-600 hover:bg-rose-700 text-white shrink-0"
+                          onClick={onRequestVehicle}
+                        >
+                          <Plus className="mr-1.5 size-3.5" />
+                          Re-submit Request (3 Photos)
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100">
