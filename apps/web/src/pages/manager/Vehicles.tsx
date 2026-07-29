@@ -8,6 +8,8 @@ import {
   Clock,
   CheckCircle,
   XCircle,
+  Camera,
+  FileText,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '../../lib/api'
@@ -92,7 +94,8 @@ export default function Vehicles() {
   const [historyRequests, setHistoryRequests] = useState<VehicleRegistrationRequest[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [activeTab, setActiveTab] = useState('registry')
-  const [evidenceViewerUrl, setEvidenceViewerUrl] = useState<string | null>(null)
+  const [selectedViewerRequest, setSelectedViewerRequest] = useState<VehicleRegistrationRequest | null>(null)
+  const [activeViewerTab, setActiveViewerTab] = useState<'cavet' | 'vehicle' | 'plate'>('cavet')
 
   const fetchPendingRequests = async () => {
     setLoadingRequests(true)
@@ -239,8 +242,17 @@ export default function Vehicles() {
                         </TableCell>
                         <TableCell>
                           {req.evidenceUrl ? (
-                            <Button variant="link" className="p-0 h-auto text-blue-600 hover:text-blue-700" onClick={() => setEvidenceViewerUrl(req.evidenceUrl!)}>
-                              View Image
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 font-semibold text-xs border-sky-300 bg-sky-50/70 text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300"
+                              onClick={() => {
+                                setSelectedViewerRequest(req)
+                                setActiveViewerTab('cavet')
+                              }}
+                            >
+                              <Camera className="size-3.5 mr-1 text-sky-600" />
+                              View Photos (3)
                             </Button>
                           ) : (
                             <span className="text-muted-foreground italic text-xs">No evidence</span>
@@ -312,8 +324,17 @@ export default function Vehicles() {
                         </TableCell>
                         <TableCell>
                           {req.evidenceUrl ? (
-                            <Button variant="link" className="p-0 h-auto text-blue-600 hover:text-blue-700" onClick={() => setEvidenceViewerUrl(req.evidenceUrl!)}>
-                              View Image
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 font-semibold text-xs border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-slate-800 dark:text-slate-300"
+                              onClick={() => {
+                                setSelectedViewerRequest(req)
+                                setActiveViewerTab('cavet')
+                              }}
+                            >
+                              <Camera className="size-3.5 mr-1 text-slate-600" />
+                              View Photos (3)
                             </Button>
                           ) : (
                             <span className="text-muted-foreground italic text-xs">N/A</span>
@@ -577,23 +598,117 @@ export default function Vehicles() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={!!evidenceViewerUrl} onOpenChange={(open) => !open && setEvidenceViewerUrl(null)}>
-        <DialogContent className="max-w-2xl">
+      <Dialog open={!!selectedViewerRequest} onOpenChange={(open) => !open && setSelectedViewerRequest(null)}>
+        <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Vehicle Evidence</DialogTitle>
-            <DialogDescription>
-              Image uploaded as proof of vehicle registration (Cà vẹt xe).
-            </DialogDescription>
+            <div className="flex items-center justify-between pr-4">
+              <div>
+                <DialogTitle className="text-lg font-bold flex items-center gap-2">
+                  <span>Vehicle Verification Documents (3 Photos)</span>
+                  {selectedViewerRequest?.plateNumber && (
+                    <Badge className="font-mono text-xs font-bold">{formatPlateForDisplay(selectedViewerRequest.plateNumber)}</Badge>
+                  )}
+                </DialogTitle>
+                <DialogDescription className="mt-1 text-xs">
+                  Review uploaded verification documents submitted by <strong>{selectedViewerRequest?.driver?.fullName || 'Driver'}</strong> ({selectedViewerRequest?.driver?.phone || 'No phone'}).
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
-          <div className="flex justify-center bg-muted/30 rounded-lg p-2 min-h-64">
-            {evidenceViewerUrl && (
-              <img
-                src={evidenceViewerUrl}
-                alt="Evidence Document"
-                className="max-h-[70vh] object-contain rounded-md shadow-sm"
-              />
+
+          {/* 3 Document Tab Bar */}
+          <div className="grid grid-cols-3 gap-2 rounded-xl bg-muted/40 p-1.5 text-xs font-semibold">
+            <button
+              type="button"
+              className={`flex items-center justify-center gap-1.5 rounded-lg py-2 transition-all ${
+                activeViewerTab === 'cavet'
+                  ? 'bg-background text-foreground font-bold shadow-xs border'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              onClick={() => setActiveViewerTab('cavet')}
+            >
+              <FileText className="size-3.5 text-primary" />
+              <span>1. Cà vẹt xe</span>
+            </button>
+            <button
+              type="button"
+              className={`flex items-center justify-center gap-1.5 rounded-lg py-2 transition-all ${
+                activeViewerTab === 'vehicle'
+                  ? 'bg-background text-foreground font-bold shadow-xs border'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              onClick={() => setActiveViewerTab('vehicle')}
+            >
+              <Car className="size-3.5 text-primary" />
+              <span>2. Ảnh tổng thể xe</span>
+            </button>
+            <button
+              type="button"
+              className={`flex items-center justify-center gap-1.5 rounded-lg py-2 transition-all ${
+                activeViewerTab === 'plate'
+                  ? 'bg-background text-foreground font-bold shadow-xs border'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              onClick={() => setActiveViewerTab('plate')}
+            >
+              <Camera className="size-3.5 text-primary" />
+              <span>3. Cận cảnh biển số</span>
+            </button>
+          </div>
+
+          {/* Photo Container */}
+          <div className="relative flex flex-col items-center justify-center rounded-xl border bg-slate-950/90 p-4 min-h-[380px] overflow-hidden">
+            {selectedViewerRequest?.evidenceUrl ? (
+              <>
+                <img
+                  src={selectedViewerRequest.evidenceUrl}
+                  alt={activeViewerTab}
+                  className="max-h-[55vh] max-w-full rounded-lg object-contain shadow-md transition-all duration-300"
+                />
+                <div className="absolute bottom-3 left-3 rounded-md bg-black/70 backdrop-blur px-3 py-1.5 text-xs font-semibold text-white">
+                  {activeViewerTab === 'cavet' && '📄 Document 1/3: Registration Certificate (Cà vẹt xe)'}
+                  {activeViewerTab === 'vehicle' && '🚗 Document 2/3: Overall Vehicle Photo'}
+                  {activeViewerTab === 'plate' && '📷 Document 3/3: License Plate Close-up Photo'}
+                </div>
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground italic">No image uploaded</p>
             )}
           </div>
+
+          {/* Footer Action Bar */}
+          {selectedViewerRequest && selectedViewerRequest.status === 'pending' ? (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t pt-3.5">
+              <p className="text-xs text-muted-foreground">Verify all 3 photos before granting vehicle access.</p>
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-rose-600 border-rose-200 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300"
+                  disabled={reviewingId === selectedViewerRequest.id}
+                  onClick={() => {
+                    handleReview(selectedViewerRequest.id, 'rejected')
+                    setSelectedViewerRequest(null)
+                  }}
+                >
+                  <XCircle className="size-4 mr-1.5" />
+                  Reject Request
+                </Button>
+                <Button
+                  size="sm"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                  disabled={reviewingId === selectedViewerRequest.id}
+                  onClick={() => {
+                    handleReview(selectedViewerRequest.id, 'approved')
+                    setSelectedViewerRequest(null)
+                  }}
+                >
+                  <CheckCircle className="size-4 mr-1.5" />
+                  Approve Vehicle
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
     </div>
