@@ -261,6 +261,8 @@ export interface CheckoutSessionInfo {
   penaltyAmount: number
   isOvertime: boolean
   isLostTicket: boolean
+  driverName?: string | null
+  driverPhone?: string | null
 }
 
 export interface CheckoutSlotInfo {

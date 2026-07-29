@@ -295,6 +295,10 @@ function GateOperationsPanel({ toasts, laneVehicleType }: PanelProps & { laneVeh
     return (
       <StaffReservationQrCheckInPanel
         onSwitchToOcr={() => setMode('scan-plate')}
+        onRouteToCheckout={(checkoutInput) => {
+          setRoutedCheckout(checkoutInput)
+          setMode('checkout')
+        }}
         toasts={toasts}
       />
     )
@@ -1115,13 +1119,28 @@ function CheckOutPanel({
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.38fr)] lg:items-start">
               <div className="space-y-4">
                 <div className="rounded-2xl border bg-card px-5 py-5 text-card-foreground shadow-sm">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    Fee
-                  </p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      Fee
+                    </p>
+                    {(workflow.fee.hasReservation || workflow.session.reservationId) && (
+                      <Badge className="border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                        20% Reservation Discount
+                      </Badge>
+                    )}
+                  </div>
                   <p className="mt-2 text-4xl font-black tracking-tight">
                     {amountDue}
                   </p>
-                  <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
+                  {workflow.fee.originalBaseFee && workflow.fee.reservationDiscountAmount ? (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Original: <span className="line-through">{VND(workflow.fee.originalBaseFee)}</span>
+                      <span className="ml-1.5 font-medium text-emerald-600 dark:text-emerald-400">
+                        (-{VND(workflow.fee.reservationDiscountAmount)})
+                      </span>
+                    </p>
+                  ) : null}
+                  <div className="mt-1.5 flex items-center gap-2 text-sm text-muted-foreground">
                     {paymentMethod ? (
                       <PaymentMethodIcon method={paymentMethod} size={18} decorative />
                     ) : null}
@@ -1605,8 +1624,34 @@ function SessionSummary({
       <div className="mt-3 space-y-2 text-sm">
         <SummaryRow label="Session code" value={workflow.session.sessionCode} mono strong />
         <SummaryRow label="Vehicle type" value={readableVehicleType(workflow.session.vehicleType)} />
+        <SummaryRow
+          label="Driver"
+          value={
+            workflow.session.driverName ? (
+              <span className="font-semibold text-foreground">
+                {workflow.session.driverName}
+                {workflow.session.driverPhone && (
+                  <span className="ml-1 font-normal text-muted-foreground">({workflow.session.driverPhone})</span>
+                )}
+              </span>
+            ) : (
+              <span className="text-muted-foreground">Walk-in Guest</span>
+            )
+          }
+        />
         <SummaryRow label="Ticket type" value={ticketType} />
+        {(workflow.fee.hasReservation || workflow.session.reservationId) && (
+          <SummaryRow
+            label="Discount"
+            value={
+              <Badge className="h-4 border-emerald-500/30 bg-emerald-500/10 px-1.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
+                -20% (Reservation)
+              </Badge>
+            }
+          />
+        )}
         <SummaryRow label="Plate match" value={<PlateMatchBadge state={plateMatchState} />} />
+        <SummaryRow label="Check-in time" value={formatDateTimeVN(workflow.session.checkInTime)} />
         <SummaryRow label="Duration" value={durationLabel} />
         <SummaryRow
           label="Payment status"

@@ -4,6 +4,7 @@ import {
   Camera,
   CheckCircle2,
   Clock3,
+  CornerDownLeft,
   Eye,
   Keyboard,
   Loader2,
@@ -632,7 +633,7 @@ export function StaffOcrCheckInPanel({
                   className="h-11 sm:min-w-[200px]"
                 >
                   <QrCode className="size-4" />
-                  Reservation QR check-in
+                  Reservation QR Check-in
                 </Button>
               ) : null}
               {status === 'OCR_FAILED' ? (
@@ -776,6 +777,12 @@ export function StaffOcrCheckInPanel({
             event.preventDefault()
             requestReset()
           }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && canConfirm && (status as string) !== 'CHECKING_IN') {
+              event.preventDefault()
+              void confirmCheckIn()
+            }
+          }}
         >
           <DialogHeader className="border-b px-6 py-4 sm:px-7">
             <DialogTitle>Confirm check-in</DialogTitle>
@@ -809,10 +816,16 @@ export function StaffOcrCheckInPanel({
                   autoFocus
                   onClick={confirmCheckIn}
                   disabled={!canConfirm}
-                  className="h-12 w-full text-base"
+                  className="h-12 w-full text-base gap-2"
                 >
-                  {status === 'CHECKING_IN' ? <Loader2 className="size-5 animate-spin" /> : <CheckCircle2 className="size-5" />}
-                  {status === 'CHECKING_IN' ? 'Checking in...' : 'Confirm Check-in'}
+                  {(status as string) === 'CHECKING_IN' ? <Loader2 className="size-5 animate-spin" /> : <CheckCircle2 className="size-5" />}
+                  <span>{(status as string) === 'CHECKING_IN' ? 'Checking in...' : 'Confirm Check-in'}</span>
+                  {(status as string) !== 'CHECKING_IN' && (
+                    <kbd className="ml-2 inline-flex items-center gap-1 rounded border border-primary-foreground/30 bg-primary-foreground/20 px-2 py-0.5 font-mono text-xs font-bold text-primary-foreground shadow-sm">
+                      <CornerDownLeft className="size-3.5" />
+                      Enter
+                    </kbd>
+                  )}
                 </Button>
               </div>
             </div>

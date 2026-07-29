@@ -36,6 +36,8 @@ export interface AdminSessionHistoryDto {
   summary: {
     totalSessions: number;
     totalRevenue: number;
+    activeCount: number;
+    checkoutPendingCount: number;
   };
   items: AdminSessionHistoryItemDto[];
 }

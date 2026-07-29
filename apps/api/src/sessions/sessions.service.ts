@@ -898,6 +898,9 @@ export class SessionsService {
     penaltyAmount: number;
     isOvertime: boolean;
     isLostTicket: boolean;
+    driver?: { fullName: string; phone: string } | null;
+    reservation?: { driver?: { fullName: string; phone: string } | null } | null;
+    vehicle?: { vehicleUsers?: Array<{ role?: string; user?: { fullName: string; phone: string } }> } | null;
     slot: {
       id: number;
       code: string;
@@ -922,6 +925,27 @@ export class SessionsService {
       expiredAt?: Date | null;
     } | null;
   }) {
+    let driverName: string | null = null;
+    let driverPhone: string | null = null;
+
+    if (session.driver?.fullName) {
+      driverName = session.driver.fullName;
+      driverPhone = session.driver.phone;
+    } else if (session.reservation?.driver?.fullName) {
+      driverName = session.reservation.driver.fullName;
+      driverPhone = session.reservation.driver.phone;
+    } else if (session.vehicle?.vehicleUsers) {
+      const owner = session.vehicle.vehicleUsers.find((vu) => vu.role === 'owner')?.user;
+      if (owner?.fullName) {
+        driverName = owner.fullName;
+        driverPhone = owner.phone;
+      } else if (session.vehicle.vehicleUsers.length > 0 && session.vehicle.vehicleUsers[0].user?.fullName) {
+        const firstDriver = session.vehicle.vehicleUsers[0].user;
+        driverName = firstDriver.fullName;
+        driverPhone = firstDriver.phone;
+      }
+    }
+
     const breakdown = await this.feesService.calculate(
       session,
       session.isLostTicket,
@@ -946,6 +970,8 @@ export class SessionsService {
         penaltyAmount: session.penaltyAmount,
         isOvertime: session.isOvertime,
         isLostTicket: session.isLostTicket,
+        driverName,
+        driverPhone,
       },
       slot: {
         id: session.slot.id,
@@ -1541,6 +1567,36 @@ export class SessionsService {
       include: {
         slot: { include: { floor: true } },
         payment: true,
+        reservation: {
+          include: {
+            driver: {
+              select: {
+                fullName: true,
+                phone: true,
+              },
+            },
+          },
+        },
+        driver: {
+          select: {
+            fullName: true,
+            phone: true,
+          },
+        },
+        vehicle: {
+          include: {
+            vehicleUsers: {
+              include: {
+                user: {
+                  select: {
+                    fullName: true,
+                    phone: true,
+                  },
+                },
+              },
+            },
+          },
+        },
       },
       orderBy: { checkInTime: 'desc' },
     });
@@ -1576,6 +1632,36 @@ export class SessionsService {
       include: {
         slot: { include: { floor: true } },
         payment: true,
+        reservation: {
+          include: {
+            driver: {
+              select: {
+                fullName: true,
+                phone: true,
+              },
+            },
+          },
+        },
+        driver: {
+          select: {
+            fullName: true,
+            phone: true,
+          },
+        },
+        vehicle: {
+          include: {
+            vehicleUsers: {
+              include: {
+                user: {
+                  select: {
+                    fullName: true,
+                    phone: true,
+                  },
+                },
+              },
+            },
+          },
+        },
       },
       orderBy: { checkInTime: 'desc' },
     });

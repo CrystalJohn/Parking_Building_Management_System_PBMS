@@ -386,6 +386,8 @@ export interface AdminSessionHistory {
   summary: {
     totalSessions: number
     totalRevenue: number
+    activeCount: number
+    checkoutPendingCount: number
   }
   items: AdminSessionHistoryItem[]
 }

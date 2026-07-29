@@ -61,9 +61,9 @@ export default function MySession() {
               <QrCode className="size-4" />
               Digital Pass
             </div>
-            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">My QR Code</h1>
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Digital Exit Pass</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Show your digital checkout QR code to staff when exiting the building.
+              Show your digital exit pass QR code to staff or scanner when exiting the building.
             </p>
           </div>
           <Button
@@ -180,7 +180,7 @@ export default function MySession() {
                   <div className="flex flex-col items-center justify-center rounded-xl border bg-card p-6 text-center shadow-xs">
                     {qrCodes[session.id] ? (
                       <>
-                        <p className="text-xs font-semibold uppercase tracking-wider text-primary">Exit Gate Pass</p>
+                        <p className="text-xs font-bold uppercase tracking-wider text-primary">EXIT GATE PASS</p>
                         <div className="mt-3 rounded-2xl border-2 border-primary/20 bg-white p-3 shadow-inner">
                           <img
                             src={qrCodes[session.id]}
@@ -188,8 +188,8 @@ export default function MySession() {
                             className="size-52 object-contain"
                           />
                         </div>
-                        <p className="mt-3 text-xs text-muted-foreground">
-                          Scan this QR code at the checkout gate.
+                        <p className="mt-3 text-xs font-medium text-muted-foreground">
+                          Scan this QR code at the exit gate for checkout &amp; payment.
                         </p>
                       </>
                     ) : (

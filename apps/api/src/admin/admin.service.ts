@@ -370,6 +370,8 @@ export class AdminService {
     }
 
     for (const payment of payments) {
+      if (!payment.session) continue;
+
       if (
         payment.status === PaymentStatus.pending &&
         payment.method === PaymentMethod.bank_qr
@@ -383,7 +385,7 @@ export class AdminService {
                 payment.expiredAt.getTime() -
                   FLAG_THRESHOLDS.pendingBankQrMinutes * 60 * 1000,
               )
-            : payment.session.checkInTime;
+            : (payment.session.checkInTime ?? now);
         const ageMinutes = diffMinutes(now, anchor);
         if (ageMinutes > FLAG_THRESHOLDS.pendingBankQrMinutes) {
           flags.push(
@@ -403,7 +405,7 @@ export class AdminService {
       }
 
       if (payment.status === PaymentStatus.failed) {
-        const anchor = payment.expiredAt ?? payment.paidAt ?? payment.session.checkInTime;
+        const anchor = payment.expiredAt ?? payment.paidAt ?? (payment.session.checkInTime ?? now);
         flags.push(
           buildFlag({
             type: 'failed_payment',
@@ -639,10 +641,9 @@ export class AdminService {
   async getSessionHistory(now = new Date()): Promise<AdminSessionHistoryDto> {
     const today = getHoChiMinhDayRange(now);
 
-    const completedSessions = await this.prisma.parkingSession.findMany({
+    const sessions = await this.prisma.parkingSession.findMany({
       where: {
-        status: SessionStatus.completed,
-        checkOutTime: {
+        checkInTime: {
           gte: today.start,
           lte: today.end,
         },
@@ -680,11 +681,11 @@ export class AdminService {
         },
       },
       orderBy: {
-        checkOutTime: 'desc',
+        checkInTime: 'desc',
       },
     });
 
-    const items: AdminSessionHistoryItemDto[] = completedSessions.map((session) => {
+    const items: AdminSessionHistoryItemDto[] = sessions.map((session) => {
       let driverName: string | null = null;
       let driverPhone: string | null = null;
 
@@ -708,6 +709,11 @@ export class AdminService {
         durationMinutes = Math.floor(
           (session.checkOutTime.getTime() - session.checkInTime.getTime()) / 1000 / 60,
         );
+      } else if (session.checkInTime && session.status !== 'completed') {
+        // For active sessions, compute live duration from now
+        durationMinutes = Math.floor(
+          (now.getTime() - session.checkInTime.getTime()) / 1000 / 60,
+        );
       }
 
       return {
@@ -728,7 +734,7 @@ export class AdminService {
         payment: session.payment
           ? {
               id: session.payment.id,
-              amount: session.payment.amount,
+              amount: Number(session.payment.amount || 0),
               method: session.payment.method,
               status: session.payment.status,
               paidAt: session.payment.paidAt?.toISOString() ?? null,
@@ -737,12 +743,15 @@ export class AdminService {
       };
     });
 
-    const totalSessions = items.length;
-    const totalRevenue = items.reduce((sum, item) => sum + (item.payment?.amount ?? 0), 0);
+    const completedItems = items.filter((i) => i.status === 'completed');
+    const totalSessions = completedItems.length;
+    const totalRevenue = completedItems.reduce((sum, item) => sum + (item.payment?.amount ?? 0), 0);
+    const activeCount = items.filter((i) => i.status === 'active').length;
+    const checkoutPendingCount = items.filter((i) => i.status === 'checkout_pending' || i.status === 'exit_authorized').length;
 
     return {
       meta: {
-        selectedDate: now.toISOString().split('T')[0],
+        selectedDate: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(now),
         timezone: 'Asia/Ho_Chi_Minh',
         range: {
           start: today.start.toISOString(),
@@ -752,6 +761,8 @@ export class AdminService {
       summary: {
         totalSessions,
         totalRevenue,
+        activeCount,
+        checkoutPendingCount,
       },
       items,
     };
