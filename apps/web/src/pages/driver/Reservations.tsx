@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { isAxiosError } from 'axios'
 import {
   CalendarClock,
+  Camera,
   Car,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
   CircleAlert,
   Clock3,
+  FileText,
   Plus,
   QrCode,
   ShieldCheck,
@@ -88,6 +90,8 @@ export default function Reservations() {
   const [requestPlate, setRequestPlate] = useState('')
   const [requestType, setRequestType] = useState<VehicleType>('car')
   const [requestEvidence, setRequestEvidence] = useState<File | null>(null)
+  const [requestVehiclePhoto, setRequestVehiclePhoto] = useState<File | null>(null)
+  const [requestPlatePhoto, setRequestPlatePhoto] = useState<File | null>(null)
   const [requestingVehicle, setRequestingVehicle] = useState(false)
   const paramVehicle = searchParams.get('vehicleId')
   const actionParam = searchParams.get('action')
@@ -192,7 +196,7 @@ export default function Reservations() {
 
   const handleVehicleRequest = async () => {
     const plate = requestPlate.trim().toUpperCase().replace(/\s+/g, '')
-    if (!plate || !requestEvidence) return
+    if (!plate || !requestEvidence || !requestVehiclePhoto || !requestPlatePhoto) return
     setRequestingVehicle(true)
     setActionError(null)
     try {
@@ -200,6 +204,8 @@ export default function Reservations() {
       setRegistrationRequests((current) => [request, ...current])
       setRequestPlate('')
       setRequestEvidence(null)
+      setRequestVehiclePhoto(null)
+      setRequestPlatePhoto(null)
       setShowVehicleRequest(false)
     } catch (err) {
       applyApiError(err, 'Unable to submit the vehicle request. Please retry.')
@@ -305,16 +311,16 @@ export default function Reservations() {
 
       {/* Request Vehicle Link Dialog */}
       <BaseDialog open={showVehicleRequest} onOpenChange={setShowVehicleRequest}>
-        <BaseDialogPopup from="top" className="sm:max-w-md">
+        <BaseDialogPopup from="top" className="sm:max-w-lg">
           <BaseDialogHeader>
             <BaseDialogTitle>Request a Vehicle Link</BaseDialogTitle>
             <BaseDialogDescription>
-              Submit your plate number and vehicle registration document for manager approval.
+              Submit your vehicle details and 3 verification photos for Manager review and approval.
             </BaseDialogDescription>
           </BaseDialogHeader>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium" htmlFor="request-plate">
+              <label className="block text-xs font-bold uppercase tracking-wider text-foreground" htmlFor="request-plate">
                 Plate number<span className="text-destructive"> *</span>
               </label>
               <input
@@ -326,8 +332,9 @@ export default function Reservations() {
                 className="mt-1.5 min-h-11 w-full rounded-lg border bg-background px-3 font-mono text-base outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
             </div>
+
             <div>
-              <label className="block text-sm font-medium" htmlFor="request-type">
+              <label className="block text-xs font-bold uppercase tracking-wider text-foreground" htmlFor="request-type">
                 Vehicle type
               </label>
               <select
@@ -340,25 +347,80 @@ export default function Reservations() {
                 <option value="motorbike">Motorbike</option>
               </select>
             </div>
-            <div>
-              <label className="block text-sm font-medium" htmlFor="request-evidence">
-                Vehicle Registration Document (Cà vẹt xe)<span className="text-destructive"> *</span>
-              </label>
-              <input
-                id="request-evidence"
-                type="file"
-                accept="image/*"
-                onChange={(event) => setRequestEvidence(event.target.files?.[0] || null)}
-                className="mt-1.5 w-full text-sm file:mr-4 file:rounded-full file:border-0 file:bg-primary/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary hover:file:bg-primary/20"
-              />
+
+            {/* 3 Verification Document Inputs */}
+            <div className="space-y-3.5 rounded-xl border bg-muted/20 p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-wider text-foreground">
+                  Verification Documents (3 Required Photos)
+                </p>
+                <span className="text-[10px] font-semibold text-muted-foreground">
+                  {[requestEvidence, requestVehiclePhoto, requestPlatePhoto].filter(Boolean).length} / 3 Uploaded
+                </span>
+              </div>
+
+              {/* 1. Cà vẹt xe */}
+              <div className="rounded-lg border bg-background p-3 space-y-1.5">
+                <label className="flex items-center justify-between text-xs font-semibold text-foreground cursor-pointer" htmlFor="request-evidence">
+                  <span className="flex items-center gap-1.5">
+                    <FileText className="size-4 text-primary" />
+                    1. Vehicle Registration Certificate (Cà vẹt xe)<span className="text-destructive"> *</span>
+                  </span>
+                  {requestEvidence ? <CheckCircle2 className="size-4 text-emerald-500" /> : <span className="text-[10px] font-bold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">Required</span>}
+                </label>
+                <input
+                  id="request-evidence"
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) => setRequestEvidence(event.target.files?.[0] || null)}
+                  className="w-full text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-primary hover:file:bg-primary/20"
+                />
+              </div>
+
+              {/* 2. Ảnh tổng thể xe */}
+              <div className="rounded-lg border bg-background p-3 space-y-1.5">
+                <label className="flex items-center justify-between text-xs font-semibold text-foreground cursor-pointer" htmlFor="request-vehicle-photo">
+                  <span className="flex items-center gap-1.5">
+                    <Car className="size-4 text-primary" />
+                    2. Overall Vehicle Photo (Ảnh tổng thể xe)<span className="text-destructive"> *</span>
+                  </span>
+                  {requestVehiclePhoto ? <CheckCircle2 className="size-4 text-emerald-500" /> : <span className="text-[10px] font-bold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">Required</span>}
+                </label>
+                <input
+                  id="request-vehicle-photo"
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) => setRequestVehiclePhoto(event.target.files?.[0] || null)}
+                  className="w-full text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-primary hover:file:bg-primary/20"
+                />
+              </div>
+
+              {/* 3. Ảnh cận cảnh biển số */}
+              <div className="rounded-lg border bg-background p-3 space-y-1.5">
+                <label className="flex items-center justify-between text-xs font-semibold text-foreground cursor-pointer" htmlFor="request-plate-photo">
+                  <span className="flex items-center gap-1.5">
+                    <Camera className="size-4 text-primary" />
+                    3. License Plate Close-up Photo (Ảnh cận cảnh biển số)<span className="text-destructive"> *</span>
+                  </span>
+                  {requestPlatePhoto ? <CheckCircle2 className="size-4 text-emerald-500" /> : <span className="text-[10px] font-bold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">Required</span>}
+                </label>
+                <input
+                  id="request-plate-photo"
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) => setRequestPlatePhoto(event.target.files?.[0] || null)}
+                  className="w-full text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-primary hover:file:bg-primary/20"
+                />
+              </div>
             </div>
+
             <Button
               type="button"
-              className="mt-4 min-h-11 w-full"
-              disabled={requestingVehicle || !requestPlate.trim() || !requestEvidence}
+              className="mt-4 min-h-11 w-full font-semibold"
+              disabled={requestingVehicle || !requestPlate.trim() || !requestEvidence || !requestVehiclePhoto || !requestPlatePhoto}
               onClick={() => void handleVehicleRequest()}
             >
-              {requestingVehicle ? 'Submitting request...' : 'Submit vehicle request'}
+              {requestingVehicle ? 'Submitting request...' : 'Submit Vehicle Request (3 Photos Attached)'}
             </Button>
           </div>
         </BaseDialogPopup>
