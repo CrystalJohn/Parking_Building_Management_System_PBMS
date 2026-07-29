@@ -633,7 +633,7 @@ export function StaffOcrCheckInPanel({
                   className="h-11 sm:min-w-[200px]"
                 >
                   <QrCode className="size-4" />
-                  Reservation QR Check-in
+                  Scan QR Pass
                 </Button>
               ) : null}
               {status === 'OCR_FAILED' ? (
