@@ -1677,9 +1677,23 @@ export class SessionsService {
    * 23.3 / 23.4: List sessions for a specific driver, filtered by status.
    */
   async findByDriver(driverId: string, status: 'active' | 'completed') {
-    return this.prisma.parkingSession.findMany({
+    // Find driver's linked vehicles and license plates
+    const linkedVehicles = await this.prisma.vehicleUser.findMany({
+      where: { userId: driverId },
+      select: { vehicleId: true, vehicle: { select: { plateNumber: true } } },
+    });
+    const vehicleIds = linkedVehicles.map((v) => v.vehicleId);
+    const plateNumbers = linkedVehicles
+      .map((v) => v.vehicle?.plateNumber)
+      .filter((p): p is string => Boolean(p));
+
+    const sessions = await this.prisma.parkingSession.findMany({
       where: {
-        driverId,
+        OR: [
+          { driverId },
+          ...(vehicleIds.length > 0 ? [{ vehicleId: { in: vehicleIds } }] : []),
+          ...(plateNumbers.length > 0 ? [{ licensePlate: { in: plateNumbers } }] : []),
+        ],
         status:
           status === 'active'
             ? { in: [SessionStatus.active, SessionStatus.checkout_pending, SessionStatus.exit_authorized] }
@@ -1687,9 +1701,16 @@ export class SessionsService {
       },
       include: {
         slot: { include: { floor: true } },
+        payment: true,
       },
       orderBy: { checkInTime: 'desc' },
     });
+
+    return sessions.map((s) => ({
+      ...s,
+      feeAmount: s.feeAmount ?? s.payment?.amount ?? 0,
+      penaltyAmount: s.penaltyAmount ?? 0,
+    }));
   }
 
   async assertDriverOwnsSession(sessionId: string, driverId: string) {
