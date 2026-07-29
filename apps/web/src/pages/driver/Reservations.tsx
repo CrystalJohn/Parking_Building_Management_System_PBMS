@@ -664,27 +664,51 @@ function ReserveVehicleForm({
       <CardContent className="space-y-5 p-6 pt-0">
         {vehicles.length === 0 ? (
           pendingRequest ? (
-            <div className="rounded-xl border border-sky-200 bg-sky-50/80 p-4.5 text-sm text-sky-900 dark:border-sky-400/20 dark:bg-sky-500/10 dark:text-sky-100 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="relative flex size-2.5">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75" />
-                    <span className="relative inline-flex size-2.5 rounded-full bg-sky-500" />
-                  </span>
-                  <p className="font-bold text-sky-900 dark:text-sky-200">Vehicle Registration Pending Review</p>
+            <div className="rounded-2xl border border-sky-500/30 bg-gradient-to-br from-sky-500/10 via-sky-500/5 to-transparent p-5 sm:p-6 shadow-sm dark:border-sky-400/20 dark:from-sky-500/15">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-sky-500/20 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-sky-500/20 text-sky-600 dark:text-sky-300">
+                    <Clock3 className="size-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-base font-bold text-foreground">Vehicle Registration Pending Review</h4>
+                    <p className="text-xs text-muted-foreground">Your document has been submitted for manager verification.</p>
+                  </div>
                 </div>
-                <Badge className="border-sky-300 bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200 font-semibold text-xs font-mono">
-                  {formatPlateForDisplay(pendingRequest.plateNumber)}
+                <Badge className="border-sky-500/40 bg-sky-500/20 text-sky-700 dark:text-sky-300 font-bold text-xs px-3 py-1 self-start sm:self-auto">
+                  <span className="mr-1.5 size-2 rounded-full bg-sky-500 animate-ping inline-block" />
+                  Pending Approval
                 </Badge>
               </div>
-              <p className="mt-2.5 text-xs text-sky-800/90 dark:text-sky-200/90 leading-relaxed">
-                Your registration request for plate <strong className="font-mono text-foreground">{formatPlateForDisplay(pendingRequest.plateNumber)}</strong> ({formatVehicleType(pendingRequest.vehicleType)}) with Cà vẹt document is submitted and currently awaiting Manager approval.
-              </p>
-              <div className="mt-3.5 flex items-center justify-between pt-2.5 border-t border-sky-200/60 dark:border-sky-800/40">
-                <span className="text-[11px] text-sky-700 dark:text-sky-300">Submitted: {formatDateTimeVN(pendingRequest.createdAt)}</span>
-                <Button type="button" variant="outline" size="sm" className="h-8 text-xs border-sky-300 text-sky-800 dark:border-sky-700 dark:text-sky-200" onClick={onRequestVehicle}>
-                  <Plus className="mr-1 size-3" />
-                  Request Another Link
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-3 rounded-xl border bg-background/80 p-3.5 backdrop-blur">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Plate Number</p>
+                  <p className="mt-0.5 font-mono text-base font-black tracking-wider text-foreground">{formatPlateForDisplay(pendingRequest.plateNumber)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Vehicle Type</p>
+                  <p className="mt-0.5 text-sm font-semibold text-foreground">{formatVehicleType(pendingRequest.vehicleType)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Submitted At</p>
+                  <p className="mt-0.5 text-xs font-medium text-muted-foreground">{formatDateTimeVN(pendingRequest.createdAt)}</p>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                <p className="text-xs text-muted-foreground">
+                  Once approved by manager, this vehicle will appear in your reservation list.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-9 font-semibold text-xs border-sky-500/30 text-sky-700 hover:bg-sky-500/10 dark:text-sky-300 shrink-0"
+                  onClick={onRequestVehicle}
+                >
+                  <Plus className="mr-1.5 size-3.5" />
+                  Register Another Vehicle
                 </Button>
               </div>
             </div>
