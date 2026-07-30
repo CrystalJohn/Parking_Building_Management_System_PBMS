@@ -440,6 +440,21 @@ const res = await fetch(apiUrl, {
 5. **Nếu tài xế đã đặt chỗ trước (`Reservation`) nhưng khi tới cổng lại quên mở mã QR mà để Camera OCR quét biển số xe thì hệ thống xử lý thế nào?**
    - *Trả lời:* Hệ thống PBMS có cơ chế **Smart Reservation Auto-matching (Tự động đối soát đơn đặt chỗ theo biển số chính chủ)**. Khi camera OCR quét biển số xe đã đăng ký, Backend lập tức tra cứu trong cơ sở dữ liệu và tự động tìm ra đơn `Reservation` đang `Active` thuộc về tài xế đó. Hệ thống tự động ghép xe vào đúng ô đỗ đã đặt trước (ví dụ: `T1-B-01`), chuyển đơn đặt chỗ sang `Fulfilled` và vẫn **giữ nguyên quyền lợi chiết khấu 20% Reservation Discount**. Tài xế không lo bị mất quyền lợi hay bị chuyển nhầm sang vé vãng lai.
    - *Mã nguồn đối soát:* [sessions.service.ts](file:///d:/SEMESTER%208/WDP/Parking_Building_Management_System_PBMS/apps/api/src/sessions/sessions.service.ts#L241-L255) (Khối mã fallback tự động tìm đơn đặt chỗ theo `driverId` & loại xe).
+6. **Công thức tính ưu đãi chiết khấu 20% (`20% Reservation Discount`) khi tính phí đỗ xe được thực hiện như thế nào ở Backend?**
+   - *Trả lời:*
+     - **Tiền gốc (chưa giảm):** = Số giờ đỗ $\times$ Giá tiền 1 giờ.
+     - **Tiền giảm (20%):** = Tiền gốc $\times$ 20%.
+     - **Tiền thực tế khách trả:** = Tiền gốc $-$ Tiền giảm 20% (+ Phí phạt nếu có).
+   - *Đường dẫn mã nguồn:* [fees.service.ts](file:///d:/SEMESTER%208/WDP/Parking_Building_Management_System_PBMS/apps/api/src/fees/fees.service.ts#L90-L99) (Dòng 90 đến 99: Hàm tính phí đỗ xe và chiết khấu 20%).
+7. **Công thức tính Tỷ lệ lấp đầy bãi đỗ xe (`Occupancy Rate`) hiển thị trên trang Dashboard Quản lý (`/manager/dashboard`) được thực hiện như thế nào?**
+   - *Trả lời:* Tỷ lệ lấp đầy thể hiện phần trăm ô đỗ đang có xe đỗ thực tế (`occupied`) trên tổng số ô đỗ hiện có của bãi/tầng/khu vực.
+   - *Công thức tính:*
+     $$\text{Tỷ lệ lấp đầy (Occupancy Rate \%)} = \left(\frac{\text{Số vị trí đỗ đang có xe (Occupied Slots)}}{\text{Tổng số vị trí đỗ (Total Slots)}}\right) \times 100\%$$
+   - *Ví dụ minh họa:* Bãi đỗ xe có tổng cộng **50 ô đỗ** (`Total Slots = 50`), hiện tại có **35 ô đỗ** đang có xe đỗ thực tế (`Occupied Slots = 35`).
+     $$\text{Occupancy Rate} = \left(\frac{35}{50}\right) \times 100\% = 70\%$$
+   - *Đường dẫn mã nguồn:*
+     - Backend: [admin.service.ts](file:///d:/SEMESTER%208/WDP/Parking_Building_Management_System_PBMS/apps/api/src/admin/admin.service.ts#L1416-L1419) (Hàm helper `occupancyRate` tính toán tỷ lệ làm tròn 2 chữ số thập phân).
+     - Frontend: [Dashboard.tsx](file:///d:/SEMESTER%208/WDP/Parking_Building_Management_System_PBMS/apps/web/src/pages/manager/Dashboard.tsx#L240-L247) (Tổng hợp số liệu realtime hiển thị trên màn hình Manager).
 
 ---
 
