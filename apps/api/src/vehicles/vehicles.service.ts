@@ -226,6 +226,19 @@ export class VehiclesService {
 
     const activeSubscription = vehicle.subscriptions[0] ?? null;
 
+    let activeReservation: any = null;
+    if (owner) {
+      activeReservation = await this.prisma.reservation.findFirst({
+        where: {
+          driverId: owner.id,
+          status: 'active',
+        },
+        include: {
+          slot: { include: { floor: true } },
+        },
+      });
+    }
+
     return {
       inputPlate: plateNumber,
       normalizedPlate,
@@ -245,6 +258,14 @@ export class VehiclesService {
             planType: activeSubscription.planType,
             validFrom: activeSubscription.validFrom,
             validTo: activeSubscription.validTo,
+          }
+        : null,
+      activeReservation: activeReservation
+        ? {
+            id: activeReservation.id,
+            slotCode: activeReservation.slot.code,
+            floorName: activeReservation.slot.floor.name,
+            expiresAt: activeReservation.expiresAt,
           }
         : null,
       recentSessions: recentSessions.map((session) => ({

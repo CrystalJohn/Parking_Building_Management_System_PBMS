@@ -159,6 +159,12 @@ export interface VehicleLookupResponse {
     isActive: boolean
     isExpired: boolean
   } | null
+  activeReservation?: {
+    id: string
+    slotCode: string
+    floorName: string
+    expiresAt?: string
+  } | null
   recentSessions: Array<{
     id: string
     licensePlate: string

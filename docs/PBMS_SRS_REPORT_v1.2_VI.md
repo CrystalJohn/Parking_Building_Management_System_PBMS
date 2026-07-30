@@ -262,27 +262,50 @@ Tất cả các task P0 (Sửa Unit Test, Verify VNPAY Sandbox, 100% Full Englis
 
 ## 11. Kịch bản Thuyết trình Pure Web Demo (Step-by-Step Web Screen Walkthrough)
 
-Dưới đây là **4 kịch bản Demo thuần Web (Pure Web Consoles)** được thiết kế chi tiết từng bước cho buổi bảo vệ đồ án/thuyết trình sản phẩm. Kịch bản sử dụng 100% giao diện Web (Driver Portal, Staff Gate, Manager Console, Admin Console), giữ nguyên toàn bộ các thuật ngữ chuyên ngành và mô tả chính xác những gì diễn ra trên từng màn hình:
+Dưới đây là **4 kịch bản Demo thuần Web (Pure Web Consoles)** được thiết kế chi tiết từng bước cho buổi bảo vệ đồ án/thuyết trình sản phẩm. Kịch bản sử dụng 100% giao diện Web (Driver Portal, Staff Gate, Manager Console, Admin Console), giữ nguyên toàn bộ các thuật ngữ chuyên ngành và mô tả chính xác những gì diễn ra trên từng màn hình.
+
+---
 
 ### Kịch bản 1: Driver Đăng ký Xe Tự phục vụ & Manager Phê duyệt (Pure Web Flow)
-- **Bước 1 (Driver Web Portal - Auto-detect New Account):** Tài xế mới đăng ký đăng nhập vào Web Portal. Hệ thống tự động phát hiện tài khoản chưa liên kết xe và ném ra **Popup Onboarding Chào mừng** (hoặc Banner nhắc nhở trên Trang chủ). Driver bấm **Register Vehicle Now** để mở ngay Modal đăng ký. Nhập Biển số `62B1-456.78`, Loại xe `Motorbike`, upload file ảnh Cà vẹt xe (`Vehicle Registration Certificate`). Bấm **Submit Registration Request**. (Trạng thái yêu cầu: `Pending`).
-- **Bước 2 (Manager Web Console):** Quản lý mở Web Dashboard, kiểm tra danh sách `Pending Requests Queue`. Bấm nút **View Certificate** để mở Modal xem ảnh cà vẹt xe phóng to do tài xế tải lên.
-- **Bước 3 (Manager Web Console):** Manager bấm nút màu xanh **Approve Request**. Backend thực thi Transaction tạo liên kết sở hữu xe chính thức (`VehicleUser` với role `owner`).
-- **Bước 4 (Driver Web Portal):** Màn hình của Driver tự động cập nhật trạng thái xe thành `Approved`. Xe chính thức đủ điều kiện sử dụng các dịch vụ của bãi đỗ.
+
+**Lời dẫn (Opening Narrative):**  
+> *"Khi người dùng vừa khởi tạo tài khoản thành công trên hệ thống PBMS, để kích hoạt và sử dụng đầy đủ các tính năng thông minh như đặt chỗ trước (`Reservation`) hay quản lý dịch vụ, bước đầu tiên Driver cần thực hiện là liên kết phương tiện cá nhân. Nhằm tối ưu hóa trải nghiệm người dùng (UX), hệ thống được trang bị cơ chế **Tự động nhận diện tài khoản mới (Auto-detect New Account)**: Ngay khi đăng nhập vào Web Portal, hệ thống chủ động kiểm tra xem tài khoản đã có xe được duyệt hay chưa. Nếu chưa, một **Modal Onboarding Chào mừng** nhỏ gọn sẽ lập tức xuất hiện, gợi ý tài xế đăng ký xe để mở khóa tính năng đặt chỗ trước một cách mượt mà và tự nhiên nhất."*
+
+- **Bước 1 (Driver Web Portal - Auto-detect New Account):** Tài xế mới đăng ký đăng nhập vào Web Portal. Hệ thống tự động phát hiện tài khoản chưa liên kết xe và ném ra **Popup Onboarding Chào mừng** (hoặc Banner nhắc nhở trên Trang chủ). Driver bấm **Register Vehicle Now** để mở ngay Modal đăng ký. Nhập Biển số `62B1-456.78`, Loại xe `Motorbike`, upload đủ 3 file ảnh đối soát (1. Cà vẹt xe `Vehicle Registration Certificate`, 2. Ảnh tổng thể xe, 3. Cận cảnh biển số xe). Bấm **Submit Registration Request**. (Trạng thái yêu cầu: `Pending`).
+- **Bước 2 (Manager Web Console):** Quản lý mở Web Dashboard, kiểm tra danh sách `Pending Requests Queue`. Bấm nút **View Photos (3)** để mở Modal phóng to đối chiếu bộ 3 ảnh bằng chứng tài xế tải lên.
+- **Bước 3 (Manager Web Console - Phê duyệt / Từ chối):**
+  - **Trường hợp Chấp nhận (Approve Case):** Bộ 3 ảnh đối soát rõ nét, đúng chủng loại xe và khớp biển số `62B1-456.78` -> Manager bấm nút màu xanh **Approve Request**. Yêu cầu chuyển sang trạng thái `Approved`, xe chính thức được thêm vào tài khoản tài xế.
+  - **Trường hợp Từ chối (Reject Case):** Ảnh mờ, thiếu cà vẹt xe hoặc sai thông tin -> Manager bấm nút màu đỏ **Reject Request** và nhập lý do từ chối (ví dụ: *"Ảnh cà vẹt mờ, không rõ biển số"*). Yêu cầu chuyển sang trạng thái `Rejected`.
+- **Bước 4 (Driver Web Portal - Phản hồi tự động):** Màn hình Driver tự động cập nhật kết quả mà không cần tải lại trang:
+  - **Nếu Approved:** Xe lập tức xuất hiện trong mục *Choose Vehicle*, sẵn sàng bấm **Book Reservation Now**.
+  - **Nếu Rejected:** Hiển thị **Thẻ cảnh báo từ chối màu đỏ** kèm lý do Quản lý gửi và nút **Re-submit Vehicle Request** cho phép tài xế cập nhật lại ảnh giấy tờ chuẩn xác.
 
 ### Kịch bản 2: Driver Đặt chỗ Trước (Reservation) & Staff Quét QR Check-in Ưu tiên
+
+**Lời dẫn (Opening Narrative):**  
+> *"Sau khi phương tiện đã được Quản lý phê duyệt thành công, tài xế có thể chủ động đặt trước ô đỗ thông qua tính năng **Đặt chỗ trước (Parking Reservation)** trên Driver Web Portal. Tính năng này mang lại hai lợi ích vượt trội: Vừa **đảm bảo 100% giữ vị trí đỗ chắc chắn vào các khung giờ cao điểm** (loại bỏ hoàn toàn rủi ro hết chỗ hay đụng slot), vừa được **hưởng ưu đãi chiết khấu 20% giá vé (`20% Reservation Discount`)** do hệ thống khuyến khích tài xế lập kế hoạch trước. Khi xe đến bãi, tài xế chỉ cần xuất trình **Mã QR Check-in động (Dynamic QR Pass)** cho Nhân viên cổng quét xác thực ưu tiên, hoàn tất thủ tục vào bãi thần tốc và chuyên nghiệp."*
+
 - **Bước 1 (Driver Web Portal):** Tài xế chọn xe đã duyệt `62B1-456.78` và thời gian dự kiến đến -> Bấm **Book Reservation Now**.
 - **Bước 2 (Backend Core - Smart Allocation Engine):** Thuật toán tự động tìm slot phù hợp và thực thi `Serializable Transaction` để **khóa (lock) slot `T1-B-01`** (chuyển trạng thái slot sang `reserved`), đảm bảo triệt tiêu 100% rủi ro đụng slot / double-booking. Đồng thời áp dụng chính sách ưu đãi chiết khấu **20% Reservation Discount**.
 - **Bước 3 (Driver Web Portal):** Driver mở trang `Digital Exit Pass QR`, xem mã QR Code động có thời hạn ngắn (chống chụp màn hình giả mạo).
 - **Bước 4 (Staff Web Console -> Reservation QR):** Xe chạy đến cổng, nhân viên bấm nút **Scan QR Pass** (giao diện 2-Column Split Layout với Camera 16:9 và ô nhập Token thủ công). Staff đưa mã QR của khách vào camera (hoặc nhập token ngắn).
 - **Bước 5 (Staff Web Console):** Cột thông tin hiển thị ngay: Biển số `62B1-456.78`, Driver `Thanh Phúc (0944941764)`, Slot `T1-B-01`. Staff đối chiếu xe thực tế -> Bấm **Confirm Check-in** (hoặc dùng phím tắt `<kbd>↵ Enter</kbd>`). `Reservation` chuyển sang `fulfilled`, `ParkingSession` tạo ở trạng thái `active`, slot `T1-B-01` chuyển sang `occupied`, barie vật lý được nhân viên mở cho xe vào.
 
-### Kịch bản 3: Khách Vãng Lai (Walk-in) Check-in bằng AI Camera & Xử lý Tự chuyển Luồng khi Quét Exit Pass QR
-- **Bước 1 (Staff Web Console -> OCR Check-in):** Một xe lạ chưa đặt chỗ chạy đến cổng. Staff bấm chụp ảnh bằng Camera OCR. Backend gọi `Plate Recognizer API` nhận diện biển số, không tìm thấy tài khoản -> Gắn nhãn `Walk-in Guest`, tự động phân bổ 1 slot trống khả thi. Staff bấm **Confirm Check-in**, hệ thống in vé giấy (Thermal Receipt) giao cho tài xế.
-- **Bước 2 (Staff Web Console - Auto-routing Exit QR Pass):** Khi xe xuất bãi, nếu tài xế xuất trình mã **Digital Exit Pass QR** và nhân viên đưa mã này vào camera tại màn hình Check-in, hệ thống **tự động nhận diện (Auto-detect)** mã QR thuộc về phiên xe đang đỗ (`62B1-456.78`).
-- **Bước 3 (Staff Web Console):** Màn hình hiển thị Toast: *"QR code belongs to Exit Pass for vehicle 62B1-456.78. Auto-routing to Checkout..."* và **tự động nhảy ngay sang giao diện Check-out** mà nhân viên không cần bấm chuyển tab thủ công.
+### Kịch bản 3: Khách Vãng Lai (Walk-in) Check-in bằng AI Camera OCR & Cấp Vé Lượt
+
+**Lời dẫn (Opening Narrative):**  
+> *"Đối với các phương tiện khách vãng lai chưa đặt chỗ trước, PBMS cung cấp quy trình Check-in tốc độ cao nhờ **Công nghệ AI Camera OCR tự động nhận diện biển số**. Khi xe tiến vào cổng, nhân viên chỉ cần một thao tác chụp ảnh, hệ thống tự động đọc biển số, phân bổ ô đỗ phù hợp và cấp vé lượt (Thermal Receipt) tức thì, giúp quy trình vào bãi diễn ra mượt mà mà không yêu cầu khách hàng phải cài ứng dụng hay đăng ký tài khoản trước."*
+
+- **Bước 1 (Staff Web Console -> Scan Plate):** Xe vãng lai chưa đặt chỗ chạy đến cổng vào. Nhân viên tại cổng bấm nút **[ Scan Plate ]** (hoặc hệ thống camera tự động kích hoạt).
+- **Bước 2 (AI OCR Engine & Smart Allocation):** Backend nhận dữ liệu ảnh, tự động gọi `Plate Recognizer API` bóc tách chuỗi biển số xe (ví dụ: `59V1-793.79`). Hệ thống tiến hành đối soát dữ liệu song song:
+  - Nếu biển số **chưa được đăng ký tài khoản trên hệ thống** hoặc **không có đơn đặt chỗ trước (`Reservation`) hợp lệ** trong khung giờ hiện tại ➔ Hệ thống tự động xác định và gắn nhãn loại phiên xe **Walk-in Guest** (Khách vãng lai).
+  - Thuật toán `Smart Allocation Engine` lập tức kích hoạt, tự động tính toán và chọn 1 vị trí đỗ trống tối ưu nhất ở tầng phù hợp (ví dụ: `T1-B-02`).
+- **Bước 3 (Staff Web Console -> Confirm & Issue Ticket):** Giao diện cổng hiển thị kết quả OCR biển số, ảnh chụp lối vào và vị trí ô đỗ gợi ý. Staff đối chiếu xe thực tế và bấm nút **[ Confirm Entry ]** (hoặc phím tắt `<kbd>↵ Enter</kbd>`). Hệ thống khởi tạo phiên đỗ `ParkingSession` (trạng thái `active`), cập nhật ô đỗ `T1-B-02` sang `occupied`, xuất Vé lượt (Thermal Receipt Ticket) giao cho khách và mở barie vật lý cho xe vào bãi.
 
 ### Kịch bản 4: Check-out, Thanh toán VNPAY Bank QR & Manager Real-time Monitoring
+
+**Lời dẫn (Opening Narrative):**  
+> *"Giai đoạn Check-out và Thanh toán đóng vai trò khép kín vòng đời phiên đỗ xe (`Parking Session`). Hệ thống tự động tính toán phí đỗ theo cấu hình bảng giá linh hoạt, áp dụng ưu đãi chiết khấu (nếu có) và sinh mã **VNPAY Bank QR tĩnh/động** giúp khách hàng thanh toán chuyển khoản không tiếp xúc. Sau khi hoàn tất thanh toán, hệ thống lập tức giải phóng vị trí đỗ (`Slot -> Available`), đồng thời đẩy dữ liệu doanh thu và nhật ký đối soát theo thời gian thực về **Manager Web Console** và **Admin Console**."*
 - **Bước 1 (Staff Web Console -> Checkout):**
   - Màn hình hiển thị thẻ **FEE**: `152,000 VND`, kèm Badge **`20% Reservation Discount`** và dòng chi tiết giá gốc vs giá giảm (`Original: ~190.000 VND~ (-38.000 VND)`).
   - Khung **SESSION SUMMARY**: Hiển thị đầy đủ Session code `PBMS-94421049C6`, Vehicle type `Motorbike`, **Driver `Thanh Phúc (0944941764)`**, Ticket type `Reservation QR`, **Discount `-20% (Reservation)`**, **Check-in time `23:48:37 28/07/2026`**, Duration `18h 39m`, Slot `T1-B-01`.
@@ -332,6 +355,78 @@ Tại `apps/api/src/sessions/sessions.service.ts` (Dòng 590-600), trong khối 
 
 ---
 
+### 11.3. Giải đáp Bảo vệ Đồ án (Q&A Defense): Công thức Thuật toán & Tích hợp AI OCR (Source Code Reference)
+
+#### 1. Thuật toán tự động tìm vị trí đỗ (Smart Slot Allocation Engine & Formula)
+
+**Mô tả thuật toán:**  
+Hệ thống sử dụng chiến lược **Balanced Occupancy Allocation Strategy** nhằm phân bổ vị trí đỗ tối ưu nhất cho phương tiện dựa trên nguyên lý cân bằng mật độ đỗ giữa các tầng (tránh ùn tắc ở một tầng) kết hợp ưu tiên quãng đường di chuyển ngắn nhất.
+
+**Công thức toán học (Math Formula):**  
+Tỷ lệ lấp đầy của tầng $F$ đối với loại xe $V \in \{\text{car}, \text{motorbike}\}$ được tính theo công thức:
+
+$$\text{OccupancyRatio}(F, V) = \frac{\text{Count}(\text{Occupied Slots}_{F, V}) + \text{Count}(\text{Reserved Slots}_{F, V})}{\text{Total Slots}_{F, V}}$$
+
+**Quy tắc xếp hạng ưu tiên chọn Slot (Slot Ranking Order):**
+1. $\text{OccupancyRatio}(F, V)$ nhỏ nhất (Ưu tiên tầng đang có mật độ xe thưa nhất để phân bổ đều tải).
+2. $\text{FloorNumber}$ nhỏ nhất (Ưu tiên tầng thấp hơn gần lối vào bãi để tiết kiệm nhiên liệu/thời gian di chuyển).
+3. $\text{SlotNumber}$ nhỏ nhất (Ưu tiên vị trí có số hiệu nhỏ hơn gần cửa thang máy/lối ra).
+
+**Chứng minh trong Mã nguồn (Source Code Path):**  
+- Tầng dịch vụ thuật toán: [allocation.service.ts](file:///d:/SEMESTER%208/WDP/Parking_Building_Management_System_PBMS/apps/api/src/slots/allocation.service.ts#L35-L100)
+```typescript
+// BalancedOccupancyStrategy (apps/api/src/slots/allocation.service.ts)
+const floorOccupancy = this.calculateFloorOccupancy(allSlots, vehicleType);
+
+candidates.sort((a, b) => {
+  const occA = floorOccupancy.get(a.floorId) ?? 0;
+  const occB = floorOccupancy.get(b.floorId) ?? 0;
+  if (occA !== occB) return occA - occB; // 1. Ưu tiên tầng mật độ thấp
+  if (a.floor.floorNumber !== b.floor.floorNumber) {
+    return a.floor.floorNumber - b.floor.floorNumber; // 2. Ưu tiên tầng thấp
+  }
+  return a.slotNumber - b.slotNumber; // 3. Ưu tiên số slot nhỏ
+});
+```
+
+---
+
+#### 2. Backend kết nối và gọi API AI Nhận diện biển số (Plate Recognizer API Integration)
+
+**Mô tả tích hợp:**  
+Tầng dịch vụ [PlateRecognitionService](file:///d:/SEMESTER%208/WDP/Parking_Building_Management_System_PBMS/apps/api/src/plate-recognition/plate-recognition.service.ts) truyền dữ liệu ảnh chụp nhị phân (Buffer) trực tiếp tới máy chủ Cloud AI của Plate Recognizer bằng phương thức `HTTP POST (Multipart FormData)`.
+
+**Cấu hình Request Payload:**
+- **Endpoint URL:** `https://api.platerecognizer.com/v1/plate-reader/`
+- **Header:** `Authorization: Token <PLATE_RECOGNIZER_API_TOKEN>`
+- **FormData Body:**
+  - `upload`: File Binary Buffer của ảnh biển số xe (`image/jpeg` hoặc `image/png`).
+  - `regions`: `"vn"` (Giới hạn định dạng mẫu biển số Việt Nam).
+  - `config`: `{"mode": "fast"}` (Tối ưu hóa tốc độ xử lý OCR < 300ms).
+
+**Hàm Chuẩn hóa Biển số Việt Nam (`formatVietnamesePlate`):**  
+Hệ thống sử dụng biểu thức chính quy (Regex) để tự động định dạng chuẩn biển số xe máy và ô tô Việt Nam:
+- **Xe máy (9-10 ký tự):** `62B1-456.78`, `59H1-470.234` (`/^(\d{2})([A-Z]\d)(\d{3})(\d{2})$/`)
+- **Ô tô (8-9 ký tự):** `51K-123.45` (`/^(\d{2})([A-Z]{1,2}\d?)(\d{5})$/`)
+
+**Chứng minh trong Mã nguồn (Source Code Path):**  
+- Tầng dịch vụ AI OCR: [plate-recognition.service.ts](file:///d:/SEMESTER%208/WDP/Parking_Building_Management_System_PBMS/apps/api/src/plate-recognition/plate-recognition.service.ts#L62-L120)
+```typescript
+// PlateRecognitionService.recognize() (apps/api/src/plate-recognition/plate-recognition.service.ts)
+const form = new FormData();
+form.append('upload', new Blob([new Uint8Array(buffer)], { type: mimeType || 'image/jpeg' }), 'plate.jpg');
+form.append('regions', 'vn');
+form.append('config', JSON.stringify({ mode: 'fast' }));
+
+const res = await fetch(apiUrl, {
+  method: 'POST',
+  headers: { Authorization: `Token ${token}` },
+  body: form,
+});
+```
+
+---
+
 ## 12. Các câu hỏi Phản biện và Gợi ý Điểm trả lời (Q&A Defense)
 
 1. **Tại sao Reservation lại bỏ qua bước gọi AI OCR nhận diện biển số tại cổng?**
@@ -342,6 +437,9 @@ Tại `apps/api/src/sessions/sessions.service.ts` (Dòng 590-600), trong khối 
    - *Trả lời:* Hệ thống có cơ chế `Exit Pass Auto-routing`. Khi nhân viên quét mã QR tại màn hình Check-in, backend kiểm tra và phát hiện mã thuộc về một `ParkingSession` đang đỗ (`Active`), hệ thống lập tức thông báo và tự động chuyển hướng màn hình sang giao diện Check-out để tính tiền xuất bãi.
 4. **Sự khác biệt về trách nhiệm giữa Manager và Admin là gì?**
    - *Trả lời:* **Manager** quản lý vận hành trực tiếp trong ngày (phê duyệt đăng ký xe, xử lý sự cố `OperationIssue`, xem danh sách xe trong bãi real-time). **Admin** quản trị hệ thống dài hạn (quản lý tài khoản user, phân quyền RBAC, theo dõi cờ cảnh báo bất thường `Operational Audit Flags`).
+5. **Nếu tài xế đã đặt chỗ trước (`Reservation`) nhưng khi tới cổng lại quên mở mã QR mà để Camera OCR quét biển số xe thì hệ thống xử lý thế nào?**
+   - *Trả lời:* Hệ thống PBMS có cơ chế **Smart Reservation Auto-matching (Tự động đối soát đơn đặt chỗ theo biển số chính chủ)**. Khi camera OCR quét biển số xe đã đăng ký, Backend lập tức tra cứu trong cơ sở dữ liệu và tự động tìm ra đơn `Reservation` đang `Active` thuộc về tài xế đó. Hệ thống tự động ghép xe vào đúng ô đỗ đã đặt trước (ví dụ: `T1-B-01`), chuyển đơn đặt chỗ sang `Fulfilled` và vẫn **giữ nguyên quyền lợi chiết khấu 20% Reservation Discount**. Tài xế không lo bị mất quyền lợi hay bị chuyển nhầm sang vé vãng lai.
+   - *Mã nguồn đối soát:* [sessions.service.ts](file:///d:/SEMESTER%208/WDP/Parking_Building_Management_System_PBMS/apps/api/src/sessions/sessions.service.ts#L241-L255) (Khối mã fallback tự động tìm đơn đặt chỗ theo `driverId` & loại xe).
 
 ---
 

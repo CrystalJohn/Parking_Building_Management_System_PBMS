@@ -13,6 +13,7 @@ import {
   RotateCcw,
   ScanLine,
   Ticket,
+  UserCheck,
 } from 'lucide-react'
 
 import { formatDateTimeVN } from '../../lib/date-time'
@@ -804,13 +805,47 @@ export function StaffOcrCheckInPanel({
                   <Camera className="size-7" />
                 </div>
               )}
-              <div className="flex min-w-0 flex-col justify-center gap-5">
-                <div className="space-y-2">
+              <div className="flex min-w-0 flex-col justify-center gap-4">
+                <div className="space-y-1.5">
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Captured plate</p>
                   <p className="break-all font-mono text-3xl font-black tracking-wide text-foreground sm:text-4xl">
                     {formatPlateForDisplay(licensePlate)}
                   </p>
                 </div>
+
+                {/* Active Reservation Match Banner */}
+                {plateLookup?.activeReservation ? (
+                  <div className="rounded-xl border border-emerald-500/30 bg-emerald-50/80 p-3 text-xs dark:bg-emerald-950/40">
+                    <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-bold">
+                      <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                      <span>Active Reservation Matched (20% OFF)</span>
+                    </div>
+                    <p className="mt-1 font-medium text-emerald-900 dark:text-emerald-100">
+                      Assigned Spot: <strong className="font-bold text-sm text-emerald-950 dark:text-emerald-50">{plateLookup.activeReservation.slotCode}</strong> ({plateLookup.activeReservation.floorName})
+                    </p>
+                    {plateLookup.owner?.fullName && (
+                      <p className="mt-0.5 text-[11px] text-emerald-800/90 dark:text-emerald-300/90">
+                        Driver: {plateLookup.owner.fullName} {plateLookup.owner.phone ? `(${plateLookup.owner.phone})` : ''}
+                      </p>
+                    )}
+                  </div>
+                ) : plateLookup?.matched && plateLookup?.owner ? (
+                  <div className="rounded-xl border border-blue-500/30 bg-blue-50/80 p-3 text-xs dark:bg-blue-950/40">
+                    <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 font-bold">
+                      <UserCheck className="size-4 shrink-0 text-blue-600 dark:text-blue-400" />
+                      <span>Registered Vehicle Owner</span>
+                    </div>
+                    <p className="mt-1 font-medium text-blue-900 dark:text-blue-100">
+                      {plateLookup.owner.fullName} {plateLookup.owner.phone ? `(${plateLookup.owner.phone})` : ''}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 text-xs dark:bg-slate-800/50">
+                    <p className="font-semibold text-slate-700 dark:text-slate-300">Walk-in Guest</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Auto slot allocation will select the best available spot.</p>
+                  </div>
+                )}
+
                 <Button
                   type="button"
                   autoFocus
