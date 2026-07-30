@@ -39,6 +39,12 @@ export interface MatchedVehicleSummary {
     validFrom: Date;
     validTo: Date;
   };
+  activeReservation?: null | {
+    id: string;
+    slotCode: string;
+    floorName: string;
+    expiresAt?: Date | null;
+  };
   recentSessions: Array<{
     id: string;
     licensePlate: string;
