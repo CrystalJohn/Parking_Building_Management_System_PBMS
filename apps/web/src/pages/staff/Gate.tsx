@@ -1,7 +1,6 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type Dispatch,
@@ -11,8 +10,9 @@ import {
 import { isAxiosError } from 'axios'
 import {
   CircleAlert,
-  Loader2,
+  LogIn,
   LogOut,
+  Loader2,
   Printer,
   QrCode,
   ReceiptText,
@@ -65,6 +65,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import {
   Card,
   CardAction,
@@ -198,19 +199,12 @@ export default function Gate() {
   const toasts = useToasts()
   const [laneAssignment, setLaneAssignment] = useState<CurrentGateAssignment | null>(null)
   const [laneLoading, setLaneLoading] = useState(true)
-  const gateRoute = useMemo(() => {
+  const [activeTab, setActiveTab] = useState<Tab>(() => {
     const params = new URLSearchParams(location.search)
     const tab = normalizeGateTab(params.get('tab'))
-    const sessionCode = params.get('sessionCode') || params.get('session')
-    const licensePlate = params.get('licensePlate')
-    const hasCheckoutContext = Boolean(sessionCode?.trim() || licensePlate?.trim())
-
-    return {
-      tab,
-      hasCheckoutContext,
-      renderLegacyCheckout: tab === 'check-out' && hasCheckoutContext,
-    }
-  }, [location.search])
+    if (tab === 'check-out') return 'check-out'
+    return 'check-in'
+  })
 
   useEffect(() => {
     let active = true
@@ -239,83 +233,68 @@ export default function Gate() {
     : null
 
   return (
-    <main className="space-y-6">
+    <main className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             Gate Operations
           </h1>
-          <Badge variant="outline" className="bg-background">
-            Staff console
-          </Badge>
           {laneLabel ? <Badge variant="secondary">{laneLabel}</Badge> : null}
         </div>
       </header>
 
-      <div
-        id={`gate-panel-${gateRoute.renderLegacyCheckout ? 'check-out' : 'gate-operations'}`}
-        role="tabpanel"
-        className={cn(
-          "print:rounded-none print:border-0 print:p-0 print:shadow-none",
-        )}
-      >
-          {laneLoading ? (
-            <Card className="flex min-h-48 items-center justify-center">
-              <Loader2 className="size-6 animate-spin text-muted-foreground" />
-            </Card>
-          ) : !lane || !lane.isActive ? (
-            <Card className="border-amber-200 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/20">
-              <CardHeader>
-                <CardTitle>Gate lane assignment required</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Contact a manager to receive an active Car or Motorbike lane assignment before using this gate.
-                </p>
-              </CardHeader>
-            </Card>
-          ) : gateRoute.renderLegacyCheckout ? (
+      {laneLoading ? (
+        <Card className="flex min-h-48 items-center justify-center">
+          <Loader2 className="size-6 animate-spin text-muted-foreground" />
+        </Card>
+      ) : !lane || !lane.isActive ? (
+        <Card className="border-amber-200 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/20">
+          <CardHeader>
+            <CardTitle>Gate lane assignment required</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Contact a manager to receive an active Car or Motorbike lane assignment before using this gate.
+            </p>
+          </CardHeader>
+        </Card>
+      ) : (
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)}>
+          <TabsList variant="line" className="w-full justify-start gap-1 border-b pb-0">
+            <TabsTrigger value="check-in" className="gap-1.5 px-4 py-2">
+              <LogIn className="size-4" />
+              Check-in
+            </TabsTrigger>
+            <TabsTrigger value="check-out" className="gap-1.5 px-4 py-2">
+              <LogOut className="size-4" />
+              Check-out
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="check-in" className="mt-4">
+            <GateOperationsPanel
+              toasts={toasts}
+              laneVehicleType={lane.vehicleType}
+              onRouteToCheckout={() => setActiveTab('check-out')}
+            />
+          </TabsContent>
+
+          <TabsContent value="check-out" className="mt-4">
             <CheckOutPanel toasts={toasts} />
-          ) : (
-            <GateOperationsPanel toasts={toasts} laneVehicleType={lane.vehicleType} />
-          )}
-        </div>
-      </main>
+          </TabsContent>
+        </Tabs>
+      )}
+    </main>
   )
 }
 
-function GateOperationsPanel({ toasts, laneVehicleType }: PanelProps & { laneVehicleType: 'car' | 'motorbike' }) {
-  const [mode, setMode] = useState<'scan-plate' | 'reservation-qr' | 'checkout'>('scan-plate')
-  const [routedCheckout, setRoutedCheckout] = useState<{
-    checkout: CheckoutWorkflowResponse
-    plateConfirmed: string
-    subMode: 'PAYMENT_REQUIRED' | 'PAYMENT_PENDING' | 'READY_TO_EXIT'
-    exitEvidence?: CheckoutEvidence | null
-  } | null>(null)
+function GateOperationsPanel({ toasts, laneVehicleType, onRouteToCheckout }: PanelProps & { laneVehicleType: 'car' | 'motorbike'; onRouteToCheckout?: () => void }) {
+  const [mode, setMode] = useState<'scan-plate' | 'reservation-qr'>('scan-plate')
 
   if (mode === 'reservation-qr') {
     return (
       <StaffReservationQrCheckInPanel
         onSwitchToOcr={() => setMode('scan-plate')}
-        onRouteToCheckout={(checkoutInput) => {
-          setRoutedCheckout(checkoutInput)
-          setMode('checkout')
-        }}
+        onRouteToCheckout={() => onRouteToCheckout?.()}
         toasts={toasts}
-      />
-    )
-  }
-
-  if (mode === 'checkout' && routedCheckout) {
-    return (
-      <CheckOutPanel
-        toasts={toasts}
-        initialWorkflow={routedCheckout.checkout}
-        initialLookupValue={normalizePlateForApi(routedCheckout.plateConfirmed)}
-        initialLookupKind="licensePlate"
-        hideLookupCard
-        onResetToGateOps={() => {
-          setRoutedCheckout(null)
-          setMode('scan-plate')
-        }}
       />
     )
   }
@@ -325,10 +304,7 @@ function GateOperationsPanel({ toasts, laneVehicleType }: PanelProps & { laneVeh
       toasts={toasts}
       laneVehicleType={laneVehicleType}
       onSwitchToReservationQr={() => setMode('reservation-qr')}
-      onRouteToCheckout={(input) => {
-        setRoutedCheckout(input)
-        setMode('checkout')
-      }}
+      onRouteToCheckout={() => onRouteToCheckout?.()}
     />
   )
 }

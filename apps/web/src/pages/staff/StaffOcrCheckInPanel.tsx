@@ -21,6 +21,7 @@ import { formatDateTimeVN } from '../../lib/date-time'
 import { normalizePlateForApi, isValidVietnamesePlate } from '../../lib/plate-format'
 import { useToasts } from '../../lib/use-toasts'
 import { RecentSessionsCard } from '../../components/ui/RecentSessionsCard'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   AlertDialog,
@@ -122,6 +123,8 @@ export function StaffOcrCheckInPanel({
   const [plateLookupError, setPlateLookupError] = useState<string | null>(null)
   const [licensePlate, setLicensePlate] = useState('')
   const [manualPlateMode, setManualPlateMode] = useState(false)
+  const [dialogManualMode, setDialogManualMode] = useState(false)
+  const [dialogManualPlate, setDialogManualPlate] = useState('')
   const [vehicleType, setVehicleType] = useState<VehicleType>('car')
   const [ticket, setTicket] = useState<SessionTicket | null>(null)
   const [ticketStage, setTicketStage] = useState<TicketStage>('idle')
@@ -607,12 +610,20 @@ export function StaffOcrCheckInPanel({
                 Scan Plate
               </CardTitle>
               <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <span className="inline-flex items-center gap-1">
-                  <Keyboard className="size-3.5" />
-                  Space capture
-                </span>
-                <span>System routes to check-in or checkout after OCR</span>
-                <span>Esc reset</span>
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button type="button" className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors">
+                        <Keyboard className="size-3.5" />
+                        Shortcuts
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="text-xs">
+                      <p><kbd className="font-mono font-bold">Space</kbd> Capture &amp; OCR</p>
+                      <p><kbd className="font-mono font-bold">Esc</kbd> Reset</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </CardDescription>
             </div>
           </CardHeader>
@@ -867,17 +878,58 @@ export function StaffOcrCheckInPanel({
                 </div>
               )}
               <div className="flex min-w-0 flex-col justify-center gap-4">
-                 <div className="space-y-1.5">
-                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Captured plate</p>
-                   <p className="break-all font-mono text-3xl font-black tracking-wide text-foreground sm:text-4xl">
-                     {licensePlate}
-                   </p>
-                   {!isValidVietnamesePlate(licensePlate) && licensePlate && (
-                     <p className="text-xs text-destructive">
-                       Invalid plate format. Expected: XX-XXX.XX (car) or XX-X-XXXX.XX (motorcycle).
+                 {dialogManualMode ? (
+                   <div className="space-y-2">
+                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Manual plate entry</p>
+                     <div className="flex gap-2">
+                       <input
+                         type="text"
+                         value={dialogManualPlate}
+                         onChange={(e) => setDialogManualPlate(e.target.value.toUpperCase())}
+                         onKeyDown={(e) => {
+                           if (e.key === 'Enter' && dialogManualPlate.trim()) {
+                             setLicensePlate(normalizePlateForApi(dialogManualPlate))
+                             void lookupConfirmedPlate(normalizePlateForApi(dialogManualPlate))
+                             setDialogManualMode(false)
+                           }
+                         }}
+                         placeholder={vehicleType === 'car' ? '59A-12345' : '59A1-12345'}
+                         className="h-11 flex-1 rounded-lg border border-amber-200 bg-white px-3 font-mono font-black uppercase tracking-wide placeholder:text-amber-300 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-amber-700/50 dark:bg-amber-950/40 dark:text-amber-100 dark:placeholder:text-amber-700/50"
+                         autoFocus
+                         autoComplete="off"
+                         autoCorrect="off"
+                         spellCheck={false}
+                       />
+                       <Button
+                         type="button"
+                         variant="outline"
+                         onClick={() => {
+                           if (dialogManualPlate.trim()) {
+                             setLicensePlate(normalizePlateForApi(dialogManualPlate))
+                             void lookupConfirmedPlate(normalizePlateForApi(dialogManualPlate))
+                             setDialogManualMode(false)
+                           }
+                         }}
+                         disabled={!dialogManualPlate.trim()}
+                         className="h-11"
+                       >
+                         Update
+                       </Button>
+                     </div>
+                   </div>
+                 ) : (
+                   <div className="space-y-1.5">
+                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Captured plate</p>
+                     <p className="break-all font-mono text-3xl font-black tracking-wide text-foreground sm:text-4xl">
+                       {licensePlate}
                      </p>
-                   )}
-                 </div>
+                     {!isValidVietnamesePlate(licensePlate) && licensePlate && (
+                       <p className="text-xs text-destructive">
+                         Invalid plate format. Expected: XX-XXX.XX (car) or XX-X-XXXX.XX (motorcycle).
+                       </p>
+                     )}
+                   </div>
+                 )}
 
                 {/* Active Reservation Match Banner */}
                 {plateLookup?.activeReservation ? (
@@ -928,6 +980,21 @@ export function StaffOcrCheckInPanel({
                     </kbd>
                   )}
                 </Button>
+                {!dialogManualMode && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setDialogManualPlate(licensePlate)
+                      setDialogManualMode(true)
+                    }}
+                    disabled={Boolean(status) && (status as string) === 'CHECKING_IN'}
+                    className="h-11 w-full gap-2"
+                  >
+                    <Keyboard className="size-4" />
+                    <span>Manual plate</span>
+                  </Button>
+                )}
               </div>
             </div>
           ) : (
