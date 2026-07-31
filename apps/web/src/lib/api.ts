@@ -34,8 +34,12 @@ api.interceptors.response.use(
   (response: AxiosResponse) => response,
   (error: AxiosError) => {
     if (error.response?.status === 401) {
-      removeToken()
-      window.location.href = '/login'
+      // Do not redirect to login if the request itself was for logging in
+      const isLoginRequest = error.config?.url?.includes('/auth/login')
+      if (!isLoginRequest) {
+        removeToken()
+        window.location.href = '/login'
+      }
     }
     return Promise.reject(error)
   },
