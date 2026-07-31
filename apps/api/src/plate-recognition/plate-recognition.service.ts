@@ -82,18 +82,30 @@ export class PlateRecognitionService {
     form.append('regions', 'vn');
     form.append('config', JSON.stringify({ mode: 'fast' }));
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10_000);
+
     let res: Response;
     try {
       res = await fetch(apiUrl, {
         method: 'POST',
         headers: { Authorization: `Token ${token}` },
         body: form,
+        signal: controller.signal,
       });
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        this.logger.error('Plate Recognizer request timed out after 10s');
+        throw new ServiceUnavailableException(
+          'Plate recognition service timed out, please try again',
+        );
+      }
       this.logger.error(`Plate Recognizer request failed: ${String(err)}`);
       throw new ServiceUnavailableException(
         'Cannot connect to license plate recognition service',
       );
+    } finally {
+      clearTimeout(timeoutId);
     }
 
     if (res.status === 429) {

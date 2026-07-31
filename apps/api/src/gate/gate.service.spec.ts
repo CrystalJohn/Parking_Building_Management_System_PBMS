@@ -4,6 +4,7 @@ import { SessionStatus } from '@prisma/client';
 import { OcrService } from '../ocr';
 import { SessionsService } from '../sessions/sessions.service';
 import { VehiclesService } from '../vehicles/vehicles.service';
+import { GateLanesService } from '../gate-lanes/gate-lanes.service';
 import { GateService } from './gate.service';
 
 describe('GateService', () => {
@@ -11,11 +12,16 @@ describe('GateService', () => {
   let ocrService: { recognize: jest.Mock; linkEvidenceToCheckout: jest.Mock };
   let sessionsService: { lookupOpenForGateByPlate: jest.Mock };
   let vehiclesService: { lookupPlate: jest.Mock };
+  let gateLanesService: { requireActiveLane: jest.Mock; assertVehicleType: jest.Mock };
 
   beforeEach(async () => {
     ocrService = { recognize: jest.fn(), linkEvidenceToCheckout: jest.fn() };
     sessionsService = { lookupOpenForGateByPlate: jest.fn() };
     vehiclesService = { lookupPlate: jest.fn() };
+    gateLanesService = {
+      requireActiveLane: jest.fn().mockResolvedValue({ gateLane: { id: 'lane-1', code: 'L1', name: 'Lane 1', vehicleType: 'car' } }),
+      assertVehicleType: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -23,6 +29,7 @@ describe('GateService', () => {
         { provide: OcrService, useValue: ocrService },
         { provide: SessionsService, useValue: sessionsService },
         { provide: VehiclesService, useValue: vehiclesService },
+        { provide: GateLanesService, useValue: gateLanesService },
       ],
     }).compile();
 
@@ -86,7 +93,7 @@ describe('GateService', () => {
       },
     });
 
-    const result = await service.resolvePlate({ plate: ' 59A-12345 ', ocrEvidenceId: 'ocr-1' });
+    const result = await service.resolvePlate({ plate: ' 59A-12345 ', ocrEvidenceId: 'ocr-1' }, 'staff-1');
 
     expect(ocrService.recognize).not.toHaveBeenCalled();
     expect(sessionsService.lookupOpenForGateByPlate).toHaveBeenCalledWith('59A12345');
@@ -113,17 +120,17 @@ describe('GateService', () => {
       },
     });
 
-    await expect(service.resolvePlate({ plate: '59A12345' })).resolves.toMatchObject({
+    await expect(service.resolvePlate({ plate: '59A12345' }, 'staff-1')).resolves.toMatchObject({
       mode: 'CHECK_OUT',
       subMode: 'PAYMENT_PENDING',
     });
-    await expect(service.resolvePlate({ plate: '59A12345' })).resolves.toMatchObject({
+    await expect(service.resolvePlate({ plate: '59A12345' }, 'staff-1')).resolves.toMatchObject({
       mode: 'CHECK_OUT',
       subMode: 'READY_TO_EXIT',
     });
   });
 
   it('rejects empty manual plate input', async () => {
-    await expect(service.resolvePlate({ plate: '   ' })).rejects.toThrow(BadRequestException);
+    await expect(service.resolvePlate({ plate: '   ' }, 'staff-1')).rejects.toThrow(BadRequestException);
   });
 });

@@ -12,30 +12,30 @@ type GateCheckoutSubMode = 'PAYMENT_REQUIRED' | 'PAYMENT_PENDING' | 'READY_TO_EX
 
 export type GateScanResponse =
   | {
-      mode: 'CHECK_IN';
-      source: GateSource;
-      plateOcr?: string | null;
-      plateConfirmed: string;
-      confidence?: number | null;
-      ocrEvidenceId?: string;
-      lookup: Awaited<ReturnType<VehiclesService['lookupPlate']>>;
-    }
+    mode: 'CHECK_IN';
+    source: GateSource;
+    plateOcr?: string | null;
+    plateConfirmed: string;
+    confidence?: number | null;
+    ocrEvidenceId?: string;
+    lookup: Awaited<ReturnType<VehiclesService['lookupPlate']>>;
+  }
   | {
-      mode: 'CHECK_OUT';
-      source: GateSource;
-      plateOcr?: string | null;
-      plateConfirmed: string;
-      confidence?: number | null;
-      ocrEvidenceId?: string;
-      subMode: GateCheckoutSubMode;
-      checkout: NonNullable<Awaited<ReturnType<SessionsService['lookupOpenForGateByPlate']>>>;
-    }
+    mode: 'CHECK_OUT';
+    source: GateSource;
+    plateOcr?: string | null;
+    plateConfirmed: string;
+    confidence?: number | null;
+    ocrEvidenceId?: string;
+    subMode: GateCheckoutSubMode;
+    checkout: NonNullable<Awaited<ReturnType<SessionsService['lookupOpenForGateByPlate']>>>;
+  }
   | {
-      mode: 'NEEDS_MANUAL_PLATE';
-      source: 'OCR';
-      ocrEvidenceId?: string;
-      error?: string | null;
-    };
+    mode: 'NEEDS_MANUAL_PLATE';
+    source: 'OCR';
+    ocrEvidenceId?: string;
+    error?: string | null;
+  };
 
 @Injectable()
 export class GateService {
@@ -44,15 +44,17 @@ export class GateService {
     private readonly sessionsService: SessionsService,
     private readonly vehiclesService: VehiclesService,
     private readonly gateLanesService: GateLanesService,
-  ) {}
+  ) { }
 
   async scanPlate(
     file: UploadedOcrImage,
     input: ScanPlateDto,
     staffId: string,
   ): Promise<GateScanResponse> {
-    await this.gateLanesService.requireActiveLane(staffId);
-    const ocr = await this.ocrService.recognize(file, input, staffId);
+    const [lane, ocr] = await Promise.all([
+      this.gateLanesService.requireActiveLane(staffId),
+      this.ocrService.recognize(file, input, staffId),
+    ]);
 
     if (!ocr.detectedPlate) {
       return {
@@ -70,16 +72,18 @@ export class GateService {
       staffId,
       plateOcr: ocr.detectedPlate,
       confidence: ocr.confidence,
+      lane,
     });
   }
 
   async resolvePlate(input: ResolvePlateDto, staffId: string): Promise<Exclude<GateScanResponse, { mode: 'NEEDS_MANUAL_PLATE' }>> {
-    await this.gateLanesService.requireActiveLane(staffId);
+    const lane = await this.gateLanesService.requireActiveLane(staffId);
     return this.resolvePlateMode({
       plate: input.plate,
       source: 'MANUAL',
       ocrEvidenceId: input.ocrEvidenceId,
       staffId,
+      lane,
     });
   }
 
@@ -90,15 +94,16 @@ export class GateService {
     plateOcr?: string | null;
     confidence?: number | null;
     staffId: string;
+    lane?: Awaited<ReturnType<InstanceType<typeof GateLanesService>['requireActiveLane']>>;
   }): Promise<Exclude<GateScanResponse, { mode: 'NEEDS_MANUAL_PLATE' }>> {
-    const lane = await this.gateLanesService.requireActiveLane(input.staffId);
+    const lane = input.lane ?? await this.gateLanesService.requireActiveLane(input.staffId);
     const plateConfirmed = normalizePlateNumber(input.plate);
     if (!plateConfirmed) {
       throw new BadRequestException('plate is required');
     }
-
+    // kiểm tra luồng xe ra
     const checkout = await this.sessionsService.lookupOpenForGateByPlate(plateConfirmed);
-    if (checkout) {
+    if (checkout) { // found vehicle checkout
       this.gateLanesService.assertVehicleType(lane, checkout.session.vehicleType);
       if (input.ocrEvidenceId) {
         await this.ocrService.linkEvidenceToCheckout(
@@ -118,11 +123,12 @@ export class GateService {
         checkout,
       };
     }
-
+    // kiểm tra luồng xe vào
     const lookup = await this.vehiclesService.lookupPlate(plateConfirmed);
     if (lookup.matched && lookup.vehicleType) {
       this.gateLanesService.assertVehicleType(lane, lookup.vehicleType as any);
     }
+    // response result về FE
     return {
       mode: 'CHECK_IN',
       source: input.source,

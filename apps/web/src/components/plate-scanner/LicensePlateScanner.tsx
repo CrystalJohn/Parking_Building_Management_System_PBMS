@@ -48,7 +48,7 @@ function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
     canvas.toBlob(
       (blob) => (blob ? resolve(blob) : reject(new Error('toBlob returned null'))),
       'image/jpeg',
-      0.92,
+      0.8,
     )
   })
 }

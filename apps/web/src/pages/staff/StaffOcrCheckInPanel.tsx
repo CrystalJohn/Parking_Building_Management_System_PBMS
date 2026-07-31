@@ -14,10 +14,11 @@ import {
   ScanLine,
   Ticket,
   UserCheck,
+  X,
 } from 'lucide-react'
 
 import { formatDateTimeVN } from '../../lib/date-time'
-import { formatPlateForDisplay, normalizePlateForApi } from '../../lib/plate-format'
+import { formatPlateForDisplay, normalizePlateForApi, isValidVietnamesePlate } from '../../lib/plate-format'
 import { useToasts } from '../../lib/use-toasts'
 import { RecentSessionsCard } from '../../components/ui/RecentSessionsCard'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -120,6 +121,7 @@ export function StaffOcrCheckInPanel({
   const [plateLookupStatus, setPlateLookupStatus] = useState<PlateLookupStatus>('idle')
   const [plateLookupError, setPlateLookupError] = useState<string | null>(null)
   const [licensePlate, setLicensePlate] = useState('')
+  const [manualPlateMode, setManualPlateMode] = useState(false)
   const [vehicleType, setVehicleType] = useState<VehicleType>('car')
   const [ticket, setTicket] = useState<SessionTicket | null>(null)
   const [ticketStage, setTicketStage] = useState<TicketStage>('idle')
@@ -143,10 +145,11 @@ export function StaffOcrCheckInPanel({
     Boolean(capturedImageUrl) ||
     Boolean(ocrResult) ||
     Boolean(plateLookup) ||
+    Boolean(manualPlateMode) ||
     Boolean(ticket)
   const canConfirm =
     Boolean(licensePlate.trim()) &&
-    hasLookupResult &&
+    (hasLookupResult || status === 'REVIEW_REQUIRED') &&
     status !== 'OCR_PROCESSING' &&
     status !== 'CHECKING_IN'
   const canPrint = Boolean(ticket) && ticketStage === 'confirmed'
@@ -154,6 +157,30 @@ export function StaffOcrCheckInPanel({
   const canMarkIssued = Boolean(ticket) && ticketStage === 'printed'
   const canNextVehicle = Boolean(ticket)
   const scanLocked = Boolean(ticket) || status === 'OCR_PROCESSING' || status === 'CHECKING_IN'
+
+  const restartCamera = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' },
+        audio: false,
+      })
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        await videoRef.current.play().catch(() => undefined)
+      }
+      setCameraError(null)
+      setStatus((current) => {
+        if (current === 'CHECKIN_SUCCESS' || current === 'TICKET_READY' || current === 'TICKET_ISSUED' || current === 'PRINT_DIALOG_OPENED') {
+          return current
+        }
+        return 'CAMERA_READY'
+      })
+    } catch (error) {
+      setCameraError(extractErrorMessage(error))
+      setStatus('ERROR')
+    }
+  }, [])
 
   useEffect(() => {
     if (ticket) {
@@ -223,8 +250,11 @@ export function StaffOcrCheckInPanel({
     setPlateLookupStatus('idle')
     setPlateLookupError(null)
     setLicensePlate('')
+    setManualPlateMode(false)
     setVehicleType('car')
     setTicket(null)
+    setTicketStage('idle')
+    setIssuedAt(null)
     setTicketStage('idle')
     setIssuedAt(null)
     setResetDialogOpen(false)
@@ -330,9 +360,17 @@ export function StaffOcrCheckInPanel({
     }
 
     setStatus('CAPTURING')
+    // Downscale to max 1280px width (keeps aspect ratio) — full camera
+    // resolution (1080p/4K) produces 2-5MB JPEGs, far above Plate
+    // Recognizer Cloud's 3MB limit and slower to upload without any
+    // accuracy gain for plate reading.
+    const MAX_CAPTURE_WIDTH = 1280
+    const sourceWidth = video.videoWidth || MAX_CAPTURE_WIDTH
+    const sourceHeight = video.videoHeight || 720
+    const scale = Math.min(1, MAX_CAPTURE_WIDTH / sourceWidth)
     const canvas = document.createElement('canvas')
-    canvas.width = video.videoWidth || 1280
-    canvas.height = video.videoHeight || 720
+    canvas.width = Math.round(sourceWidth * scale)
+    canvas.height = Math.round(sourceHeight * scale)
     const context = canvas.getContext('2d')
     if (!context) {
       setStatus('ERROR')
@@ -342,7 +380,7 @@ export function StaffOcrCheckInPanel({
 
     context.drawImage(video, 0, 0, canvas.width, canvas.height)
     const blob = await new Promise<Blob | null>((resolve) => {
-      canvas.toBlob((value) => resolve(value), 'image/jpeg', 0.9)
+      canvas.toBlob((value) => resolve(value), 'image/jpeg', 0.8)
     })
 
     if (!blob) {
@@ -421,31 +459,30 @@ export function StaffOcrCheckInPanel({
         return
       }
 
-      if (response.mode === 'CHECK_IN') {
+       if (response.mode === 'CHECK_IN') {
         setOcrFailureCount(0)
         applyCheckInLookup(response.plateConfirmed, response.lookup)
         setStatus('OCR_SUCCESS')
         toasts.showSuccess(`Plate detected: ${formatPlateForDisplay(response.plateConfirmed)}`)
       } else {
-        const nextFailureCount = ocrFailureCount + 1
-        setOcrFailureCount(nextFailureCount)
+        // OCR failed → show inline manual plate entry (rain/mud case)
+        setOcrFailureCount(0)
         setPlateLookup(null)
         setPlateLookupStatus('idle')
         setPlateLookupError(null)
-        setStatus(nextFailureCount >= 2 ? 'REVIEW_REQUIRED' : 'OCR_FAILED')
-        toasts.showError(
-          nextFailureCount >= 2
-            ? 'OCR failed twice. Enter the plate manually.'
-            : 'Plate not detected. Align the vehicle and scan again.',
-        )
+        setManualPlateMode(true)
+        toasts.showError('Could not read the plate. Type the plate below to check in directly.')
       }
     } catch (error) {
       if (requestId !== ocrRequestIdRef.current) return
       setOcrResult(null)
       setStatus('OCR_FAILED')
       toasts.showError(extractErrorMessage(error))
+    } finally {
+      // FIX: Restart camera after OCR completes so staff can scan again
+      await restartCamera()
     }
-  }, [applyCheckInLookup, ocrFailureCount, onRouteToCheckout, scanLocked, toasts])
+  }, [applyCheckInLookup, ocrFailureCount, onRouteToCheckout, restartCamera, scanLocked, toasts])
 
   const confirmCheckIn = useCallback(async () => {
     if (!licensePlate.trim()) {
@@ -454,13 +491,14 @@ export function StaffOcrCheckInPanel({
       return
     }
 
-    if (!hasLookupResult) {
+    if (!hasLookupResult && !manualPlateMode) {
       setStatus('REVIEW_REQUIRED')
-      toasts.showError('Please lookup the plate before check-in')
+      toasts.showError('Please lookup the plate or enter it manually')
       return
     }
 
     setStatus('CHECKING_IN')
+
     try {
       const response = await checkIn({
         licensePlate: normalizePlateForApi(licensePlate),
@@ -475,10 +513,12 @@ export function StaffOcrCheckInPanel({
         setTicket(normalizeSessionTicket(response.ticket, response.slot))
         setTicketStage('confirmed')
         setOcrFailureCount(0)
+        setManualPlateMode(false)
         setCheckInCount((c) => c + 1)
         window.setTimeout(() => setStatus('TICKET_READY'), 250)
       } else {
         setOcrFailureCount(0)
+        setManualPlateMode(false)
         setCheckInCount((c) => c + 1)
         setStatus('CHECKIN_SUCCESS')
       }
@@ -487,7 +527,7 @@ export function StaffOcrCheckInPanel({
       setStatus('ERROR')
       toasts.showError(extractErrorMessage(error))
     }
-  }, [hasLookupResult, laneVehicleType, licensePlate, ocrResult, toasts])
+  }, [hasLookupResult, manualPlateMode, laneVehicleType, licensePlate, ocrResult, toasts])
 
   const printTicket = useCallback(() => {
     if (!ticket) return
@@ -643,6 +683,24 @@ export function StaffOcrCheckInPanel({
                     Align the vehicle or camera, then scan again.
                   </AlertDescription>
                 </Alert>
+              ) : null}
+              {manualPlateMode ? (
+                <ManualPlateInlineEntry
+                  capturedImageUrl={capturedImageUrl}
+                  licensePlate={licensePlate}
+                  onPlateChange={handleLicensePlateChange}
+                  onConfirm={() => void confirmCheckIn()}
+                  onCancel={() => {
+                    setManualPlateMode(false)
+                    setLicensePlate('')
+                    setPlateLookup(null)
+                    setPlateLookupStatus('idle')
+                    setPlateLookupError(null)
+                    setStatus('CAMERA_READY')
+                  }}
+                  isLoading={status === 'CHECKING_IN'}
+                  laneVehicleType={laneVehicleType}
+                />
               ) : null}
               {capturedImageUrl && (
                 <div className="ml-auto hidden sm:flex items-center gap-2 rounded-lg border bg-muted/40 px-2.5 py-1.5">
@@ -806,12 +864,17 @@ export function StaffOcrCheckInPanel({
                 </div>
               )}
               <div className="flex min-w-0 flex-col justify-center gap-4">
-                <div className="space-y-1.5">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Captured plate</p>
-                  <p className="break-all font-mono text-3xl font-black tracking-wide text-foreground sm:text-4xl">
-                    {formatPlateForDisplay(licensePlate)}
-                  </p>
-                </div>
+                 <div className="space-y-1.5">
+                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Captured plate</p>
+                   <p className="break-all font-mono text-3xl font-black tracking-wide text-foreground sm:text-4xl">
+                     {formatPlateForDisplay(licensePlate)}
+                   </p>
+                   {!isValidVietnamesePlate(licensePlate) && licensePlate && (
+                     <p className="text-xs text-destructive">
+                       Invalid plate format. Expected: XX-XXX.XX (car) or XX-X-XXXX.XX (motorcycle).
+                     </p>
+                   )}
+                 </div>
 
                 {/* Active Reservation Match Banner */}
                 {plateLookup?.activeReservation ? (
@@ -980,6 +1043,107 @@ function buildExitEvidenceFromOcr({
     ocrConfidence: confidence ?? null,
     localImageUrl: localImageUrl ?? null,
   }
+}
+
+function ManualPlateInlineEntry({
+  capturedImageUrl,
+  licensePlate,
+  onPlateChange,
+  onConfirm,
+  onCancel,
+  isLoading,
+  laneVehicleType,
+}: {
+  capturedImageUrl: string | null
+  licensePlate: string
+  onPlateChange: (value: string) => void
+  onConfirm: () => void
+  onCancel: () => void
+  isLoading: boolean
+  laneVehicleType: VehicleType
+}) {
+  const plateInputRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    // Auto-focus the plate input for rapid entry
+    plateInputRef.current?.focus()
+  }, [])
+
+  const canSubmit = Boolean(licensePlate.trim())
+
+  return (
+    <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-50/80 p-4 dark:bg-amber-950/20 dark:border-amber-500/20">
+      <div className="flex items-start gap-3">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-900/40">
+          <Camera className="size-5 text-amber-600 dark:text-amber-400" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+            Manual plate entry
+          </p>
+          <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300/80">
+            Could not read the plate from the image. Type the plate and press Enter to check in directly.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="grid size-7 shrink-0 place-items-center rounded-lg text-amber-600 transition hover:bg-amber-100 dark:text-amber-400 dark:hover:bg-amber-900/40"
+          aria-label="Close manual entry"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+
+      <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+        {capturedImageUrl ? (
+          <img
+            src={capturedImageUrl}
+            alt="Captured vehicle"
+            className="h-24 w-36 shrink-0 rounded-lg border object-cover shadow-sm"
+          />
+        ) : null}
+        <div className="flex-1 space-y-2.5">
+          <div className="flex gap-2">
+            <input
+              ref={plateInputRef}
+              type="text"
+              value={licensePlate}
+              onChange={(event) => onPlateChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && canSubmit) {
+                  event.preventDefault()
+                  onConfirm()
+                }
+              }}
+              placeholder={laneVehicleType === 'car' ? '59A-12345' : '59-A1 12345'}
+              className="h-11 flex-1 rounded-lg border border-amber-200 bg-white px-3 font-mono font-black uppercase tracking-wide placeholder:text-amber-300 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-amber-700/50 dark:bg-amber-950/40 dark:text-amber-100 dark:placeholder:text-amber-700/50"
+              autoCapitalize="characters"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+            <Button
+              type="button"
+              onClick={onConfirm}
+              disabled={!canSubmit || isLoading}
+              className="h-11 gap-2 bg-amber-600 text-white hover:bg-amber-700 dark:bg-amber-600 dark:hover:bg-amber-700"
+            >
+              {isLoading ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="size-4" />
+              )}
+              <span>Check-in</span>
+            </Button>
+          </div>
+          <p className="text-[11px] text-amber-600 dark:text-amber-400">
+            The captured image will be attached as evidence for this manual entry.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function Field({

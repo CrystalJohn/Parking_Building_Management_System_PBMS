@@ -32,6 +32,7 @@ export interface AllocationStrategy {
   ): Slot & { floor: Floor };
 }
 
+// 1. Floor-Based Allocation with Reservation Support - Thuật toán cân bằng tải
 export class BalancedOccupancyStrategy implements AllocationStrategy {
   readonly name = 'balanced_occupancy';
 
@@ -100,6 +101,7 @@ export class BalancedOccupancyStrategy implements AllocationStrategy {
   }
 }
 
+// 2. First-Come, First-Served (FCFS) Allocation - Thuật toán ưu tiên tầng thấp
 export class LowestFloorStrategy implements AllocationStrategy {
   readonly name = 'lowest_floor';
 
@@ -151,6 +153,7 @@ export class RandomStrategy implements AllocationStrategy {
   }
 }
 
+// 4. Thuật toán phân bổ công bằng dựa trên khoảng cách di chuyển
 export class FairDistanceBasedStrategy implements AllocationStrategy {
   readonly name = 'fair_distance_based';
 
@@ -187,7 +190,7 @@ export class FairDistanceBasedStrategy implements AllocationStrategy {
     const averageOccupancy =
       floorOccupancy.size > 0
         ? Array.from(floorOccupancy.values()).reduce((sum, rate) => sum + rate, 0) /
-          floorOccupancy.size
+        floorOccupancy.size
         : 0;
 
     return candidates

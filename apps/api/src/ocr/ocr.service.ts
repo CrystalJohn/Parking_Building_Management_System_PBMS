@@ -62,7 +62,7 @@ export class OcrService {
       const scan = await this.plateRecognitionService.recognize(file.buffer, file.mimetype);
       const providerTimestamp = parseOptionalDate(scan.providerTimestamp);
 
-      const evidence = await this.createEvidenceWithImage({
+      const evidence = await this.createEvidenceRecord({
         eventType,
         provider: 'PLATE_RECOGNIZER',
         providerFilename: scan.providerFilename ?? null,
@@ -85,7 +85,7 @@ export class OcrService {
       const message = getErrorMessage(error);
       this.logger.error(`OCR recognize failed: ${message}`, error instanceof Error ? error.stack : undefined);
 
-      const evidence = await this.createEvidenceWithImage({
+      const evidence = await this.createEvidenceRecord({
         eventType,
         provider: 'PLATE_RECOGNIZER',
         providerFilename: null,
@@ -183,23 +183,38 @@ export class OcrService {
     return evidence;
   }
 
-  private async createEvidenceWithImage(
+  private async createEvidenceRecord(
     data: Record<string, unknown>,
     imageBuffer: Buffer,
     mimeType: string,
   ): Promise<EvidenceRecord> {
-    const retentionDays = this.config.get<number>('OCR_FULL_IMAGE_RETENTION_DAYS', 30);
-    const thumbnailRetentionDays = this.config.get<number>('OCR_THUMBNAIL_RETENTION_DAYS', 90);
-
     const evidence = await (this.prisma as any).ocrEvidence.create({
       data,
     });
+
+    // Fire-and-forget image storage (Sharp compression + file write)
+    // This runs in the background without blocking the response
+    this.saveImageAsync(evidence.id, imageBuffer, mimeType, evidence).catch((err) => {
+      this.logger.warn(`Background image save failed for evidence ${evidence.id}: ${(err as Error)?.message ?? String(err)}`);
+    });
+
+    return evidence;
+  }
+
+  private async saveImageAsync(
+    evidenceId: string,
+    imageBuffer: Buffer,
+    mimeType: string,
+    evidence: EvidenceRecord,
+  ): Promise<void> {
+    const retentionDays = this.config.get<number>('OCR_FULL_IMAGE_RETENTION_DAYS', 30);
+    const thumbnailRetentionDays = this.config.get<number>('OCR_THUMBNAIL_RETENTION_DAYS', 90);
 
     let imageMeta: Awaited<ReturnType<OcrEvidenceStorageService['saveImage']>> | null = null;
 
     try {
       imageMeta = await this.storageService.saveImage(
-        evidence.id,
+        evidenceId,
         imageBuffer,
         mimeType,
       );
@@ -208,8 +223,8 @@ export class OcrService {
       const fullExpiresAt = new Date(now.getTime() + retentionDays * 24 * 60 * 60 * 1000);
       const thumbExpiresAt = new Date(now.getTime() + thumbnailRetentionDays * 24 * 60 * 60 * 1000);
 
-      return (this.prisma as any).ocrEvidence.update({
-        where: { id: evidence.id },
+      await (this.prisma as any).ocrEvidence.update({
+        where: { id: evidenceId },
         data: {
           imageKey: imageMeta.imageKey,
           thumbnailKey: imageMeta.thumbnailKey,
@@ -221,11 +236,10 @@ export class OcrService {
         },
       });
     } catch (err) {
-      this.logger.warn(`Failed to save OCR evidence image metadata, cleaning up files: ${(err as Error).message}`);
+      this.logger.warn(`Failed to save OCR evidence image metadata, cleaning up files: ${(err as Error)?.message ?? String(err)}`);
       if (imageMeta) {
         await this.storageService.deleteEvidenceFiles(imageMeta.imageKey, imageMeta.thumbnailKey);
       }
-      return evidence;
     }
   }
 

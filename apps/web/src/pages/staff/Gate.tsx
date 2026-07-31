@@ -583,6 +583,7 @@ function CheckOutPanel({
   const [action, setAction] = useState<'lookup' | 'checkout' | 'payment' | 'bankQr' | 'refresh' | 'exit' | null>(null)
   const [showScanner, setShowScanner] = useState(false)
   const [checkOutCount, setCheckOutCount] = useState(0)
+  const [resetDialogOpen, setResetDialogOpen] = useState(false)
   const hydratedQueryRef = useRef<string | null>(null)
 
   const status = workflow?.session.status
@@ -660,8 +661,18 @@ function CheckOutPanel({
     setExitResult(null)
     setAction(null)
     setShowScanner(false)
+    setResetDialogOpen(false)
     onResetToGateOps?.()
   }
+
+  const hasCheckoutDraft = Boolean(workflow) || Boolean(receipt) || Boolean(exitResult)
+  const requestReset = useCallback(() => {
+    if (hasCheckoutDraft) {
+      setResetDialogOpen(true)
+      return
+    }
+    reset()
+  }, [hasCheckoutDraft])
 
   const normalizeSessionCode = (value: string) => {
     const trimmed = value.trim()
@@ -1261,7 +1272,7 @@ function CheckOutPanel({
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={reset}
+                      onClick={requestReset}
                       disabled={Boolean(action)}
                       className="h-11"
                     >
@@ -1458,6 +1469,21 @@ function CheckOutPanel({
           onManualInput={handleQRScanned}
         />
       ) : null}
+
+      <AlertDialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset checkout?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Current checkout progress, payment, and receipt will be cleared.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={reset}>Reset</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={plateMismatchDialogAction !== null}
