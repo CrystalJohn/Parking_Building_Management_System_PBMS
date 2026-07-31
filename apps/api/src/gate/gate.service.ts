@@ -5,6 +5,7 @@ import { OcrService } from '../ocr';
 import { SessionsService } from '../sessions/sessions.service';
 import { VehiclesService, normalizePlateNumber } from '../vehicles/vehicles.service';
 import { GateLanesService } from '../gate-lanes/gate-lanes.service';
+import { toDisplay } from '../plates';
 import { ResolvePlateDto, ScanPlateDto } from './dto';
 
 type GateSource = 'OCR' | 'MANUAL';
@@ -16,6 +17,7 @@ export type GateScanResponse =
     source: GateSource;
     plateOcr?: string | null;
     plateConfirmed: string;
+    plateDisplay: string | null;
     confidence?: number | null;
     ocrEvidenceId?: string;
     lookup: Awaited<ReturnType<VehiclesService['lookupPlate']>>;
@@ -25,6 +27,7 @@ export type GateScanResponse =
     source: GateSource;
     plateOcr?: string | null;
     plateConfirmed: string;
+    plateDisplay: string | null;
     confidence?: number | null;
     ocrEvidenceId?: string;
     subMode: GateCheckoutSubMode;
@@ -98,6 +101,7 @@ export class GateService {
   }): Promise<Exclude<GateScanResponse, { mode: 'NEEDS_MANUAL_PLATE' }>> {
     const lane = input.lane ?? await this.gateLanesService.requireActiveLane(input.staffId);
     const plateConfirmed = normalizePlateNumber(input.plate);
+    const plateDisplay = toDisplay(plateConfirmed);
     if (!plateConfirmed) {
       throw new BadRequestException('plate is required');
     }
@@ -117,6 +121,7 @@ export class GateService {
         source: input.source,
         plateOcr: input.plateOcr ?? null,
         plateConfirmed,
+        plateDisplay,
         confidence: input.confidence ?? null,
         ocrEvidenceId: input.ocrEvidenceId,
         subMode: this.mapCheckoutSubMode(checkout.session.status),
@@ -134,6 +139,7 @@ export class GateService {
       source: input.source,
       plateOcr: input.plateOcr ?? null,
       plateConfirmed,
+      plateDisplay,
       confidence: input.confidence ?? null,
       ocrEvidenceId: input.ocrEvidenceId,
       lookup,

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { VehicleUserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PlateFormatter } from '../plates';
 
 
 export interface MatchedVehicleSummary {
@@ -15,6 +16,7 @@ export interface MatchedVehicleSummary {
   vehicle: null | {
     id: string;
     plateNumber: string;
+    plateDisplay: string | null;
     vehicleType: string;
     isActive: boolean;
     registeredAt: Date;
@@ -133,6 +135,7 @@ export class VehiclesService {
     return vehicles.map((vehicle) => ({
       id: vehicle.id,
       plateNumber: vehicle.plateNumber,
+      plateDisplay: vehicle.plateDisplay ?? null,
       vehicleType: vehicle.vehicleType,
       isActive: vehicle.isActive,
       registeredAt: vehicle.registeredAt,
@@ -252,6 +255,7 @@ export class VehiclesService {
       vehicle: {
         id: vehicle.id,
         plateNumber: vehicle.plateNumber,
+        plateDisplay: vehicle.plateDisplay ?? null,
         vehicleType: vehicle.vehicleType,
         isActive: vehicle.isActive,
         registeredAt: vehicle.registeredAt,
@@ -400,6 +404,7 @@ export class VehiclesService {
       vehicle: {
         id: vehicle.id,
         plateNumber: vehicle.plateNumber,
+        plateDisplay: vehicle.plateDisplay ?? null,
         vehicleType: vehicle.vehicleType,
         isActive: vehicle.isActive,
         registeredAt: vehicle.registeredAt,
@@ -437,5 +442,5 @@ export class VehiclesService {
 }
 
 export function normalizePlateNumber(value: string | null | undefined): string {
-  return (value ?? '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return PlateFormatter.normalize(value);
 }

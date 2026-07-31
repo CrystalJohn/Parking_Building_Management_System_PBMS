@@ -12,6 +12,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateVehicleRegistrationDto, ReviewVehicleRegistrationDto } from './dto';
 import { VehicleRegistrationStatus, VehicleUserRole, NotificationType } from '@prisma/client';
 import { normalizePlateNumber } from '../vehicles/vehicles.service';
+import { PlateFormatter } from '../plates';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
@@ -189,10 +190,18 @@ export class VehicleRegistrationsService {
           where: { plateNumber: request.plateNumber },
         });
 
+        if (vehicle && !vehicle.plateDisplay) {
+          vehicle = await tx.vehicle.update({
+            where: { id: vehicle.id },
+            data: { plateDisplay: PlateFormatter.toDisplay(PlateFormatter.normalize(request.plateNumber)) },
+          });
+        }
+
         if (!vehicle) {
           vehicle = await tx.vehicle.create({
             data: {
               plateNumber: request.plateNumber,
+              plateDisplay: PlateFormatter.toDisplay(PlateFormatter.normalize(request.plateNumber)),
               vehicleType: request.vehicleType,
               isActive: true,
             },

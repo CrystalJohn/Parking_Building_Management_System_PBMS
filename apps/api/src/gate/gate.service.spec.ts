@@ -83,6 +83,7 @@ describe('GateService', () => {
       confidence: 0.97,
       ocrEvidenceId: 'ocr-1',
     });
+    expect(result).toMatchObject({ plateDisplay: '59A-123.45' });
   });
 
   it('routes manual resolve to PAYMENT_REQUIRED without calling OCR again', async () => {
