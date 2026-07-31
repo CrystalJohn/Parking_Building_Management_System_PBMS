@@ -65,6 +65,8 @@ describe('OcrService', () => {
     plateRecognitionService.recognize.mockResolvedValue({
       plate: '51A-12345',
       rawPlate: '51a12345',
+      canonicalPlate: '51A12345',
+      displayPlate: '51A-123.45',
       score: 0.98,
       dscore: 0.96,
       region: 'vn',
@@ -86,6 +88,9 @@ describe('OcrService', () => {
       rawResponse: { results: [{ plate: '51a12345' }] },
       plateBox: { xmin: 10, ymin: 20, xmax: 110, ymax: 80 },
       ocrPlate: '51A-12345',
+      rawPlate: '51a12345',
+      canonicalPlate: '51A12345',
+      displayPlate: '51A-123.45',
       ocrConfidence: 0.98,
       vehicleType: 'Sedan',
       buildingName: 'PBMS Building',
@@ -131,6 +136,9 @@ describe('OcrService', () => {
     expect(result).toMatchObject({
       ocrEvidenceId: 'evidence-1',
       detectedPlate: '51A-12345',
+      rawPlate: '51a12345',
+      canonicalPlate: '51A12345',
+      displayPlate: '51A-123.45',
       confidence: 0.98,
       vehicleTypePrediction: 'Sedan',
       provider: 'PLATE_RECOGNIZER',

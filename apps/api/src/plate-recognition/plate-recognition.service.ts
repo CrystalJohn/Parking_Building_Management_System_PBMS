@@ -6,6 +6,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { normalize, toDisplay } from '../plates';
 
 const PLATE_READER_URL = 'https://api.platerecognizer.com/v1/plate-reader/';
 
@@ -17,6 +18,8 @@ export interface PlateScanCandidate {
 export interface PlateScanResult {
   plate: string | null;
   rawPlate: string | null;
+  canonicalPlate: string | null;
+  displayPlate: string | null;
   score: number;
   dscore: number;
   region: string | null;
@@ -135,6 +138,8 @@ export class PlateRecognitionService {
       return {
         plate: null,
         rawPlate: null,
+        canonicalPlate: null,
+        displayPlate: null,
         score: 0,
         dscore: 0,
         region: null,
@@ -160,9 +165,14 @@ export class PlateRecognitionService {
         }))
       : [];
 
+    const canonicalPlate = rawPlate ? normalize(rawPlate) : null;
+    const displayPlate = canonicalPlate ? toDisplay(canonicalPlate) : null;
+
     return {
       plate: rawPlate ? formatVietnamesePlate(rawPlate) : null,
       rawPlate,
+      canonicalPlate,
+      displayPlate,
       score: top?.score ?? 0,
       dscore: top?.dscore ?? 0,
       region: top?.region?.code ?? null,

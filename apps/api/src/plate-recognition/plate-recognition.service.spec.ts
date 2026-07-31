@@ -24,3 +24,53 @@ describe('formatVietnamesePlate', () => {
     expect(formatVietnamesePlate('')).toBe('');
   });
 });
+
+describe('PlateScanResult canonical/display fields', () => {
+  const service = new (require('./plate-recognition.service').PlateRecognitionService)({
+    get: () => 'token',
+  } as any);
+
+  it('recognize() returns canonicalPlate and displayPlate alongside existing fields', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          processing_time: 100,
+          results: [
+            {
+              plate: '30a12345',
+              score: 0.99,
+              dscore: 0.9,
+              region: { code: 'vn' },
+              vehicle: { type: 'Sedan' },
+              box: { xmin: 0, ymin: 0, xmax: 100, ymax: 50 },
+              candidates: [{ plate: '30a12345', score: 0.99 }],
+            },
+          ],
+        }),
+    } as any);
+
+    const result = await service.recognize(Buffer.from('x'), 'image/jpeg');
+    expect(result.plate).toBe('30A-12345'); // legacy format unchanged
+    expect(result.rawPlate).toBe('30a12345');
+    expect(result.canonicalPlate).toBe('30A12345');
+    expect(result.displayPlate).toBe('30A-123.45');
+    expect(result.vehicleType).toBe('Sedan');
+    (global.fetch as any).mockRestore();
+  });
+
+  it('recognize() returns null canonical/display when nothing detected', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ processing_time: 0, results: [] }),
+    } as any);
+
+    const result = await service.recognize(Buffer.from('x'), 'image/jpeg');
+    expect(result.plate).toBeNull();
+    expect(result.canonicalPlate).toBeNull();
+    expect(result.displayPlate).toBeNull();
+    (global.fetch as any).mockRestore();
+  });
+});

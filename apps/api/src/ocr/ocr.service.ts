@@ -23,6 +23,9 @@ type EvidenceRecord = {
   rawResponse?: unknown;
   plateBox: unknown;
   ocrPlate: string | null;
+  rawPlate?: string | null;
+  canonicalPlate?: string | null;
+  displayPlate?: string | null;
   ocrConfidence: number | null;
   confirmedPlate?: string | null;
   vehicleType: string | null;
@@ -71,6 +74,9 @@ export class OcrService {
         rawResponse: scan.rawResponse ?? null,
         plateBox: scan.plateBox ?? null,
         ocrPlate: scan.plate,
+        rawPlate: scan.rawPlate ?? null,
+        canonicalPlate: scan.canonicalPlate ?? null,
+        displayPlate: scan.displayPlate ?? null,
         ocrConfidence: scan.plate ? scan.score : null,
         vehicleType: scan.vehicleType,
         buildingName,
@@ -94,6 +100,9 @@ export class OcrService {
         rawResponse: null,
         plateBox: null,
         ocrPlate: null,
+        rawPlate: null,
+        canonicalPlate: null,
+        displayPlate: null,
         ocrConfidence: null,
         vehicleType: null,
         buildingName,
@@ -247,6 +256,9 @@ export class OcrService {
     return {
       ocrEvidenceId: evidence.id,
       detectedPlate: evidence.ocrPlate,
+      rawPlate: evidence.rawPlate ?? null,
+      canonicalPlate: evidence.canonicalPlate ?? null,
+      displayPlate: evidence.displayPlate ?? null,
       confidence: evidence.ocrConfidence,
       vehicleTypePrediction: evidence.vehicleType,
       provider: 'PLATE_RECOGNIZER',

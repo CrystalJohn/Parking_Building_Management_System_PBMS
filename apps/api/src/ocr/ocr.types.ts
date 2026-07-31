@@ -23,6 +23,9 @@ export interface PlateBox {
 export interface OcrRecognizeResponse {
   ocrEvidenceId: string;
   detectedPlate: string | null;
+  rawPlate: string | null;
+  canonicalPlate: string | null;
+  displayPlate: string | null;
   confidence: number | null;
   vehicleTypePrediction: string | null;
   provider: 'PLATE_RECOGNIZER';
