@@ -831,6 +831,9 @@ export class AdminService {
         thumbnailDeletedAt: true,
         ocrPlate: true,
         confirmedPlate: true,
+        rawPlate: true,
+        canonicalPlate: true,
+        displayPlate: true,
         ocrConfidence: true,
         capturedAt: true,
         providerTimestamp: true,
@@ -1480,6 +1483,9 @@ function mapSessionEvidence(
     thumbnailDeletedAt: Date | null;
     ocrPlate: string | null;
     confirmedPlate: string | null;
+    rawPlate: string | null;
+    canonicalPlate: string | null;
+    displayPlate: string | null;
     ocrConfidence: number | null;
     capturedAt: Date;
     providerTimestamp: Date | null;
@@ -1493,6 +1499,9 @@ function mapSessionEvidence(
     imageUrl: evidence.imageKey ? `/api/ocr-evidences/${evidence.id}/image` : null,
     ocrPlate: evidence.ocrPlate,
     confirmedPlate: evidence.confirmedPlate,
+    rawPlate: evidence.rawPlate,
+    canonicalPlate: evidence.canonicalPlate,
+    displayPlate: evidence.displayPlate,
     ocrConfidence: evidence.ocrConfidence,
     capturedAt: evidence.capturedAt.toISOString(),
     providerTimestamp: evidence.providerTimestamp?.toISOString() ?? null,

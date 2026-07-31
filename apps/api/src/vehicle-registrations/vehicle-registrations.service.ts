@@ -125,14 +125,18 @@ export class VehicleRegistrationsService {
   }
 
   async findMyRequests(driverId: string) {
-    return this.prisma.vehicleRegistrationRequest.findMany({
+    const requests = await this.prisma.vehicleRegistrationRequest.findMany({
       where: { driverId },
       orderBy: { createdAt: 'desc' },
     });
+    return requests.map((request) => ({
+      ...request,
+      plateDisplay: PlateFormatter.toDisplay(PlateFormatter.normalize(request.plateNumber)),
+    }));
   }
 
   async findPendingRequests() {
-    return this.prisma.vehicleRegistrationRequest.findMany({
+    const requests = await this.prisma.vehicleRegistrationRequest.findMany({
       where: { status: VehicleRegistrationStatus.pending },
       include: {
         driver: {
@@ -141,10 +145,14 @@ export class VehicleRegistrationsService {
       },
       orderBy: { createdAt: 'asc' },
     });
+    return requests.map((request) => ({
+      ...request,
+      plateDisplay: PlateFormatter.toDisplay(PlateFormatter.normalize(request.plateNumber)),
+    }));
   }
 
   async findHistoricalRequests() {
-    return this.prisma.vehicleRegistrationRequest.findMany({
+    const requests = await this.prisma.vehicleRegistrationRequest.findMany({
       where: { status: { not: VehicleRegistrationStatus.pending } },
       include: {
         driver: {
@@ -156,6 +164,10 @@ export class VehicleRegistrationsService {
       },
       orderBy: { reviewedAt: 'desc' },
     });
+    return requests.map((request) => ({
+      ...request,
+      plateDisplay: PlateFormatter.toDisplay(PlateFormatter.normalize(request.plateNumber)),
+    }));
   }
 
   async reviewRequest(requestId: string, dto: ReviewVehicleRegistrationDto, managerId: string) {

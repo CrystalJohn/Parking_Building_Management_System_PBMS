@@ -611,6 +611,7 @@ export class SessionsService {
           zone: reservation.slot.zone,
           vehicleType: reservation.vehicle!.vehicleType,
           plateConfirmed: reservation.vehicle!.plateNumber,
+          plateDisplay: PlateFormatter.toDisplay(reservation.vehicle!.plateNumber),
           plateOcr: null,
           driverId: reservation.driverId,
           vehicleId: reservation.vehicleId,

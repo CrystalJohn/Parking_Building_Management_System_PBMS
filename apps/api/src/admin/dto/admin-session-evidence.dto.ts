@@ -7,6 +7,9 @@ export interface AdminSessionEvidenceItemDto {
   imageUrl: string | null;
   ocrPlate: string | null;
   confirmedPlate: string | null;
+  rawPlate: string | null;
+  canonicalPlate: string | null;
+  displayPlate: string | null;
   ocrConfidence: number | null;
   capturedAt: string;
   providerTimestamp: string | null;

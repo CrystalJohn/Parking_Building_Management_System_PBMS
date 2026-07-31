@@ -14,6 +14,7 @@ import { NotificationType, Prisma, VehicleType } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizePlateNumber } from '../vehicles/vehicles.service';
+import { PlateFormatter } from '../plates';
 import { AllocationService } from '../slots/allocation.service';
 import {
   RESERVATION_CHECKIN_TOKEN_REFRESH_MS,
@@ -648,6 +649,7 @@ export class ReservationsService {
     return {
       ...reservation,
       licensePlate: reservation.vehicle?.plateNumber ?? null,
+      plateDisplay: reservation.vehicle ? PlateFormatter.toDisplay(reservation.vehicle.plateNumber) : null,
       vehicle: reservation.vehicle
         ? {
             id: reservation.vehicle.id,
