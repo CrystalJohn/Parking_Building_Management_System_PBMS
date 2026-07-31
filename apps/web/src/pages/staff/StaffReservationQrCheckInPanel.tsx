@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import { QRScanner } from '../../components/qr-scanner/QRScanner'
 import { formatDateTimeVN } from '../../lib/date-time'
-import { formatPlateForDisplay, formatVehicleType } from '../../lib/plate-format'
+import { formatVehicleType } from '../../lib/plate-format'
 import {
   normalizeReservationPaymentBadge,
   normalizeReservationQrError,
@@ -307,7 +307,7 @@ export function StaffReservationQrCheckInPanel({ onSwitchToOcr, onRouteToCheckou
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-3 pt-1">
-                  <Metric label="Plate" value={formatPlateForDisplay(confirmData.session.licensePlate)} mono strong />
+                  <Metric label="Plate" value={confirmData.session.plateDisplay ?? confirmData.session.licensePlate} mono strong />
                   <Metric label="Slot" value={confirmData.slot.code} strong />
                   <Metric label="Vehicle type" value={formatVehicleType(confirmData.session.vehicleType)} />
                   <Metric label="Check-in time" value={formatDateTimeVN(confirmData.session.checkInTime)} />
@@ -319,7 +319,7 @@ export function StaffReservationQrCheckInPanel({ onSwitchToOcr, onRouteToCheckou
                   <div>
                     <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Detected Plate</p>
                     <p className="font-mono text-2xl font-black text-foreground">
-                      {formatPlateForDisplay(scanData.plateNumber)}
+                      {scanData.plateDisplay ?? scanData.plateNumber}
                     </p>
                   </div>
                   <Badge className={`px-2.5 py-1 text-xs font-bold ${badgeTone}`}>

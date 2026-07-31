@@ -49,7 +49,7 @@ import { RequestManagerReviewDialog } from '../../components/operation-issues/Re
 import { QRScanner } from '../../components/qr-scanner/QRScanner'
 import { RecentSessionsCard } from '../../components/ui/RecentSessionsCard'
 import { formatDateTimeVN } from '../../lib/date-time'
-import { formatPlateForDisplay, formatVehicleType, normalizePlateForApi } from '../../lib/plate-format'
+import { formatVehicleType, normalizePlateForApi } from '../../lib/plate-format'
 import { StaffOcrCheckInPanel } from './StaffOcrCheckInPanel'
 import { StaffReservationQrCheckInPanel } from './StaffReservationQrCheckInPanel'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -993,7 +993,7 @@ function CheckOutPanel({
   }
 
   const amountDue = workflow ? VND(workflow.payment?.amount ?? workflow.fee.total) : ''
-  const plateDisplay = workflow ? formatPlateForDisplay(workflow.session.licensePlate) : ''
+  const plateDisplay = workflow ? (workflow.session.plateDisplay ?? workflow.session.licensePlate) : ''
   const durationLabel = workflow ? `${workflow.fee.durationHours}h` : ''
   const paymentMethod = workflow?.payment?.method ?? null
   const paymentFact = workflow
@@ -1500,11 +1500,11 @@ function CheckOutPanel({
           <div className="space-y-3 rounded-xl border bg-muted/35 p-3 text-sm">
             <MismatchFact
               label="Check-in plate"
-              value={formatPlateForDisplay(checkInPlateNormalized) || 'Not available'}
+              value={(workflow?.session.plateDisplay ?? checkInPlateNormalized) || 'Not available'}
             />
             <MismatchFact
               label="Check-out plate"
-              value={formatPlateForDisplay(checkOutPlateNormalized) || 'Not verified'}
+              value={(workflow?.session.plateDisplay ?? checkOutPlateNormalized) || 'Not verified'}
             />
             <MismatchFact
               label="Session code"
@@ -1519,7 +1519,7 @@ function CheckOutPanel({
               <RequestManagerReviewDialog
                 defaultType="ocr_mismatch"
                 defaultSeverity="warning"
-                defaultNote={`Plate mismatch detected for ${plateDisplay}. Check-in plate: ${formatPlateForDisplay(checkInPlateNormalized) || 'N/A'}. Check-out plate: ${formatPlateForDisplay(checkOutPlateNormalized) || 'N/A'}.`}
+                defaultNote={`Plate mismatch detected for ${plateDisplay}. Check-in plate: ${(workflow?.session.plateDisplay ?? checkInPlateNormalized) || 'N/A'}. Check-out plate: ${(workflow?.session.plateDisplay ?? checkOutPlateNormalized) || 'N/A'}.`}
                 sessionId={workflow.session.id}
                 paymentId={workflow.payment?.id}
                 slotId={workflow.slot.id}
@@ -1839,7 +1839,7 @@ function EvidencePanel({
   emptyText: string
   onImageError: () => void
 }) {
-  const plate = evidence?.ocrPlate ? formatPlateForDisplay(evidence.ocrPlate) : null
+  const plate = evidence?.ocrPlate ? (evidence.displayPlate ?? evidence.canonicalPlate ?? evidence.ocrPlate) : null
   const confidence = evidence?.ocrConfidence != null ? `${Math.round(evidence.ocrConfidence * 100)}%` : null
   const timestamp = evidence?.capturedAt ? formatDateTime(evidence.capturedAt) : null
   const message = evidenceStatusLabel(image.status, Boolean(evidence), emptyText)

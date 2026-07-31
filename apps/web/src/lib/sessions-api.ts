@@ -38,6 +38,7 @@ export interface AssignedSlot {
 export interface SessionSummary {
   id: string
   licensePlate: string
+  plateDisplay?: string | null
   vehicleType: VehicleType
   checkInTime: string
   status: SessionStatus
@@ -56,6 +57,7 @@ export interface ReservationScanResponse {
   reservationId: string
   vehicleId: string
   plateNumber: string
+  plateDisplay?: string | null
   vehicleType: VehicleType
   slotId: number
   slotCode: string
@@ -74,6 +76,7 @@ export interface ConfirmReservationCheckInResponse {
     reservationId: string | null
     vehicleId: string | null
     licensePlate: string
+    plateDisplay?: string | null
     vehicleType: VehicleType
     checkInTime: string
     status: SessionStatus
@@ -88,6 +91,7 @@ export interface SessionTicket {
   qrPayload: string
   qrCode: string | null
   licensePlate: string
+  plateDisplay?: string | null
   vehicleType: VehicleType
   slotCode: string
   floorName?: string
@@ -109,6 +113,9 @@ export interface OcrPlateBox {
 export interface OcrRecognizeResponse {
   ocrEvidenceId: string
   detectedPlate: string | null
+  rawPlate: string | null
+  canonicalPlate: string | null
+  displayPlate: string | null
   confidence: number | null
   vehicleTypePrediction: string | null
   provider: 'PLATE_RECOGNIZER'
@@ -142,6 +149,7 @@ export interface VehicleLookupResponse {
   vehicle: {
     id: string
     plateNumber: string
+    plateDisplay: string | null
     vehicleType: VehicleType
     isActive: boolean
     registeredAt: string
@@ -168,6 +176,7 @@ export interface VehicleLookupResponse {
   recentSessions: Array<{
     id: string
     licensePlate: string
+    plateDisplay?: string | null
     plateNumberOcr: string | null
     plateNumberConfirmed: string | null
     vehicleType: VehicleType
@@ -191,6 +200,7 @@ export type GateScanResponse =
       source: 'OCR' | 'MANUAL'
       plateOcr?: string | null
       plateConfirmed: string
+      plateDisplay: string | null
       confidence?: number | null
       ocrEvidenceId?: string
       lookup: VehicleLookupResponse
@@ -200,6 +210,7 @@ export type GateScanResponse =
       source: 'OCR' | 'MANUAL'
       plateOcr?: string | null
       plateConfirmed: string
+      plateDisplay: string | null
       confidence?: number | null
       ocrEvidenceId?: string
       subMode: GateCheckoutSubMode
@@ -257,6 +268,7 @@ export interface CheckoutSessionInfo {
   sessionCode: string
   reservationId?: string | null
   licensePlate: string
+  plateDisplay?: string | null
   vehicleType: VehicleType
   checkInTime: string
   checkOutTime: string | null
@@ -286,6 +298,8 @@ export interface CheckInEvidence {
   capturedAt: string | null
   ocrPlate: string | null
   confirmedPlate?: string | null
+  displayPlate?: string | null
+  canonicalPlate?: string | null
   ocrConfidence: number | null
 }
 
@@ -311,6 +325,7 @@ export interface PaymentWorkflowResponse {
 export interface CheckOutResponse {
   sessionId: string
   licensePlate: string
+  plateDisplay?: string | null
   vehicleType: VehicleType
   checkInTime: string
   checkOutTime: string
@@ -322,6 +337,7 @@ export interface CheckOutResponse {
 export interface ConfirmPaymentResponse {
   sessionId: string
   licensePlate: string
+  plateDisplay?: string | null
   vehicleType: VehicleType
   checkInTime: string
   checkOutTime: string
@@ -382,6 +398,7 @@ interface BackendCheckOutResponse {
     sessionCode: string
     reservationId?: string | null
     licensePlate: string
+    plateDisplay?: string | null
     vehicleType: VehicleType
     checkInTime: string
     checkOutTime: string | null
@@ -465,6 +482,7 @@ function mapBackendCheckout(data: BackendCheckOutResponse): CheckoutWorkflowResp
       sessionCode: data.session.sessionCode,
       reservationId: data.session.reservationId ?? null,
       licensePlate: data.session.licensePlate,
+      plateDisplay: data.session.plateDisplay ?? null,
       vehicleType: data.session.vehicleType,
       checkInTime: data.session.checkInTime,
       checkOutTime: data.session.checkOutTime,
@@ -670,6 +688,7 @@ export interface RecentSession {
   id: string
   sessionCode: string
   licensePlate: string
+  plateDisplay?: string | null
   vehicleType: VehicleType
   status: SessionStatus
   checkInTime: string
@@ -693,6 +712,7 @@ export interface ActiveSessionDetail {
   id: string
   sessionCode: string
   licensePlate: string
+  plateDisplay?: string | null
   vehicleType: VehicleType
   checkInTime: string
   status: SessionStatus

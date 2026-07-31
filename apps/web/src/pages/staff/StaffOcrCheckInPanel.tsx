@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 
 import { formatDateTimeVN } from '../../lib/date-time'
-import { formatPlateForDisplay, normalizePlateForApi, isValidVietnamesePlate } from '../../lib/plate-format'
+import { normalizePlateForApi, isValidVietnamesePlate } from '../../lib/plate-format'
 import { useToasts } from '../../lib/use-toasts'
 import { RecentSessionsCard } from '../../components/ui/RecentSessionsCard'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -298,7 +298,7 @@ export function StaffOcrCheckInPanel({
   }, [])
 
   const applyCheckInLookup = useCallback((plate: string, lookup: VehicleLookupResponse) => {
-    setLicensePlate(formatPlateForDisplay(plate))
+    setLicensePlate(plate)
     setPlateLookup(lookup)
     setPlateLookupStatus('success')
     setPlateLookupError(null)
@@ -335,14 +335,14 @@ export function StaffOcrCheckInPanel({
             ...result.checkout,
             exitEvidence,
           },
-          plateConfirmed: formatPlateForDisplay(result.plateConfirmed),
+          plateConfirmed: result.plateDisplay ?? result.plateConfirmed,
           subMode: result.subMode,
           exitEvidence,
         })
         return
       }
 
-      applyCheckInLookup(result.plateConfirmed, result.lookup)
+      applyCheckInLookup(result.plateDisplay ?? result.plateConfirmed, result.lookup)
     } catch (error) {
       if (requestId !== lookupRequestIdRef.current) return
       setPlateLookup(null)
@@ -416,7 +416,10 @@ export function StaffOcrCheckInPanel({
         detectedPlate:
           response.mode === 'NEEDS_MANUAL_PLATE'
             ? null
-            : formatPlateForDisplay(response.plateOcr ?? response.plateConfirmed),
+            : response.plateDisplay ?? response.plateConfirmed,
+        rawPlate: null,
+        canonicalPlate: response.mode === 'NEEDS_MANUAL_PLATE' ? null : response.plateConfirmed,
+        displayPlate: response.mode === 'NEEDS_MANUAL_PLATE' ? null : response.plateDisplay,
         confidence: response.mode === 'NEEDS_MANUAL_PLATE' ? null : response.confidence ?? null,
         vehicleTypePrediction: null,
         provider: 'PLATE_RECOGNIZER',
@@ -445,14 +448,14 @@ export function StaffOcrCheckInPanel({
         })
         setStatus('OCR_SUCCESS')
         toasts.showInfo(
-          `Open session found for ${formatPlateForDisplay(response.plateConfirmed)}. Continue checkout.`,
+          `Open session found for ${response.plateDisplay ?? response.plateConfirmed}. Continue checkout.`,
         )
         onRouteToCheckout?.({
           checkout: {
             ...response.checkout,
             exitEvidence,
           },
-          plateConfirmed: formatPlateForDisplay(response.plateConfirmed),
+          plateConfirmed: response.plateDisplay ?? response.plateConfirmed,
           subMode: response.subMode,
           exitEvidence,
         })
@@ -461,9 +464,9 @@ export function StaffOcrCheckInPanel({
 
        if (response.mode === 'CHECK_IN') {
         setOcrFailureCount(0)
-        applyCheckInLookup(response.plateConfirmed, response.lookup)
+        applyCheckInLookup(response.plateDisplay ?? response.plateConfirmed, response.lookup)
         setStatus('OCR_SUCCESS')
-        toasts.showSuccess(`Plate detected: ${formatPlateForDisplay(response.plateConfirmed)}`)
+        toasts.showSuccess(`Plate detected: ${response.plateDisplay ?? response.plateConfirmed}`)
       } else {
         // OCR failed → show inline manual plate entry (rain/mud case)
         setOcrFailureCount(0)
@@ -742,7 +745,7 @@ export function StaffOcrCheckInPanel({
                           {ticket.sessionCode}
                         </p>
                         <p className="truncate text-sm font-semibold text-foreground">
-                          {formatPlateForDisplay(ticket.licensePlate)}
+                          {ticket.plateDisplay ?? ticket.licensePlate}
                         </p>
                         <p className="text-xs font-medium text-muted-foreground">Slot {ticket.slotCode}</p>
                       </div>
@@ -867,7 +870,7 @@ export function StaffOcrCheckInPanel({
                  <div className="space-y-1.5">
                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Captured plate</p>
                    <p className="break-all font-mono text-3xl font-black tracking-wide text-foreground sm:text-4xl">
-                     {formatPlateForDisplay(licensePlate)}
+                     {licensePlate}
                    </p>
                    {!isValidVietnamesePlate(licensePlate) && licensePlate && (
                      <p className="text-xs text-destructive">
@@ -1000,7 +1003,7 @@ export function StaffOcrCheckInPanel({
             <AlertDialogTitle>Skip ticket and continue?</AlertDialogTitle>
             <AlertDialogDescription>
               The ticket for session <span className="font-mono font-semibold">{ticket?.sessionCode}</span> and plate{' '}
-              <span className="font-mono font-semibold">{ticket ? formatPlateForDisplay(ticket.licensePlate) : '-'}</span>{' '}
+              <span className="font-mono font-semibold">{ticket ? (ticket.plateDisplay ?? ticket.licensePlate) : '-'}</span>{' '}
               has not been issued.
             </AlertDialogDescription>
           </AlertDialogHeader>

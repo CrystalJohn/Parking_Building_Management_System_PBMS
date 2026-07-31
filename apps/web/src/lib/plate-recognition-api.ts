@@ -10,6 +10,10 @@ export interface PlateScanResult {
   plate: string | null
   /** Raw plate text as returned by the engine, e.g. "12b116888". */
   rawPlate: string | null
+  /** Canonical plate (uppercase, no separators), e.g. "30A12345". */
+  canonicalPlate: string | null
+  /** Display plate per VN standard, e.g. "30A-123.45". */
+  displayPlate: string | null
   /** OCR confidence of the top result (0..1). */
   score: number
   /** Detection confidence of the top result (0..1). */
