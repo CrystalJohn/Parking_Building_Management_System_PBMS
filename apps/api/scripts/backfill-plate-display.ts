@@ -4,13 +4,12 @@
  *   parking_sessions.plate_display <- toDisplay(license_plate)
  *   ocr_evidences.{raw,canonical,display}_plate <- derived from rawResponse/ocr_plate
  * Run: npx ts-node scripts/backfill-plate-display.ts   (from apps/api)
+ * Imported by verification tests: runBackfill(prisma)
  */
 import { PrismaClient } from '@prisma/client';
 import { PlateFormatter } from '../src/plates';
 
-const prisma = new PrismaClient();
-
-async function main() {
+export async function runBackfill(prisma: PrismaClient) {
   const vehicles = await prisma.vehicle.findMany({ select: { id: true, plateNumber: true } });
   for (const v of vehicles) {
     const display = PlateFormatter.toDisplay(PlateFormatter.normalize(v.plateNumber));
@@ -49,9 +48,18 @@ async function main() {
   console.log(`ocr_evidences backfilled: ${evidences.length}`);
 }
 
-main()
-  .catch((err) => {
+async function main() {
+  const prisma = new PrismaClient();
+  try {
+    await runBackfill(prisma);
+  } catch (err) {
     console.error(err);
     process.exitCode = 1;
-  })
-  .finally(() => prisma.$disconnect());
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+if (require.main === module) {
+  main();
+}
