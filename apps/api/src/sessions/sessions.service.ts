@@ -26,6 +26,7 @@ import { VehicleIdentificationService } from '../vehicle-identification/vehicle-
 import { GateLanesService } from '../gate-lanes/gate-lanes.service';
 import type { VehicleIdentityResult } from '../vehicle-identification/vehicle-identity.types';
 import { normalizePlateNumber } from '../vehicles/vehicles.service';
+import { PlateFormatter } from '../plates';
 import {
   RESERVATION_CHECKIN_TOKEN_TYPE,
   type ReservationCheckInTokenPayload,
@@ -39,6 +40,7 @@ interface CreateSessionInput {
   zone: Zone;
   vehicleType: VehicleType;
   plateConfirmed: string;
+  plateDisplay?: string | null;
   plateOcr?: string | null;
   driverId?: string | null;
   vehicleId?: string | null;
@@ -96,6 +98,7 @@ export class SessionsService {
       id: s.id,
       sessionCode: s.sessionCode,
       licensePlate: s.licensePlate,
+      plateDisplay: s.plateDisplay ?? null,
       vehicleType: s.vehicleType,
       status: s.status,
       checkInTime: s.checkInTime,
@@ -149,6 +152,7 @@ export class SessionsService {
     // Use the normalized plate from the identity result
     const licensePlate = identity.licensePlate ?? dto.licensePlate;
     const plateNumberConfirmed = normalizePlateNumber(licensePlate);
+    const plateDisplay = PlateFormatter.toDisplay(plateNumberConfirmed);
     const plateNumberOcr =
       identity.source === 'OCR'
         ? normalizePlateNumber(identity.licensePlate)
@@ -303,6 +307,7 @@ export class SessionsService {
           zone: slot.zone,
           vehicleType: laneVehicleType,
           plateConfirmed: plateNumberConfirmed,
+          plateDisplay,
           plateOcr: plateNumberOcr,
           driverId,
           vehicleId: matchedVehicle?.id ?? null,
@@ -359,6 +364,7 @@ export class SessionsService {
       session: {
         id: session.id,
         licensePlate: session.licensePlate,
+        plateDisplay: session.plateDisplay ?? null,
         vehicleType: session.vehicleType,
         checkInTime: session.checkInTime,
         status: session.status,
@@ -384,6 +390,7 @@ export class SessionsService {
         qrPayload: session.sessionCode,
         qrCode: session.qrCode,
         licensePlate: session.licensePlate,
+        plateDisplay: session.plateDisplay ?? null,
         vehicleType: session.vehicleType,
         slotCode: session.slot.code,
         floorName: session.slot.floor.name,
@@ -702,6 +709,7 @@ export class SessionsService {
         licensePlate: input.plateConfirmed,
         plateNumberOcr: input.plateOcr ?? null,
         plateNumberConfirmed: input.plateConfirmed,
+        plateDisplay: input.plateDisplay ?? null,
         vehicleId: input.vehicleId ?? null,
         vehicleType: input.vehicleType,
         slotId: input.slotId,
@@ -887,6 +895,7 @@ export class SessionsService {
     sessionCode: string;
     reservationId: string | null;
     licensePlate: string;
+    plateDisplay?: string | null;
     vehicleType: VehicleType;
     vehicleId: string | null;
     checkInTime: Date;
@@ -960,6 +969,7 @@ export class SessionsService {
         sessionCode: session.sessionCode,
         reservationId: session.reservationId,
         licensePlate: session.licensePlate,
+        plateDisplay: session.plateDisplay ?? null,
         vehicleType: session.vehicleType,
         checkInTime: session.checkInTime,
         checkOutTime: session.checkOutTime,
@@ -1150,6 +1160,7 @@ export class SessionsService {
     reservationId: string | null;
     vehicleId: string | null;
     licensePlate: string;
+    plateDisplay?: string | null;
     vehicleType: VehicleType;
     checkInTime: Date;
     status: string;
@@ -1160,6 +1171,7 @@ export class SessionsService {
       reservationId: session.reservationId,
       vehicleId: session.vehicleId,
       licensePlate: session.licensePlate,
+      plateDisplay: session.plateDisplay ?? null,
       vehicleType: session.vehicleType,
       checkInTime: session.checkInTime,
       status: session.status,
@@ -1280,6 +1292,7 @@ export class SessionsService {
         sessionCode: session.sessionCode,
         reservationId: session.reservationId,
         licensePlate: session.licensePlate,
+        plateDisplay: session.plateDisplay ?? null,
         vehicleType: session.vehicleType,
         checkInTime: session.checkInTime,
         checkOutTime: session.checkOutTime,
@@ -1407,6 +1420,7 @@ export class SessionsService {
       receipt: {
         sessionId: session.id,
         licensePlate: session.licensePlate,
+        plateDisplay: session.plateDisplay ?? null,
         vehicleType: session.vehicleType,
         slot: {
           code: session.slot.code,
@@ -1832,6 +1846,7 @@ export class SessionsService {
       session: {
         id: session.id,
         licensePlate: session.licensePlate,
+        plateDisplay: session.plateDisplay ?? null,
         vehicleType: session.vehicleType,
         checkInTime: session.checkInTime,
         isLostTicket: true,
