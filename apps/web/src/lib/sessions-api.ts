@@ -194,6 +194,10 @@ export interface VehicleLookupResponse {
 
 export type GateCheckoutSubMode = 'PAYMENT_REQUIRED' | 'PAYMENT_PENDING' | 'READY_TO_EXIT'
 
+export type GateVehicleStatus = 'ACTIVE_SESSION' | 'ACTIVE_RESERVATION' | 'UNKNOWN'
+
+export type GateRecommendedAction = 'CHECKOUT' | 'CHECKIN' | 'MANUAL_REVIEW'
+
 export type GateScanResponse =
   | {
       mode: 'CHECK_IN'
@@ -222,6 +226,40 @@ export type GateScanResponse =
       ocrEvidenceId?: string
       error?: string | null
     }
+
+export interface GateVerifyResponse {
+  plate: string
+  canonicalPlate: string
+  vehicleStatus: GateVehicleStatus
+  recommendedAction: GateRecommendedAction
+  confidence: number | null
+  sessionId?: string
+  reservationId?: string
+  subMode?: GateCheckoutSubMode
+}
+
+export interface GateAuditRequest {
+  canonicalPlate: string
+  vehicleStatus: GateVehicleStatus
+  recommendedAction: GateRecommendedAction
+  actualAction: GateRecommendedAction
+  reason?: string
+  sessionId?: string
+  reservationId?: string
+}
+
+export interface GateAuditResponse {
+  id: string
+  staffId: string
+  canonicalPlate: string
+  vehicleStatus: GateVehicleStatus
+  recommendedAction: GateRecommendedAction
+  actualAction: GateRecommendedAction
+  reason: string | null
+  sessionId: string | null
+  reservationId: string | null
+  createdAt: string
+}
 
 // ─── Check-out types ─────────────────────────────────────────────────────────
 
@@ -575,6 +613,19 @@ export async function resolveGatePlate(input: {
     '/gate/resolve-plate',
     input,
   )
+  return data
+}
+
+export async function verifyGatePlate(payload: {
+  canonicalPlate: string
+  ocrEvidenceId?: string
+}): Promise<GateVerifyResponse> {
+  const { data } = await api.post<GateVerifyResponse>('/gate/verify', payload)
+  return data
+}
+
+export async function recordGateOverride(payload: GateAuditRequest): Promise<GateAuditResponse> {
+  const { data } = await api.post<GateAuditResponse>('/gate/audit-log', payload)
   return data
 }
 
