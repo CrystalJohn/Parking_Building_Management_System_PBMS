@@ -527,6 +527,30 @@ describe('ReservationsService', () => {
         service.findActiveByCanonicalPlate(''),
       ).rejects.toThrow('canonicalPlate is required');
     });
+
+    it('accepts display-formatted input and normalizes to canonical before querying (never searches by display)', async () => {
+      prisma.reservation.findFirst.mockResolvedValue(makeReservation());
+      const result = await service.findActiveByCanonicalPlate('59A-123.45');
+      expect(result?.id).toBe('reservation-uuid-1');
+      expect(prisma.reservation.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { status: 'active', vehicle: { plateNumber: '59A12345' } },
+        }),
+      );
+      const lastCall = (prisma.reservation.findFirst as jest.Mock).mock.calls.at(-1)![0];
+      expect(JSON.stringify(lastCall.where)).not.toContain('59A-123.45');
+    });
+
+    it('no-match returns null with the canonical query (no fuzzy fallback)', async () => {
+      prisma.reservation.findFirst.mockResolvedValue(null);
+      const result = await service.findActiveByCanonicalPlate('59a-123.45');
+      expect(result).toBeNull();
+      expect(prisma.reservation.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { status: 'active', vehicle: { plateNumber: '59A12345' } },
+        }),
+      );
+    });
   });
 
   describe('handleExpiredReservations()', () => {

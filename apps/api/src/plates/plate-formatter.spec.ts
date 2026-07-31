@@ -81,3 +81,22 @@ describe('PlateFormatter.parse', () => {
     expect(PlateFormatter.inferKind).toBe(inferKind);
   });
 });
+
+describe('Acceptance criteria (plate normalization refactor)', () => {
+  // AC A: OCR input "30a12345" must produce canonical "30A12345" and display "30A-123.45"
+  it('A: "30a12345" -> canonical 30A12345, display 30A-123.45', () => {
+    expect(normalize('30a12345')).toBe('30A12345');
+    expect(toDisplay(normalize('30a12345'))).toBe('30A-123.45');
+    expect(parse('30a12345')).toMatchObject({
+      rawPlate: '30a12345',
+      canonicalPlate: '30A12345',
+      displayPlate: '30A-123.45',
+    });
+  });
+
+  // AC B: OCR input "30A-123.45" must produce canonical "30A12345"
+  it('B: "30A-123.45" -> canonical 30A12345', () => {
+    expect(normalize('30A-123.45')).toBe('30A12345');
+    expect(parse('30A-123.45').canonicalPlate).toBe('30A12345');
+  });
+});
