@@ -450,6 +450,23 @@ model OperationIssue {
   @@map("operation_issues")
 }
 
+model GateAuditLog {
+  id                String   @id @default(uuid())
+  staffId           String   @map("staff_id")
+  canonicalPlate    String   @map("canonical_plate")
+  vehicleStatus     String   @map("vehicle_status")     // ACTIVE_SESSION | ACTIVE_RESERVATION | UNKNOWN
+  recommendedAction String   @map("recommended_action") // CHECKOUT | CHECKIN | MANUAL_REVIEW
+  actualAction      String   @map("actual_action")      // what staff actually did
+  reason            String?                             // staff-provided reason
+  sessionId         String?  @map("session_id")
+  reservationId     String?  @map("reservation_id")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([staffId, createdAt], map: "idx_gate_audit_staff")
+  @@index([canonicalPlate, createdAt], map: "idx_gate_audit_plate")
+  @@map("gate_audit_logs")
+}
+
 model PricingConfig {
   id                     Int         @id @default(autoincrement())
   vehicleType            VehicleType @map("vehicle_type")
