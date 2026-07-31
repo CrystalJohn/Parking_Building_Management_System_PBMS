@@ -504,6 +504,31 @@ describe('ReservationsService', () => {
     });
   });
 
+  describe('findActiveByCanonicalPlate()', () => {
+    it('finds an active reservation by canonical plate via vehicle join', async () => {
+      prisma.reservation.findFirst.mockResolvedValue(makeReservation());
+      const result = await service.findActiveByCanonicalPlate('59A12345');
+      expect(result?.id).toBe('reservation-uuid-1');
+      expect(prisma.reservation.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { status: 'active', vehicle: { plateNumber: '59A12345' } },
+        }),
+      );
+    });
+
+    it('returns null when no active reservation matches', async () => {
+      prisma.reservation.findFirst.mockResolvedValue(null);
+      const result = await service.findActiveByCanonicalPlate('59A12345');
+      expect(result).toBeNull();
+    });
+
+    it('rejects empty input', async () => {
+      await expect(
+        service.findActiveByCanonicalPlate(''),
+      ).rejects.toThrow('canonicalPlate is required');
+    });
+  });
+
   describe('handleExpiredReservations()', () => {
     it('expires reservations and releases reserved slots', async () => {
       prisma.reservation.findMany.mockResolvedValue([

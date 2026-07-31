@@ -13,6 +13,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { NotificationType, Prisma, VehicleType } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { normalizePlateNumber } from '../vehicles/vehicles.service';
 import { AllocationService } from '../slots/allocation.service';
 import {
   RESERVATION_CHECKIN_TOKEN_REFRESH_MS,
@@ -261,6 +262,27 @@ export class ReservationsService {
     }
 
     return this.mapReservationDetail(reservation);
+  }
+
+  /**
+   * Finds an active reservation whose linked vehicle matches the canonical plate.
+   * ALWAYS search by canonical - never by display.
+   */
+  async findActiveByCanonicalPlate(canonicalPlate: string) {
+    if (!canonicalPlate) {
+      throw new BadRequestException('canonicalPlate is required');
+    }
+    const normalized = normalizePlateNumber(canonicalPlate);
+    return this.prisma.reservation.findFirst({
+      where: {
+        status: 'active',
+        vehicle: { plateNumber: normalized },
+      },
+      include: {
+        slot: { include: { floor: true } },
+        vehicle: true,
+      },
+    });
   }
 
   async getCheckInQr(reservationId: string, driverId: string) {
