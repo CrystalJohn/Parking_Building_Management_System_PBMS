@@ -14,7 +14,7 @@ import { Role } from '@prisma/client';
 import { CurrentUser, Roles } from '../auth/decorators';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
 import { UploadedOcrImage } from '../ocr/ocr.types';
-import { ResolvePlateDto, ScanPlateDto } from './dto';
+import { ResolvePlateDto, ScanPlateDto, VerifyPlateDto } from './dto';
 import { GateService } from './gate.service';
 
 const MAX_UPLOAD_BYTES = 6 * 1024 * 1024;
@@ -51,5 +51,15 @@ export class GateController {
   @HttpCode(HttpStatus.OK)
   resolvePlate(@Body() dto: ResolvePlateDto, @CurrentUser('id') staffId: string) {
     return this.gateService.resolvePlate(dto, staffId);
+  }
+
+  @Post('verify')
+  @HttpCode(HttpStatus.OK)
+  verifyPlate(@Body() dto: VerifyPlateDto, @CurrentUser('id') staffId: string) {
+    return this.gateService.verifyPlate({
+      canonicalPlate: dto.canonicalPlate,
+      ocrEvidenceId: dto.ocrEvidenceId,
+      staffId,
+    });
   }
 }

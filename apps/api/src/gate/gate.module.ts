@@ -4,11 +4,12 @@ import { OcrModule } from '../ocr';
 import { SessionsModule } from '../sessions/sessions.module';
 import { VehiclesModule } from '../vehicles/vehicles.module';
 import { GateLanesModule } from '../gate-lanes/gate-lanes.module';
+import { ReservationsModule } from '../reservations/reservations.module';
 import { GateController } from './gate.controller';
 import { GateService } from './gate.service';
 
 @Module({
-  imports: [AuthModule, OcrModule, SessionsModule, VehiclesModule, GateLanesModule],
+  imports: [AuthModule, OcrModule, SessionsModule, VehiclesModule, GateLanesModule, ReservationsModule],
   controllers: [GateController],
   providers: [GateService],
   exports: [GateService],

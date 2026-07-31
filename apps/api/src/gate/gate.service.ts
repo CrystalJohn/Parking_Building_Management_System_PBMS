@@ -5,11 +5,39 @@ import { OcrService } from '../ocr';
 import { SessionsService } from '../sessions/sessions.service';
 import { VehiclesService, normalizePlateNumber } from '../vehicles/vehicles.service';
 import { GateLanesService } from '../gate-lanes/gate-lanes.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { ReservationsService } from '../reservations/reservations.service';
 import { toDisplay } from '../plates';
 import { ResolvePlateDto, ScanPlateDto } from './dto';
 
 type GateSource = 'OCR' | 'MANUAL';
 type GateCheckoutSubMode = 'PAYMENT_REQUIRED' | 'PAYMENT_PENDING' | 'READY_TO_EXIT';
+
+export type GateVerifyResponse =
+  | {
+    plate: string;
+    canonicalPlate: string;
+    vehicleStatus: 'ACTIVE_SESSION';
+    recommendedAction: 'CHECKOUT';
+    confidence: number | null;
+    sessionId: string;
+    subMode: GateCheckoutSubMode;
+  }
+  | {
+    plate: string;
+    canonicalPlate: string;
+    vehicleStatus: 'ACTIVE_RESERVATION';
+    recommendedAction: 'CHECKIN';
+    confidence: number | null;
+    reservationId: string;
+  }
+  | {
+    plate: string;
+    canonicalPlate: string;
+    vehicleStatus: 'UNKNOWN';
+    recommendedAction: 'MANUAL_REVIEW';
+    confidence: number | null;
+  };
 
 export type GateScanResponse =
   | {
@@ -47,6 +75,8 @@ export class GateService {
     private readonly sessionsService: SessionsService,
     private readonly vehiclesService: VehiclesService,
     private readonly gateLanesService: GateLanesService,
+    private readonly reservationsService: ReservationsService,
+    private readonly prisma: PrismaService,
   ) { }
 
   async scanPlate(
@@ -88,6 +118,63 @@ export class GateService {
       staffId,
       lane,
     });
+  }
+
+  async verifyPlate(input: {
+    canonicalPlate: string;
+    ocrEvidenceId?: string;
+    staffId?: string;
+  }): Promise<GateVerifyResponse> {
+    const canonicalPlate = normalizePlateNumber(input.canonicalPlate);
+    const plate = toDisplay(canonicalPlate) ?? canonicalPlate;
+    const confidence = await this.loadOcrConfidence(input.ocrEvidenceId);
+
+    // STEP 1: active session wins (checkout)
+    const checkout = await this.sessionsService.lookupOpenForGateByPlate(canonicalPlate);
+    if (checkout) {
+      return {
+        plate,
+        canonicalPlate,
+        vehicleStatus: 'ACTIVE_SESSION',
+        recommendedAction: 'CHECKOUT',
+        confidence,
+        sessionId: checkout.session.id,
+        subMode: this.mapCheckoutSubMode(checkout.session.status),
+      };
+    }
+
+    // STEP 2: active reservation (check-in)
+    const reservation = await this.reservationsService.findActiveByCanonicalPlate(canonicalPlate);
+    if (reservation) {
+      return {
+        plate,
+        canonicalPlate,
+        vehicleStatus: 'ACTIVE_RESERVATION',
+        recommendedAction: 'CHECKIN',
+        confidence,
+        reservationId: reservation.id,
+      };
+    }
+
+    // STEP 3: unknown vehicle -> manual review
+    return {
+      plate,
+      canonicalPlate,
+      vehicleStatus: 'UNKNOWN',
+      recommendedAction: 'MANUAL_REVIEW',
+      confidence,
+    };
+  }
+
+  private async loadOcrConfidence(ocrEvidenceId?: string): Promise<number | null> {
+    if (!ocrEvidenceId) {
+      return null;
+    }
+    const evidence = await this.prisma.ocrEvidence.findUnique({
+      where: { id: ocrEvidenceId },
+      select: { ocrConfidence: true },
+    });
+    return evidence?.ocrConfidence ?? null;
   }
 
   private async resolvePlateMode(input: {
