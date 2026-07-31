@@ -14,7 +14,7 @@ import { Role } from '@prisma/client';
 import { CurrentUser, Roles } from '../auth/decorators';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
 import { UploadedOcrImage } from '../ocr/ocr.types';
-import { ResolvePlateDto, ScanPlateDto, VerifyPlateDto } from './dto';
+import { ResolvePlateDto, ScanPlateDto, VerifyPlateDto, RecordGateAuditDto } from './dto';
 import { GateService } from './gate.service';
 
 const MAX_UPLOAD_BYTES = 6 * 1024 * 1024;
@@ -59,6 +59,20 @@ export class GateController {
     return this.gateService.verifyPlate({
       canonicalPlate: dto.canonicalPlate,
       ocrEvidenceId: dto.ocrEvidenceId,
+      staffId,
+    });
+  }
+
+  @Post('audit-log')
+  recordOverride(@Body() dto: RecordGateAuditDto, @CurrentUser('id') staffId: string) {
+    return this.gateService.recordOverride({
+      canonicalPlate: dto.canonicalPlate,
+      vehicleStatus: dto.vehicleStatus,
+      recommendedAction: dto.recommendedAction,
+      actualAction: dto.actualAction,
+      reason: dto.reason,
+      sessionId: dto.sessionId,
+      reservationId: dto.reservationId,
       staffId,
     });
   }

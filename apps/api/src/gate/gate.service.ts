@@ -166,6 +166,30 @@ export class GateService {
     };
   }
 
+  async recordOverride(input: {
+    canonicalPlate: string;
+    vehicleStatus: string;
+    recommendedAction: string;
+    actualAction: string;
+    reason?: string;
+    sessionId?: string;
+    reservationId?: string;
+    staffId: string;
+  }) {
+    return this.prisma.gateAuditLog.create({
+      data: {
+        staffId: input.staffId,
+        canonicalPlate: input.canonicalPlate,
+        vehicleStatus: input.vehicleStatus,
+        recommendedAction: input.recommendedAction,
+        actualAction: input.actualAction,
+        reason: input.reason,
+        sessionId: input.sessionId,
+        reservationId: input.reservationId,
+      },
+    });
+  }
+
   private async loadOcrConfidence(ocrEvidenceId?: string): Promise<number | null> {
     if (!ocrEvidenceId) {
       return null;

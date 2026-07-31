@@ -16,7 +16,7 @@ describe('GateService', () => {
   let vehiclesService: { lookupPlate: jest.Mock };
   let gateLanesService: { requireActiveLane: jest.Mock; assertVehicleType: jest.Mock };
   let reservationsService: { findActiveByCanonicalPlate: jest.Mock };
-  let prismaService: { ocrEvidence: { findUnique: jest.Mock } };
+  let prismaService: { ocrEvidence: { findUnique: jest.Mock }; gateAuditLog: { create: jest.Mock } };
 
   beforeEach(async () => {
     ocrService = { recognize: jest.fn(), linkEvidenceToCheckout: jest.fn() };
@@ -27,7 +27,7 @@ describe('GateService', () => {
       assertVehicleType: jest.fn(),
     };
     reservationsService = { findActiveByCanonicalPlate: jest.fn() };
-    prismaService = { ocrEvidence: { findUnique: jest.fn() } };
+    prismaService = { ocrEvidence: { findUnique: jest.fn() }, gateAuditLog: { create: jest.fn() } };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -258,6 +258,100 @@ describe('GateService', () => {
       await expect(
         service.verifyPlate({ canonicalPlate: '43A27208', ocrEvidenceId: 'missing-evidence' }),
       ).resolves.toMatchObject({ confidence: null });
+    });
+  });
+
+  describe('recordOverride', () => {
+    it('creates an audit log row with all fields and the staff id from the JWT', async () => {
+      const created = {
+        id: 'audit-1',
+        staffId: 'staff-1',
+        canonicalPlate: '43A27208',
+        vehicleStatus: 'ACTIVE_SESSION',
+        recommendedAction: 'CHECKOUT',
+        actualAction: 'CHECKIN',
+        reason: 'Vehicle actually checked in',
+        sessionId: 'session-1',
+        reservationId: 'res-1',
+        createdAt: new Date('2026-07-31T10:00:00Z'),
+      };
+      prismaService.gateAuditLog.create.mockResolvedValue(created);
+
+      const result = await service.recordOverride({
+        canonicalPlate: '43A27208',
+        vehicleStatus: 'ACTIVE_SESSION',
+        recommendedAction: 'CHECKOUT',
+        actualAction: 'CHECKIN',
+        reason: 'Vehicle actually checked in',
+        sessionId: 'session-1',
+        reservationId: 'res-1',
+        staffId: 'staff-1',
+      });
+
+      expect(prismaService.gateAuditLog.create).toHaveBeenCalledWith({
+        data: {
+          staffId: 'staff-1',
+          canonicalPlate: '43A27208',
+          vehicleStatus: 'ACTIVE_SESSION',
+          recommendedAction: 'CHECKOUT',
+          actualAction: 'CHECKIN',
+          reason: 'Vehicle actually checked in',
+          sessionId: 'session-1',
+          reservationId: 'res-1',
+        },
+      });
+      expect(result).toBe(created);
+    });
+
+    it('creates a row with reason only (optional ids omitted)', async () => {
+      prismaService.gateAuditLog.create.mockResolvedValue({ id: 'audit-2' });
+
+      await service.recordOverride({
+        canonicalPlate: '43A27208',
+        vehicleStatus: 'UNKNOWN',
+        recommendedAction: 'MANUAL_REVIEW',
+        actualAction: 'MANUAL_REVIEW',
+        reason: 'Manual entry by staff',
+        staffId: 'staff-1',
+      });
+
+      expect(prismaService.gateAuditLog.create).toHaveBeenCalledWith({
+        data: {
+          staffId: 'staff-1',
+          canonicalPlate: '43A27208',
+          vehicleStatus: 'UNKNOWN',
+          recommendedAction: 'MANUAL_REVIEW',
+          actualAction: 'MANUAL_REVIEW',
+          reason: 'Manual entry by staff',
+          sessionId: undefined,
+          reservationId: undefined,
+        },
+      });
+    });
+
+    it('omits reason when not provided', async () => {
+      prismaService.gateAuditLog.create.mockResolvedValue({ id: 'audit-3' });
+
+      await service.recordOverride({
+        canonicalPlate: '43A27208',
+        vehicleStatus: 'ACTIVE_RESERVATION',
+        recommendedAction: 'CHECKIN',
+        actualAction: 'CHECKIN',
+        staffId: 'staff-1',
+      });
+
+      expect(prismaService.gateAuditLog.create).toHaveBeenCalledWith({
+        data: {
+          staffId: 'staff-1',
+          canonicalPlate: '43A27208',
+          vehicleStatus: 'ACTIVE_RESERVATION',
+          recommendedAction: 'CHECKIN',
+          actualAction: 'CHECKIN',
+          reason: undefined,
+          sessionId: undefined,
+          reservationId: undefined,
+        },
+      });
     });
   });
 });
