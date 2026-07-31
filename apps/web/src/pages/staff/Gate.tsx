@@ -10,9 +10,8 @@ import {
 import { isAxiosError } from 'axios'
 import {
   CircleAlert,
-  LogIn,
-  LogOut,
   Loader2,
+  LogOut,
   Printer,
   QrCode,
   ReceiptText,
@@ -258,13 +257,11 @@ export default function Gate() {
         </Card>
       ) : (
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)}>
-          <TabsList variant="line" className="w-full justify-start gap-1 border-b pb-0">
-            <TabsTrigger value="check-in" className="gap-1.5 px-4 py-2">
-              <LogIn className="size-4" />
+          <TabsList variant="line" className="h-11 w-full gap-0 border-b bg-transparent p-0">
+            <TabsTrigger value="check-in" className="flex-1 rounded-none border-b-2 border-transparent px-6 py-2.5 text-sm font-semibold">
               Check-in
             </TabsTrigger>
-            <TabsTrigger value="check-out" className="gap-1.5 px-4 py-2">
-              <LogOut className="size-4" />
+            <TabsTrigger value="check-out" className="flex-1 rounded-none border-b-2 border-transparent px-6 py-2.5 text-sm font-semibold">
               Check-out
             </TabsTrigger>
           </TabsList>
