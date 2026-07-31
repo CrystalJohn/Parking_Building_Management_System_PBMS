@@ -10,7 +10,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { fetchEvidenceImageBlobResult, type EvidenceImageFetchStatus } from '@/lib/sessions-api'
-import { formatPlateForDisplay } from '@/lib/plate-format'
 import { formatDateTimeVN } from '@/lib/date-time'
 import { cn } from '@/lib/utils'
 
@@ -21,6 +20,7 @@ export type EvidenceAuditItem = {
   imageUrl: string | null
   ocrPlate: string | null
   confirmedPlate: string | null
+  displayPlate?: string | null
   ocrConfidence: number | null
   capturedAt: string
   providerTimestamp: string | null
@@ -61,7 +61,7 @@ function EvidenceCard({
   const preview = useEvidenceImage(evidence?.thumbnailUrl ?? evidence?.imageUrl ?? null)
   const full = useEvidenceImage(evidence?.imageUrl ?? evidence?.thumbnailUrl ?? null)
   const [open, setOpen] = useState(false)
-  const plate = formatPlateForDisplay(evidence?.confirmedPlate ?? evidence?.ocrPlate)
+  const plate = evidence?.displayPlate ?? evidence?.confirmedPlate ?? evidence?.ocrPlate
   const confidence = evidence?.ocrConfidence != null ? `${Math.round(evidence.ocrConfidence * 100)}%` : 'Not available'
   const capturedAt = evidence?.capturedAt ? formatDateTimeVN(evidence.capturedAt) : 'Not available'
   const staff = evidence?.staffName ?? evidence?.staffPhone ?? 'Not available'

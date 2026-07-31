@@ -49,6 +49,7 @@ export interface Reservation {
   createdAt: string
   expiresAt: string
   licensePlate?: string | null
+  plateDisplay?: string | null
   vehicle?: {
     id: string
     plateNumber: string
@@ -81,6 +82,7 @@ export interface ReservationQuotaSnapshot {
 export interface DriverVehicle {
   id: string
   plateNumber: string
+  plateDisplay?: string | null
   vehicleType: VehicleType
   isActive: boolean
   registeredAt: string
@@ -96,6 +98,7 @@ export interface DriverVehicle {
 export interface VehicleRegistrationRequest {
   id: string
   plateNumber: string
+  plateDisplay?: string | null
   vehicleType: VehicleType
   status: 'pending' | 'approved' | 'rejected' | 'expired'
   rejectReason: string | null
@@ -124,6 +127,7 @@ export interface CancelReservationResponse {
 export interface ParkingSessionHistory {
   id: string
   licensePlate: string
+  plateDisplay?: string | null
   vehicleType: VehicleType
   checkInTime: string
   checkOutTime: string | null
@@ -139,6 +143,7 @@ export interface ParkingSessionHistory {
 export interface ActiveSession {
   id: string
   licensePlate: string
+  plateDisplay?: string | null
   vehicleType: VehicleType
   checkInTime: string
   status: Exclude<SessionStatus, 'completed' | 'cancelled'>

@@ -7,7 +7,7 @@ import {
   type ActiveSession,
 } from '../../lib/driver-api'
 import { formatDateTimeVN } from '../../lib/date-time'
-import { formatPlateForDisplay, formatVehicleType } from '../../lib/plate-format'
+import { formatVehicleType } from '../../lib/plate-format'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -140,7 +140,7 @@ export default function MySession() {
                     <div>
                       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">License Plate</p>
                       <p className="mt-1 font-mono text-3xl font-black tracking-wider text-foreground">
-                        {formatPlateForDisplay(session.licensePlate)}
+                        {session.plateDisplay ?? session.licensePlate}
                       </p>
                     </div>
 

@@ -3,7 +3,7 @@ import { Car, Clock3, Plus, ShieldCheck, XCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { getUser } from '../../lib/auth'
 import { getMyVehicleRegistrationRequests, getMyVehicles, type DriverVehicle, type VehicleRegistrationRequest } from '../../lib/driver-api'
-import { formatPlateForDisplay, formatVehicleType } from '../../lib/plate-format'
+import { formatVehicleType } from '../../lib/plate-format'
 import { formatDateTimeVN } from '../../lib/date-time'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -95,7 +95,7 @@ export default function Profile() {
                       <Car className="size-4" />
                     </div>
                     <div>
-                      <p className="font-mono text-sm font-bold tracking-wider text-foreground">{formatPlateForDisplay(v.plateNumber)}</p>
+                      <p className="font-mono text-sm font-bold tracking-wider text-foreground">{v.plateDisplay ?? v.plateNumber}</p>
                       <p className="text-[11px] text-muted-foreground">{formatVehicleType(v.vehicleType)}</p>
                     </div>
                   </div>
@@ -137,7 +137,7 @@ export default function Profile() {
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm font-bold text-foreground">{formatPlateForDisplay(r.plateNumber)}</span>
+                          <span className="font-mono text-sm font-bold text-foreground">{r.plateDisplay ?? r.plateNumber}</span>
                           <span className="text-xs text-muted-foreground">({formatVehicleType(r.vehicleType)})</span>
                         </div>
                         <p className="text-[11px] text-muted-foreground mt-0.5">Submitted: {formatDateTimeVN(r.createdAt)}</p>

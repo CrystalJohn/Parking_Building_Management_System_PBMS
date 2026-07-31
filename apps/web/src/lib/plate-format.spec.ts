@@ -1,7 +1,6 @@
 import {
   normalizePlateForApi,
   isValidVietnamesePlate,
-  formatPlateForDisplay,
   formatVehicleType,
 } from './plate-format'
 
@@ -41,33 +40,6 @@ describe('isValidVietnamesePlate', () => {
     expect(isValidVietnamesePlate('30A12')).toBe(false) // too short (7 chars but wrong structure)
     expect(isValidVietnamesePlate('')).toBe(false)
     expect(isValidVietnamesePlate(null)).toBe(false)
-  })
-})
-
-describe('formatPlateForDisplay', () => {
-  it('formats car plates as XX-XXX.XX', () => {
-    expect(formatPlateForDisplay('30A12345')).toBe('30A-123.45')
-    expect(formatPlateForDisplay('51K99999')).toBe('51K-999.99')
-  })
-
-  it('formats motorcycle plates as XXS-N-XXX.XX', () => {
-    expect(formatPlateForDisplay('59X345678')).toBe('59X3-456.78')
-    expect(formatPlateForDisplay('29K644743')).toBe('29K6-447.43')
-  })
-
-  it('handles pre-formatted input gracefully', () => {
-    expect(formatPlateForDisplay('30A-123.45')).toBe('30A-123.45')
-    expect(formatPlateForDisplay('59X3-456.78')).toBe('59X3-456.78')
-  })
-
-  it('returns empty string for empty input', () => {
-    expect(formatPlateForDisplay('')).toBe('')
-    expect(formatPlateForDisplay(null)).toBe('')
-    expect(formatPlateForDisplay(undefined)).toBe('')
-  })
-
-  it('returns normalized form for unrecognized patterns', () => {
-    expect(formatPlateForDisplay('ABC')).toBe('ABC')
   })
 })
 

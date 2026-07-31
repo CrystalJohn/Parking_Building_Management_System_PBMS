@@ -100,6 +100,7 @@ export interface AdminOperationFlag {
   reservationCode: string | null
   paymentId: string | null
   plateNumber: string | null
+  plateDisplay?: string | null
   message: string
   createdAt: string
   ageMinutes: number
@@ -243,6 +244,7 @@ export interface AdminSessionEvidenceItem {
   imageUrl: string | null
   ocrPlate: string | null
   confirmedPlate: string | null
+  displayPlate?: string | null
   ocrConfidence: number | null
   capturedAt: string
   providerTimestamp: string | null
@@ -257,6 +259,7 @@ export interface AdminSessionEvidence {
     sessionCode: string
     licensePlate: string
     plateNumberConfirmed: string | null
+    plateDisplay?: string | null
     vehicleType: 'car' | 'motorbike'
     status: string
     checkInTime: string
@@ -368,6 +371,7 @@ export interface AdminSessionHistoryItem {
   sessionCode: string | null
   status: string
   licensePlate: string
+  plateDisplay?: string | null
   vehicleType: 'car' | 'motorbike'
   checkInTime: string
   checkOutTime: string | null

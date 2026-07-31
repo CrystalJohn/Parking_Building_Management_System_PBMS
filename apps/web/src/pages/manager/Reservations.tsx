@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { formatDateTimeVN } from '../../lib/date-time'
-import { formatPlateForDisplay, formatVehicleType } from '../../lib/plate-format'
+import { formatVehicleType } from '../../lib/plate-format'
 import { cn } from '../../lib/utils'
 import { RefreshCw, Loader2, CalendarClock, CheckCircle2, XCircle, Clock, Search, Filter, CalendarIcon } from 'lucide-react'
 
@@ -334,7 +334,7 @@ export default function Reservations() {
                       <TableCell className="px-5 py-4">
                         <div>
                           <div className="font-semibold text-foreground leading-none mb-1 uppercase tracking-tight">
-                            {formatPlateForDisplay(reservation.licensePlate) || 'N/A'}
+                            {(reservation.plateDisplay ?? reservation.licensePlate) || 'N/A'}
                           </div>
                           <div className="text-xs font-semibold text-muted-foreground">
                             {formatVehicleType(reservation.vehicleType)}

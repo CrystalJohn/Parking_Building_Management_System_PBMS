@@ -22,7 +22,6 @@ import {
   type AdminSessionEvidence,
 } from '../../lib/admin-api'
 import { formatDateTimeVN } from '../../lib/date-time'
-import { formatPlateForDisplay } from '../../lib/plate-format'
 import { EvidenceComparisonPanel } from '@/components/evidence/EvidenceComparisonPanel'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -317,7 +316,7 @@ export default function AdminReportsFlags() {
                             </Badge>
                             {flag.plateNumber && (
                               <Badge className="font-mono text-xs font-bold tracking-wider bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900">
-                                {formatPlateForDisplay(flag.plateNumber)}
+                                {flag.plateDisplay ?? flag.plateNumber}
                               </Badge>
                             )}
                           </div>
@@ -425,10 +424,9 @@ export default function AdminReportsFlags() {
                             </p>
                           </div>
                           <Badge className="font-mono text-base px-3 py-1 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900">
-                            {formatPlateForDisplay(
+                            {selectedEvidence.session.plateDisplay ??
                               selectedEvidence.session.plateNumberConfirmed ??
-                                selectedEvidence.session.licensePlate
-                            )}
+                              selectedEvidence.session.licensePlate}
                           </Badge>
                         </div>
                         {selectedEvidence.session.slotCode && (

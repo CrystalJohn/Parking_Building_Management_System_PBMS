@@ -52,7 +52,7 @@ import {
 } from '../../lib/driver-api'
 import { ReservationCheckInQr } from '../../components/driver/ReservationCheckInQr'
 import { formatDateTimeVN } from '../../lib/date-time'
-import { formatPlateForDisplay, formatVehicleType } from '../../lib/plate-format'
+import { formatVehicleType } from '../../lib/plate-format'
 
 const STATUS_LABELS: Record<string, { text: string; tone: string; icon: typeof CheckCircle2 }> = {
   fulfilled: {
@@ -500,7 +500,7 @@ function CurrentReservationCard({
   onCancel: () => void
 }) {
   const rawPlate = reservation.licensePlate ?? reservation.vehicle?.plateNumber ?? ''
-  const plate = formatPlateForDisplay(rawPlate)
+  const plate = reservation.plateDisplay ?? rawPlate
   const slot = reservation.slot
 
   return (
@@ -776,7 +776,7 @@ function ReserveVehicleForm({
                       <div className="mt-4 grid gap-3 sm:grid-cols-3 rounded-xl border bg-background/80 p-3.5 backdrop-blur">
                         <div>
                           <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Plate Number</p>
-                          <p className="mt-0.5 font-mono text-base font-black tracking-wider text-foreground">{formatPlateForDisplay(pendingReq.plateNumber)}</p>
+                          <p className="mt-0.5 font-mono text-base font-black tracking-wider text-foreground">{pendingReq.plateDisplay ?? pendingReq.plateNumber}</p>
                         </div>
                         <div>
                           <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Vehicle Type</p>
@@ -830,7 +830,7 @@ function ReserveVehicleForm({
                       <div className="mt-4 grid gap-3 sm:grid-cols-3 rounded-xl border bg-background/80 p-3.5 backdrop-blur">
                         <div>
                           <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Plate Number</p>
-                          <p className="mt-0.5 font-mono text-base font-black tracking-wider text-foreground">{formatPlateForDisplay(rejReq.plateNumber)}</p>
+                          <p className="mt-0.5 font-mono text-base font-black tracking-wider text-foreground">{rejReq.plateDisplay ?? rejReq.plateNumber}</p>
                         </div>
                         <div>
                           <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Vehicle Type</p>
@@ -915,7 +915,7 @@ function ReserveVehicleForm({
                     >
                       <div className="flex items-center justify-between w-full">
                         <span className="font-mono text-base font-extrabold tracking-wider text-foreground">
-                          {formatPlateForDisplay(vehicle.plateNumber)}
+                          {vehicle.plateDisplay ?? vehicle.plateNumber}
                         </span>
                         <Badge variant={isSelected ? 'default' : 'outline'} className="text-[10px]">
                           {formatVehicleType(vehicle.vehicleType)}
@@ -932,7 +932,7 @@ function ReserveVehicleForm({
 
             {pendingRequests.length > 0 ? (
               <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs text-sky-800 dark:border-sky-400/20 dark:bg-sky-500/10 dark:text-sky-200">
-                <span>You have <strong>{pendingRequests.length} vehicle registration request(s)</strong> ({pendingRequests.map(r => formatPlateForDisplay(r.plateNumber)).join(', ')}) pending manager review.</span>
+                <span>You have <strong>{pendingRequests.length} vehicle registration request(s)</strong> ({pendingRequests.map(r => r.plateDisplay ?? r.plateNumber).join(', ')}) pending manager review.</span>
               </div>
             ) : null}
 
@@ -951,7 +951,7 @@ function ReserveVehicleForm({
             >
               {creating
                 ? 'Allocating spot...'
-                : `Reserve spot for ${formatPlateForDisplay(selectedVehicle?.plateNumber ?? 'selected vehicle')}`}
+                : `Reserve spot for ${selectedVehicle?.plateDisplay ?? selectedVehicle?.plateNumber ?? 'selected vehicle'}`}
             </Button>
 
             <QuotaNote quota={quota} />
@@ -1026,7 +1026,7 @@ function PreviousReservationRow({ reservation }: { reservation: Reservation }) {
   const status = STATUS_LABELS[reservation.status] ?? STATUS_LABELS.expired
   const Icon = status.icon
   const rawPlate = reservation.licensePlate ?? reservation.vehicle?.plateNumber ?? ''
-  const plate = rawPlate ? formatPlateForDisplay(rawPlate) : 'Vehicle unavailable'
+  const plate = (reservation.plateDisplay ?? rawPlate) || 'Vehicle unavailable'
 
   return (
     <Card className="shadow-none transition hover:border-primary/30">

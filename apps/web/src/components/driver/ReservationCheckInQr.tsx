@@ -12,7 +12,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { getReservationCheckInQr, type Reservation, type ReservationCheckInQr } from '@/lib/driver-api'
-import { formatPlateForDisplay } from '@/lib/plate-format'
 import { formatDateTimeVN } from '@/lib/date-time'
 
 type QrState = { data: ReservationCheckInQr; pngDataUrl: string } | null
@@ -52,7 +51,7 @@ export function ReservationCheckInQr({
   }, [fetchQr])
 
   const rawPlate = reservation.licensePlate ?? reservation.vehicle?.plateNumber ?? ''
-  const formattedPlate = formatPlateForDisplay(rawPlate)
+  const formattedPlate = reservation.plateDisplay ?? rawPlate
   const reservationId = `RSV-2026-${reservation.id.slice(-5).toUpperCase()}`
 
   const handleDownload = () => {

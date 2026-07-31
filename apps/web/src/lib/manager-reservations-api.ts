@@ -8,6 +8,7 @@ export interface ManagerReservation {
   createdAt: string
   expiresAt: string
   licensePlate?: string | null
+  plateDisplay?: string | null
   driver: {
     id: string
     fullName: string | null

@@ -4,6 +4,7 @@ export interface VehicleRegistrationRequest {
   id: string
   driverId: string
   plateNumber: string
+  plateDisplay?: string | null
   vehicleType: 'car' | 'motorbike'
   status: 'pending' | 'approved' | 'rejected' | 'expired'
   rejectReason: string | null

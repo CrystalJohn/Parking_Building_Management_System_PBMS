@@ -4,7 +4,6 @@ import {
   type ParkingSessionHistory,
 } from '../../lib/driver-api'
 import { formatDateTimeVN } from '../../lib/date-time'
-import { formatPlateForDisplay } from '../../lib/plate-format'
 import { Card, CardContent } from '../../components/ui/card'
 import { Badge } from '../../components/ui/badge'
 import { Car, Bike, History as HistoryIcon, Clock, MapPin, Receipt, CheckCircle2 } from 'lucide-react'
@@ -92,7 +91,7 @@ export default function History() {
 
 function SessionCard({ session }: { session: ParkingSessionHistory }) {
   const totalFee = (session.feeAmount ?? 0) + (session.penaltyAmount ?? 0)
-  const formattedPlate = formatPlateForDisplay(session.licensePlate)
+  const formattedPlate = session.plateDisplay ?? session.licensePlate
   const isMotorbike = session.vehicleType === 'motorbike'
 
   return (
