@@ -23,7 +23,7 @@ async function main() {
   const sessions = await prisma.parkingSession.findMany({ select: { id: true, licensePlate: true } });
   for (const s of sessions) {
     const display = PlateFormatter.toDisplay(PlateFormatter.normalize(s.licensePlate));
-    if (display) {
+    if (display && display !== s.licensePlate) {
       await prisma.parkingSession.update({ where: { id: s.id }, data: { plateDisplay: display } });
     }
   }
