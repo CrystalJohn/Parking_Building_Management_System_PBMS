@@ -21,9 +21,9 @@ describe('PlateFormatter.toDisplay', () => {
     expect(toDisplay('51K99999')).toBe('51K-999.99');
   });
 
-  it('formats motorbike plates (9 chars: XXLd-456.78)', () => {
-    expect(toDisplay('59X345678')).toBe('59X3-456.78');
-    expect(toDisplay('29K644743')).toBe('29K6-447.43');
+  it('formats motorbike plates (9 chars: XX-Ld 456.78)', () => {
+    expect(toDisplay('59X345678')).toBe('59-X3 456.78');
+    expect(toDisplay('29K644743')).toBe('29-K6 447.43');
   });
 
   it('returns null for non-standard patterns', () => {

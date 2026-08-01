@@ -21,7 +21,7 @@ export function toDisplay(canonical: string): string | null {
     return `${canonical.slice(0, 3)}-${canonical.slice(3, 6)}.${canonical.slice(6)}`;
   }
   if (MOTORCYCLE_PATTERN.test(canonical)) {
-    return `${canonical.slice(0, 4)}-${canonical.slice(4, 7)}.${canonical.slice(7)}`;
+    return `${canonical.slice(0, 2)}-${canonical.slice(2, 4)} ${canonical.slice(4, 7)}.${canonical.slice(7)}`;
   }
   return null;
 }

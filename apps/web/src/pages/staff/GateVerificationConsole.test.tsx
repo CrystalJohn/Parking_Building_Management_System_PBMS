@@ -244,7 +244,7 @@ describe('GateVerificationConsole', () => {
     })
     render(<GateVerificationConsole toasts={makeToasts()} onConfirm={jest.fn()} />)
 
-    await act(async () => {})
+    await act(async () => { })
     await waitFor(() => {
       expect(screen.getByPlaceholderText('59A-12345')).toBeTruthy()
     })

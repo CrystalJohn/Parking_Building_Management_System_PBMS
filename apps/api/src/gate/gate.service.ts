@@ -7,7 +7,7 @@ import { VehiclesService, normalizePlateNumber } from '../vehicles/vehicles.serv
 import { GateLanesService } from '../gate-lanes/gate-lanes.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReservationsService } from '../reservations/reservations.service';
-import { toDisplay } from '../plates';
+import { PlateFormatter } from '../plates';
 import { ResolvePlateDto, ScanPlateDto } from './dto';
 
 type GateSource = 'OCR' | 'MANUAL';
@@ -15,7 +15,8 @@ type GateCheckoutSubMode = 'PAYMENT_REQUIRED' | 'PAYMENT_PENDING' | 'READY_TO_EX
 
 export type GateVerifyResponse =
   | {
-    plate: string;
+    displayPlate: string;
+    vehicleType: 'CAR' | 'MOTORBIKE' | 'UNKNOWN';
     canonicalPlate: string;
     vehicleStatus: 'ACTIVE_SESSION';
     recommendedAction: 'CHECKOUT';
@@ -24,7 +25,8 @@ export type GateVerifyResponse =
     subMode: GateCheckoutSubMode;
   }
   | {
-    plate: string;
+    displayPlate: string;
+    vehicleType: 'CAR' | 'MOTORBIKE' | 'UNKNOWN';
     canonicalPlate: string;
     vehicleStatus: 'ACTIVE_RESERVATION';
     recommendedAction: 'CHECKIN';
@@ -32,7 +34,8 @@ export type GateVerifyResponse =
     reservationId: string;
   }
   | {
-    plate: string;
+    displayPlate: string;
+    vehicleType: 'CAR' | 'MOTORBIKE' | 'UNKNOWN';
     canonicalPlate: string;
     vehicleStatus: 'UNKNOWN';
     recommendedAction: 'MANUAL_REVIEW';
@@ -125,15 +128,20 @@ export class GateService {
     ocrEvidenceId?: string;
     staffId?: string;
   }): Promise<GateVerifyResponse> {
+    console.log(`[GateService:verifyPlate] start: canonicalPlate=${input.canonicalPlate}`);
     const canonicalPlate = normalizePlateNumber(input.canonicalPlate);
-    const plate = toDisplay(canonicalPlate) ?? canonicalPlate;
+    const displayPlate = PlateFormatter.toDisplay(canonicalPlate) ?? canonicalPlate;
+    const kind = PlateFormatter.inferKind(canonicalPlate);
+    const vehicleType = kind === 'car' ? 'CAR' : kind === 'motorbike' ? 'MOTORBIKE' : 'UNKNOWN';
     const confidence = await this.loadOcrConfidence(input.ocrEvidenceId);
 
     // STEP 1: active session wins (checkout)
     const checkout = await this.sessionsService.lookupOpenForGateByPlate(canonicalPlate);
     if (checkout) {
+      console.log(`[GateService:verifyPlate] matched ACTIVE_SESSION (checkout), sessionId=${checkout.session.id}`);
       return {
-        plate,
+        displayPlate,
+        vehicleType,
         canonicalPlate,
         vehicleStatus: 'ACTIVE_SESSION',
         recommendedAction: 'CHECKOUT',
@@ -146,8 +154,10 @@ export class GateService {
     // STEP 2: active reservation (check-in)
     const reservation = await this.reservationsService.findActiveByCanonicalPlate(canonicalPlate);
     if (reservation) {
+      console.log(`[GateService:verifyPlate] matched ACTIVE_RESERVATION (checkin), reservationId=${reservation.id}`);
       return {
-        plate,
+        displayPlate,
+        vehicleType,
         canonicalPlate,
         vehicleStatus: 'ACTIVE_RESERVATION',
         recommendedAction: 'CHECKIN',
@@ -157,8 +167,10 @@ export class GateService {
     }
 
     // STEP 3: unknown vehicle -> manual review
+    console.log(`[GateService:verifyPlate] matched UNKNOWN (manual review)`);
     return {
-      plate,
+      displayPlate,
+      vehicleType,
       canonicalPlate,
       vehicleStatus: 'UNKNOWN',
       recommendedAction: 'MANUAL_REVIEW',
@@ -176,6 +188,7 @@ export class GateService {
     reservationId?: string;
     staffId: string;
   }) {
+    console.log(`[GateService:recordOverride] plate=${input.canonicalPlate}, recommended=${input.recommendedAction}, actual=${input.actualAction}, reason=${input.reason}`);
     return this.prisma.gateAuditLog.create({
       data: {
         staffId: input.staffId,
@@ -212,7 +225,7 @@ export class GateService {
   }): Promise<Exclude<GateScanResponse, { mode: 'NEEDS_MANUAL_PLATE' }>> {
     const lane = input.lane ?? await this.gateLanesService.requireActiveLane(input.staffId);
     const plateConfirmed = normalizePlateNumber(input.plate);
-    const plateDisplay = toDisplay(plateConfirmed);
+    const plateDisplay = PlateFormatter.toDisplay(plateConfirmed);
     if (!plateConfirmed) {
       throw new BadRequestException('plate is required');
     }

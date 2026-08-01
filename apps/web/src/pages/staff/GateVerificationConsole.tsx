@@ -25,6 +25,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 const BUILDING_NAME = import.meta.env.VITE_PBMS_BUILDING_NAME ?? 'PBMS Building'
 const GATE_NAME = import.meta.env.VITE_PBMS_GATE_NAME ?? 'Main Gate'
@@ -33,7 +34,8 @@ const CAMERA_ID = import.meta.env.VITE_PLATE_RECOGNIZER_CAMERA_ID ?? 'staff-gate
 type Phase = 'IDLE' | 'SCANNING' | 'RESULT_DISPLAYED' | 'CONFIRMED' | 'ERROR'
 
 export type GateConfirmPayload = {
-  plate: string
+  displayPlate: string
+  vehicleType: 'CAR' | 'MOTORBIKE' | 'UNKNOWN'
   canonicalPlate: string
   vehicleStatus: GateVehicleStatus
   recommendedAction: GateRecommendedAction
@@ -53,15 +55,15 @@ type GateVerificationConsoleProps = {
 
 const STATUS_BADGE: Record<GateVehicleStatus, { label: string; className: string }> = {
   ACTIVE_SESSION: {
-    label: 'Active session',
+    label: 'ACTIVE PARKING SESSION',
     className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
   },
   ACTIVE_RESERVATION: {
-    label: 'Active reservation',
+    label: 'ACTIVE RESERVATION',
     className: 'border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-400',
   },
   UNKNOWN: {
-    label: 'Unknown',
+    label: 'UNKNOWN VEHICLE',
     className: 'border-slate-400/40 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
   },
 }
@@ -73,9 +75,9 @@ const ACTION_LABEL: Record<GateRecommendedAction, string> = {
 }
 
 const CONFIRM_LABEL: Record<GateRecommendedAction, string> = {
-  CHECKOUT: 'Confirm Check-out',
-  CHECKIN: 'Confirm Check-in',
-  MANUAL_REVIEW: 'Review Manually',
+  CHECKOUT: 'Complete Check-out',
+  CHECKIN: 'Complete Check-in',
+  MANUAL_REVIEW: 'Manual Review',
 }
 
 export function GateVerificationConsole({
@@ -164,6 +166,7 @@ export function GateVerificationConsole({
     setManualPlate('')
     void restartCamera()
   }, [restartCamera])
+
 
   const requestVerify = useCallback(
     async (canonicalPlate: string, ocrEvidenceId?: string) => {
@@ -263,15 +266,14 @@ export function GateVerificationConsole({
       setErrorMessage(message)
       setPhase('ERROR')
       toasts.showError(message)
-    } finally {
-      await restartCamera()
     }
-  }, [phase, requestVerify, restartCamera, toasts])
+  }, [phase, requestVerify, toasts])
 
   const buildPayload = useCallback((): GateConfirmPayload | null => {
     if (!verifyResult) return null
     return {
-      plate: verifyResult.plate,
+      displayPlate: verifyResult.displayPlate,
+      vehicleType: verifyResult.vehicleType,
       canonicalPlate: verifyResult.canonicalPlate,
       vehicleStatus: verifyResult.vehicleStatus,
       recommendedAction: verifyResult.recommendedAction,
@@ -289,6 +291,34 @@ export function GateVerificationConsole({
     onConfirm(payload)
     setPhase('CONFIRMED')
   }, [buildPayload, onConfirm])
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null
+      const isTyping =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.isContentEditable
+
+      if (isTyping) return
+
+      if (event.code === 'Space' && phase === 'IDLE' && !manualMode) {
+        event.preventDefault()
+        void captureAndRecognize()
+      }
+      if (event.key === 'Enter' && phase === 'RESULT_DISPLAYED') {
+        event.preventDefault()
+        confirmPrimary()
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        reset()
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [captureAndRecognize, confirmPrimary, phase, manualMode, reset])
 
   const handleOverride = useCallback(() => {
     const payload = buildPayload()
@@ -343,7 +373,7 @@ export function GateVerificationConsole({
               ) : (
                 <ScanLine className="size-4" />
               )}
-              {phase === 'SCANNING' ? 'Scanning plate...' : 'Scan Plate'}
+              {phase === 'SCANNING' ? 'Scanning plate...' : 'Scan Plate (Space)'}
             </Button>
             <Button
               type="button"
@@ -366,19 +396,23 @@ export function GateVerificationConsole({
               value={manualPlate}
               onChange={setManualPlate}
               onConfirm={confirmManualPlate}
-              onClose={() => setManualMode(false)}
+              onClose={() => reset()}
               isLoading={phase === 'SCANNING'}
             />
           ) : null}
         </CardContent>
       </Card>
 
-      {phase === 'RESULT_DISPLAYED' && verifyResult ? (
+      {verifyResult ? (
         <ScanResultCard
           result={verifyResult}
           capturedImageUrl={capturedImageUrl}
           onConfirm={confirmPrimary}
           onOverride={onOpenOverride ? handleOverride : undefined}
+          open={phase === 'RESULT_DISPLAYED'}
+          onOpenChange={(open) => {
+            if (!open) reset()
+          }}
         />
       ) : null}
 
@@ -422,67 +456,106 @@ function ScanResultCard({
   capturedImageUrl,
   onConfirm,
   onOverride,
+  open,
+  onOpenChange,
 }: {
   result: GateVerifyResponse
   capturedImageUrl: string | null
   onConfirm: () => void
   onOverride?: () => void
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }) {
   const status = STATUS_BADGE[result.vehicleStatus]
   return (
-    <Card className="border-primary/20 shadow-sm">
-      <CardHeader className="border-b bg-muted/30">
-        <CardTitle>Scan result</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              Detected plate
-            </p>
-            <p className="mt-1 break-all font-mono text-3xl font-black tracking-[0.12em] text-foreground">
-              {result.plate}
-            </p>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl sm:max-w-[600px] p-0 overflow-hidden">
+        <DialogHeader className="border-b bg-muted/30 px-6 py-4">
+          <DialogTitle>Scan result</DialogTitle>
+        </DialogHeader>
+        <div className="p-6 space-y-6">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Detected plate
+              </p>
+              <p className="mt-1 break-all font-mono text-3xl font-black tracking-[0.12em] text-foreground">
+                {result.displayPlate}
+              </p>
+            </div>
+            {capturedImageUrl ? (
+              <img
+                src={capturedImageUrl}
+                alt="Captured vehicle"
+                className="h-32 w-48 shrink-0 rounded-lg border object-cover"
+              />
+            ) : null}
           </div>
-          {capturedImageUrl ? (
-            <img
-              src={capturedImageUrl}
-              alt="Captured vehicle"
-              className="h-20 w-32 shrink-0 rounded-lg border object-cover"
-            />
-          ) : null}
-        </div>
 
-        <dl className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-xl border bg-muted/30 p-3">
-            <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Status</dt>
-            <dd className="mt-1.5"><Badge className={status.className}>{status.label}</Badge></dd>
-          </div>
-          <div className="rounded-xl border bg-muted/30 p-3">
-            <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Recommended</dt>
-            <dd className="mt-1.5 text-sm font-bold text-foreground">{ACTION_LABEL[result.recommendedAction]}</dd>
-          </div>
-          <div className="rounded-xl border bg-muted/30 p-3">
-            <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Confidence</dt>
-            <dd className="mt-1.5 text-sm font-bold text-foreground">
-              {result.confidence != null ? `${Math.round(result.confidence * 100)}%` : '—'}
-            </dd>
-          </div>
-        </dl>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Vehicle Status</p>
+                <div className="mt-1.5"><Badge className={status.className}>{status.label}</Badge></div>
+              </div>
+              {result.sessionId && (
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Session</p>
+                  <div className="mt-1.5 font-mono text-sm font-semibold text-foreground">{result.sessionId}</div>
+                </div>
+              )}
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">OCR Confidence</p>
+                <div className="mt-1.5 text-sm font-bold text-foreground">
+                  {result.confidence != null ? `${Math.round(result.confidence * 100)}%` : '—'}
+                </div>
+              </div>
+              {/* Future Compatibility for ReID */}
+              <div className="hidden">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Vehicle Match</p>
+                <div className="mt-1.5 text-sm font-bold text-foreground">98%</div>
+              </div>
+            </div>
 
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Button type="button" onClick={onConfirm} className="h-11 flex-1">
-            <CheckCircle2 className="size-4" />
-            {CONFIRM_LABEL[result.recommendedAction]}
-          </Button>
-          {onOverride ? (
-            <Button type="button" variant="outline" onClick={onOverride} className="h-11">
-              Override
+            <div className="rounded-lg border bg-muted/30 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground mb-3">Decision Reason</p>
+              <ul className="space-y-2 text-sm">
+                {result.vehicleStatus === 'ACTIVE_SESSION' && (
+                  <>
+                    <li className="flex items-center gap-2"><CheckCircle2 className="size-4 text-emerald-500" /> Active parking session found</li>
+                    <li className="flex items-center gap-2"><CheckCircle2 className="size-4 text-emerald-500" /> Plate matched active session</li>
+                  </>
+                )}
+                {result.vehicleStatus === 'ACTIVE_RESERVATION' && (
+                  <>
+                    <li className="flex items-center gap-2"><CheckCircle2 className="size-4 text-emerald-500" /> Active reservation found</li>
+                    <li className="flex items-center gap-2"><CheckCircle2 className="size-4 text-emerald-500" /> Reservation still valid</li>
+                  </>
+                )}
+                {result.vehicleStatus === 'UNKNOWN' && (
+                  <li className="flex items-center gap-2"><AlertTriangle className="size-4 text-amber-500" /> No active session or reservation</li>
+                )}
+              </ul>
+              <p className="mt-4 text-sm font-semibold text-foreground">
+                System recommends <span className="uppercase text-primary">{ACTION_LABEL[result.recommendedAction]}</span>
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row pt-2">
+            <Button type="button" onClick={onConfirm} className="h-11 flex-1">
+              <CheckCircle2 className="size-4" />
+              {CONFIRM_LABEL[result.recommendedAction]} (Enter)
             </Button>
-          ) : null}
+            {onOverride ? (
+              <Button type="button" variant="outline" onClick={onOverride} className="h-11">
+                Override
+              </Button>
+            ) : null}
+          </div>
         </div>
-      </CardContent>
-    </Card>
+      </DialogContent>
+    </Dialog>
   )
 }
 

@@ -228,7 +228,8 @@ export type GateScanResponse =
     }
 
 export interface GateVerifyResponse {
-  plate: string
+  displayPlate: string
+  vehicleType: 'CAR' | 'MOTORBIKE' | 'UNKNOWN'
   canonicalPlate: string
   vehicleStatus: GateVehicleStatus
   recommendedAction: GateRecommendedAction

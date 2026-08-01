@@ -56,6 +56,7 @@ export class GateController {
   @Post('verify')
   @HttpCode(HttpStatus.OK)
   verifyPlate(@Body() dto: VerifyPlateDto, @CurrentUser('id') staffId: string) {
+    console.log(`[GateController] verifyPlate called with:`, dto);
     return this.gateService.verifyPlate({
       canonicalPlate: dto.canonicalPlate,
       ocrEvidenceId: dto.ocrEvidenceId,
@@ -65,6 +66,7 @@ export class GateController {
 
   @Post('audit-log')
   recordOverride(@Body() dto: RecordGateAuditDto, @CurrentUser('id') staffId: string) {
+    console.log(`[GateController] recordOverride called with:`, dto);
     return this.gateService.recordOverride({
       canonicalPlate: dto.canonicalPlate,
       vehicleStatus: dto.vehicleStatus,

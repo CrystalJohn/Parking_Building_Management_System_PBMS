@@ -31,6 +31,7 @@ import {
   fetchEvidenceImageBlobResult,
   lookupSessionForCheckout,
   requestCheckout,
+  recordGateOverride,
   type CheckOutResponse,
   type CheckInEvidence,
   type CheckoutEvidence,
@@ -42,6 +43,7 @@ import {
   type PaymentWorkflowResponse,
   type PaymentStatus,
   type SessionStatus,
+  type GateRecommendedAction,
 } from '../../lib/sessions-api'
 import { Receipt } from '../../components/receipt/Receipt'
 import { RequestManagerReviewDialog } from '../../components/operation-issues/RequestManagerReviewDialog'
@@ -51,6 +53,7 @@ import { formatDateTimeVN } from '../../lib/date-time'
 import { formatVehicleType, normalizePlateForApi } from '../../lib/plate-format'
 import { StaffOcrCheckInPanel } from './StaffOcrCheckInPanel'
 import { StaffReservationQrCheckInPanel } from './StaffReservationQrCheckInPanel'
+import { GateVerificationConsole, type GateConfirmPayload } from './GateVerificationConsole'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   AlertDialog,
@@ -198,12 +201,16 @@ export default function Gate() {
   const toasts = useToasts()
   const [laneAssignment, setLaneAssignment] = useState<CurrentGateAssignment | null>(null)
   const [laneLoading, setLaneLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<Tab>(() => {
+  const [activeWorkflow, setActiveWorkflow] = useState<'verify' | 'checkin' | 'checkout'>(() => {
     const params = new URLSearchParams(location.search)
     const tab = normalizeGateTab(params.get('tab'))
-    if (tab === 'check-out') return 'check-out'
-    return 'check-in'
+    if (tab === 'check-out') return 'checkout'
+    return 'verify'
   })
+  
+  const [checkoutQuery, setCheckoutQuery] = useState<{ kind: 'licensePlate' | 'sessionCode', value: string } | null>(null)
+  const [overrideDialogOpen, setOverrideDialogOpen] = useState(false)
+  const [overridePayload, setOverridePayload] = useState<GateConfirmPayload | null>(null)
 
   useEffect(() => {
     let active = true
@@ -256,30 +263,160 @@ export default function Gate() {
           </CardHeader>
         </Card>
       ) : (
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)}>
-          <TabsList variant="line" className="h-11 w-full gap-0 border-b bg-transparent p-0">
-            <TabsTrigger value="check-in" className="flex-1 rounded-none border-b-2 border-transparent px-6 py-2.5 text-sm font-semibold">
-              Check-in
-            </TabsTrigger>
-            <TabsTrigger value="check-out" className="flex-1 rounded-none border-b-2 border-transparent px-6 py-2.5 text-sm font-semibold">
-              Check-out
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="check-in" className="mt-4">
-            <GateOperationsPanel
+        <>
+          {activeWorkflow === 'verify' && (
+            <GateVerificationConsole
               toasts={toasts}
-              laneVehicleType={lane.vehicleType}
-              onRouteToCheckout={() => setActiveTab('check-out')}
+              onConfirm={(payload) => {
+                 if (payload.recommendedAction === 'CHECKOUT') {
+                   setCheckoutQuery({ kind: 'licensePlate', value: payload.canonicalPlate });
+                   setActiveWorkflow('checkout');
+                 } else {
+                   setActiveWorkflow('checkin');
+                 }
+              }}
+              onOpenOverride={(payload) => {
+                setOverridePayload(payload);
+                setOverrideDialogOpen(true);
+              }}
             />
-          </TabsContent>
+          )}
 
-          <TabsContent value="check-out" className="mt-4">
-            <CheckOutPanel toasts={toasts} />
-          </TabsContent>
-        </Tabs>
+          {activeWorkflow === 'checkin' && (
+            <div className="space-y-4">
+              <div className="flex justify-start">
+                <Button variant="outline" onClick={() => setActiveWorkflow('verify')}>
+                  ← Back to Verification
+                </Button>
+              </div>
+              <GateOperationsPanel
+                toasts={toasts}
+                laneVehicleType={lane.vehicleType}
+                onRouteToCheckout={() => setActiveWorkflow('checkout')}
+              />
+            </div>
+          )}
+
+          {activeWorkflow === 'checkout' && (
+            <div className="space-y-4">
+              <div className="flex justify-start">
+                <Button variant="outline" onClick={() => {
+                  setCheckoutQuery(null);
+                  setActiveWorkflow('verify');
+                }}>
+                  ← Back to Verification
+                </Button>
+              </div>
+              <CheckOutPanel 
+                toasts={toasts} 
+                initialLookupKind={checkoutQuery?.kind}
+                initialLookupValue={checkoutQuery?.value}
+                onResetToGateOps={() => {
+                   setCheckoutQuery(null);
+                   setActiveWorkflow('verify');
+                }}
+              />
+            </div>
+          )}
+
+          <GateOverrideDialog 
+            open={overrideDialogOpen}
+            onOpenChange={setOverrideDialogOpen}
+            payload={overridePayload}
+            onOverrideSubmitted={(action) => {
+               setOverrideDialogOpen(false);
+               if (action === 'CHECKOUT') {
+                 setCheckoutQuery({ kind: 'licensePlate', value: overridePayload?.canonicalPlate || '' });
+                 setActiveWorkflow('checkout');
+               } else {
+                 setActiveWorkflow('checkin');
+               }
+            }}
+            toasts={toasts}
+          />
+        </>
       )}
     </main>
+  )
+}
+
+function GateOverrideDialog({
+  open,
+  onOpenChange,
+  payload,
+  onOverrideSubmitted,
+  toasts,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  payload: GateConfirmPayload | null
+  onOverrideSubmitted: (action: GateRecommendedAction) => void
+  toasts: ReturnType<typeof useToasts>
+}) {
+  const [reason, setReason] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  const handleSubmit = async (action: GateRecommendedAction) => {
+    if (!payload) return
+    if (!reason.trim()) {
+      toasts.showError('Please provide a reason for the override.')
+      return
+    }
+    setSubmitting(true)
+    try {
+      await recordGateOverride({
+        canonicalPlate: payload.canonicalPlate,
+        vehicleStatus: payload.vehicleStatus,
+        recommendedAction: payload.recommendedAction,
+        actualAction: action,
+        reason,
+        sessionId: payload.sessionId,
+        reservationId: payload.reservationId,
+      })
+      onOverrideSubmitted(action)
+      setReason('')
+      toasts.showSuccess(`Override logged. Proceeding with ${action}.`)
+    } catch (err) {
+       toasts.showError('Failed to record override.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Staff Override</AlertDialogTitle>
+          <AlertDialogDescription>
+            System recommended <strong>{payload?.recommendedAction}</strong>. 
+            Select an alternative action. This will be logged.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="override-reason">Reason for override</Label>
+            <Input 
+              id="override-reason" 
+              placeholder="e.g. Plate misread, customer request..." 
+              value={reason} 
+              onChange={e => setReason(e.target.value)} 
+            />
+          </div>
+        </div>
+        <AlertDialogFooter className="flex-col sm:flex-col gap-2">
+           <Button variant="outline" disabled={submitting} onClick={() => handleSubmit('CHECKIN')}>
+              Force Check-in
+           </Button>
+           <Button variant="outline" disabled={submitting} onClick={() => handleSubmit('CHECKOUT')}>
+              Force Check-out
+           </Button>
+           <Button variant="ghost" disabled={submitting} onClick={() => onOpenChange(false)}>
+              Cancel
+           </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
 
@@ -593,11 +730,11 @@ function CheckOutPanel({
     setWorkflow((current) =>
       current
         ? {
-            ...current,
-            session: { ...current.session, ...data.session },
-            slot: { ...current.slot, ...data.slot },
-            payment: data.payment,
-          }
+          ...current,
+          session: { ...current.session, ...data.session },
+          slot: { ...current.slot, ...data.slot },
+          payment: data.payment,
+        }
         : current,
     )
   }
@@ -868,26 +1005,26 @@ function CheckOutPanel({
       setWorkflow((current) =>
         current
           ? {
-              ...current,
-              session: {
-                ...current.session,
-                status: response.exitAuthorizationStatus,
-                isPaid: true,
-                feeAmount: response.fee.baseFee,
-                penaltyAmount: response.fee.penalty,
-                isOvertime: response.fee.isOvertime,
-                isLostTicket: response.fee.isLostTicket,
-              },
-              fee: response.fee,
-              payment: {
-                id: response.paymentId,
-                sessionId: response.sessionId,
-                amount: response.fee.total,
-                method: response.paymentMethod,
-                status: response.paymentStatus,
-                paidAt: response.paidAt,
-              },
-            }
+            ...current,
+            session: {
+              ...current.session,
+              status: response.exitAuthorizationStatus,
+              isPaid: true,
+              feeAmount: response.fee.baseFee,
+              penaltyAmount: response.fee.penalty,
+              isOvertime: response.fee.isOvertime,
+              isLostTicket: response.fee.isLostTicket,
+            },
+            fee: response.fee,
+            payment: {
+              id: response.paymentId,
+              sessionId: response.sessionId,
+              amount: response.fee.total,
+              method: response.paymentMethod,
+              status: response.paymentStatus,
+              paidAt: response.paidAt,
+            },
+          }
           : current,
       )
       toasts.showSuccess('Cash payment confirmed. Vehicle is authorized to exit.')
@@ -933,17 +1070,17 @@ function CheckOutPanel({
       setWorkflow((current) =>
         current
           ? {
-              ...current,
-              session: {
-                ...current.session,
-                status: response.session.status,
-                checkOutTime: response.session.checkOutTime,
-              },
-              slot: {
-                ...current.slot,
-                status: response.slot.status,
-              },
-            }
+            ...current,
+            session: {
+              ...current.session,
+              status: response.session.status,
+              checkOutTime: response.session.checkOutTime,
+            },
+            slot: {
+              ...current.slot,
+              status: response.slot.status,
+            },
+          }
           : current,
       )
       toasts.showSuccess('Vehicle exit confirmed. Slot released.')
@@ -979,8 +1116,8 @@ function CheckOutPanel({
     : 'Calculated fee preview'
   const checkInPlateNormalized = normalizePlateForApi(
     workflow?.checkInEvidence?.confirmedPlate ??
-      workflow?.checkInEvidence?.ocrPlate ??
-      workflow?.session.licensePlate,
+    workflow?.checkInEvidence?.ocrPlate ??
+    workflow?.session.licensePlate,
   )
   const checkOutPlateNormalized = normalizePlateForApi(
     workflow?.exitEvidence?.confirmedPlate ?? workflow?.exitEvidence?.ocrPlate,
@@ -1666,7 +1803,7 @@ function SessionSummary({
           }
         />
         <SummaryRow label="Floor / Zone" value={`${workflow.slot.floor.name} / Zone ${workflow.slot.zone}`} />
-        
+
         {hasPenalty ? (
           <>
             <SummaryRow label="Base fee" value={
