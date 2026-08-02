@@ -6,12 +6,15 @@ import { SlotsModule } from '../slots/slots.module';
 import { ReservationsController } from './reservations.controller';
 import { ReservationsService } from './reservations.service';
 
+import { PaymentsModule } from '../payments/payments.module';
+
 @Module({
   imports: [
     AuthModule,
     PrismaModule,
     NotificationsModule,
     SlotsModule, // provides AllocationService
+    PaymentsModule,
   ],
   controllers: [ReservationsController],
   providers: [ReservationsService],

@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
-import { ArrowRight, Building2, Car, Clock, MapPin, QrCode, RefreshCw } from 'lucide-react'
+import { ArrowRight, Building2, Car, Clock, MapPin, QrCode, RefreshCw, ShieldCheck, Tag } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import {
   getMyActiveSessions,
+  getPricing,
   getSessionQr,
   type ActiveSession,
+  type PricingInfo,
 } from '../../lib/driver-api'
 import { formatDateTimeVN } from '../../lib/date-time'
 import { formatVehicleType } from '../../lib/plate-format'
@@ -12,24 +14,156 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 
-const formatDateTime = formatDateTimeVN
+
+
+function SessionLiveSummary({ session, pricing }: { session: ActiveSession; pricing: PricingInfo[] }) {
+  const [now, setNow] = useState(Date.now())
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  const checkIn = new Date(session.checkInTime).getTime()
+  const durationMs = Math.max(0, now - checkIn)
+  const totalSec = Math.floor(durationMs / 1000)
+  const hours = Math.floor(totalSec / 3600)
+  const mins = Math.floor((totalSec % 3600) / 60)
+  const secs = totalSec % 60
+
+  const durationHours = durationMs / (1000 * 60 * 60)
+  const roundedHours = Math.max(1, Math.ceil(durationHours))
+
+  const isCar = session.vehicleType === 'car'
+  const pricingForType = pricing.find((p) => p.vehicleType === session.vehicleType)
+  const defaultBaseRate = isCar ? 20000 : 10000
+  const discountPct = pricingForType?.reservationDiscountPercent ?? 20
+
+  const hasReservation = Boolean(session.reservationId || session.reservation)
+  const lockedDeposit = session.reservation?.depositAmount ?? 0
+
+  // Locked rate from reservation creation time, or fallback to current pricing config
+  const discountedRate = hasReservation && lockedDeposit > 0
+    ? lockedDeposit
+    : Math.round((pricingForType?.hourlyRate ?? defaultBaseRate) * (1 - discountPct / 100))
+  
+  const baseRate = hasReservation && lockedDeposit > 0
+    ? Math.round(lockedDeposit / (1 - discountPct / 100))
+    : (pricingForType?.hourlyRate ?? defaultBaseRate)
+
+  // Calculate estimated fee
+  let estimatedFee = 0
+  let billableHours = roundedHours
+
+  if (hasReservation) {
+    // 1st hour covered by deposit paid online!
+    billableHours = Math.max(0, roundedHours - 1)
+    estimatedFee = billableHours * discountedRate
+  } else {
+    // Walk-in: 10 mins grace is 0, otherwise full rounded hours * baseRate
+    const durationMins = Math.floor(durationMs / 60000)
+    if (durationMins <= 10) {
+      estimatedFee = 0
+    } else {
+      estimatedFee = roundedHours * baseRate
+    }
+  }
+
+  const formattedTimer = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+
+  return (
+    <div className="space-y-4">
+      {/* Dynamic Session Duration Counter */}
+      <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 space-y-2 text-emerald-950 dark:text-emerald-100">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-xs font-semibold text-emerald-800 dark:text-emerald-300">
+            <Clock className="size-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span>Actual Parking Duration:</span>
+          </div>
+          <Badge className="border-emerald-500/30 bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-bold text-xs animate-pulse">
+            ● Active Session
+          </Badge>
+        </div>
+        <div className="flex items-baseline justify-between border-t border-emerald-500/20 pt-2">
+          <span className="text-xs font-medium text-emerald-800 dark:text-emerald-300">Live Parking Timer:</span>
+          <span className="font-mono text-2xl font-black text-emerald-600 dark:text-emerald-400 tabular-nums">
+            {formattedTimer}
+          </span>
+        </div>
+        <p className="text-[11px] text-emerald-700 dark:text-emerald-300">
+          Checked-in at: <strong className="font-mono">{formatDateTimeVN(session.checkInTime)}</strong> ({roundedHours}h parked)
+        </p>
+      </div>
+
+      {/* Estimated Fee Box */}
+      <div className="rounded-xl border bg-card p-4 space-y-3 shadow-xs">
+        <div className="flex items-center justify-between border-b pb-2">
+          <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+            <Tag className="size-3.5" /> Estimated Fee Summary
+          </span>
+          {hasReservation ? (
+            <Badge className="border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-bold text-[10px]">
+              Pre-booked Locked Rate (-{discountPct}%)
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-[10px] font-semibold">Standard Walk-in Tariff</Badge>
+          )}
+        </div>
+
+        <div className="space-y-2 text-xs">
+          <div className="flex justify-between items-center">
+            <span className="text-muted-foreground">Applied Hourly Rate:</span>
+            <span className="font-mono font-bold text-foreground">
+              {hasReservation ? `${discountedRate.toLocaleString('vi-VN')}đ/h` : `${baseRate.toLocaleString('vi-VN')}đ/h`}
+              {hasReservation ? <span className="ml-1.5 text-[11px] text-muted-foreground line-through">{baseRate.toLocaleString('vi-VN')}đ</span> : null}
+            </span>
+          </div>
+
+          {hasReservation ? (
+            <div className="flex justify-between items-center text-emerald-600 dark:text-emerald-400 font-semibold">
+              <span className="flex items-center gap-1">
+                <ShieldCheck className="size-3.5" /> Online Deposit Paid (1st Hour Waived):
+              </span>
+              <span className="font-mono font-extrabold">-{discountedRate.toLocaleString('vi-VN')}đ</span>
+            </div>
+          ) : null}
+
+          <div className="flex justify-between items-center">
+            <span className="text-muted-foreground">Billable Hours at Exit Gate:</span>
+            <span className="font-mono font-bold text-foreground">
+              {hasReservation ? `${billableHours}h (From Hour 2 onwards)` : `${roundedHours}h`}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-baseline justify-between border-t pt-2.5">
+          <span className="text-xs font-bold text-foreground">Estimated Payable at Exit Gate:</span>
+          <span className="font-mono text-xl font-black text-primary">
+            {estimatedFee.toLocaleString('vi-VN')} VNĐ
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function MySession() {
   const [sessions, setSessions] = useState<ActiveSession[]>([])
+  const [pricing, setPricing] = useState<PricingInfo[]>([])
   const [qrCodes, setQrCodes] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    void loadSessions()
-  }, [])
-
-  const loadSessions = async () => {
-    setLoading(true)
+  const loadSessions = async (silent = false) => {
+    if (!silent) setLoading(true)
     setError(null)
     try {
-      const data = await getMyActiveSessions()
+      const [data, pricingData] = await Promise.all([
+        getMyActiveSessions(),
+        getPricing().catch(() => []),
+      ])
       setSessions(data)
+      setPricing(pricingData)
 
       const qrs: Record<string, string> = {}
       for (const session of data) {
@@ -46,11 +180,30 @@ export default function MySession() {
       }
       setQrCodes(qrs)
     } catch {
-      setError('Unable to load session information.')
+      if (!silent) setError('Unable to load session information.')
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
+
+  useEffect(() => {
+    void loadSessions(false)
+
+    // Tự động kiểm tra & cập nhật Real-time 3s/lần khi staff checkout xong ở cổng ra
+    const timer = window.setInterval(() => {
+      void loadSessions(true)
+    }, 3000)
+
+    const onFocus = () => {
+      void loadSessions(true)
+    }
+    window.addEventListener('focus', onFocus)
+
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [])
 
   return (
     <div className="min-h-[calc(100dvh-3.5rem)] bg-slate-50/70 dark:bg-slate-950/40">
@@ -61,9 +214,9 @@ export default function MySession() {
               <QrCode className="size-4" />
               Digital Pass
             </div>
-            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Digital Exit Pass</h1>
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Digital Exit Pass &amp; Session</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Show your digital exit pass QR code to staff or scanner when exiting the building.
+              Show your digital exit pass QR code at the exit gate for checkout.
             </p>
           </div>
           <Button
@@ -164,17 +317,10 @@ export default function MySession() {
                           {session.slot.floor.name}
                         </p>
                       </div>
-
-                      <div className="col-span-2 border-t pt-3">
-                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <Clock className="size-3.5" />
-                          <span>Check-in Time</span>
-                        </div>
-                        <p className="mt-1 text-sm font-semibold text-foreground">
-                          {formatDateTime(session.checkInTime)}
-                        </p>
-                      </div>
                     </div>
+
+                    {/* Live Timer & Estimated Fee Summary */}
+                    <SessionLiveSummary session={session} pricing={pricing} />
                   </div>
 
                   <div className="flex flex-col items-center justify-center rounded-xl border bg-card p-6 text-center shadow-xs">

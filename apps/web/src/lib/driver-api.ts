@@ -39,6 +39,7 @@ export interface PricingInfo {
   overtimePenalty: number
   lostTicketPenalty: number
   overtimeThresholdHours: number
+  reservationDiscountPercent?: number
 }
 
 export interface Reservation {
@@ -46,6 +47,9 @@ export interface Reservation {
   vehicleId?: string | null
   vehicleType: VehicleType
   status: ReservationStatus
+  plannedArrivalAt?: string | null
+  depositAmount?: number
+  isDepositPaid?: boolean
   createdAt: string
   expiresAt: string
   licensePlate?: string | null
@@ -107,6 +111,7 @@ export interface VehicleRegistrationRequest {
 
 export interface CreateReservationResponse {
   quota: ReservationQuotaSnapshot
+  paymentUrl?: string | null
   reservation: {
     id: string
     vehicleId?: string | null
@@ -149,6 +154,11 @@ export interface ActiveSession {
   status: Exclude<SessionStatus, 'completed' | 'cancelled'>
   qrCode: string | null
   slot: SlotInfo
+  reservationId?: string | null
+  reservation?: {
+    depositAmount: number
+    plannedArrivalAt?: string | null
+  } | null
 }
 
 export type SubscriptionPlanType = 'monthly' | 'yearly'
@@ -244,8 +254,21 @@ export async function getReservationQuota(): Promise<ReservationQuotaSnapshot> {
 }
 
 /** 23.2: Create a reservation */
-export async function createReservation(vehicleId: string): Promise<CreateReservationResponse> {
-  const { data } = await api.post('/reservations', { vehicleId })
+export async function createReservation(
+  vehicleId: string,
+  plannedArrivalAt?: string,
+): Promise<CreateReservationResponse> {
+  const { data } = await api.post('/reservations', { vehicleId, plannedArrivalAt })
+  return data
+}
+
+export async function payReservationDeposit(id: string): Promise<{ paymentUrl: string }> {
+  const { data } = await api.post<{ paymentUrl: string }>(`/reservations/${id}/pay-deposit`)
+  return data
+}
+
+export async function confirmReservationDeposit(id: string): Promise<Reservation> {
+  const { data } = await api.post<Reservation>(`/reservations/${id}/confirm-deposit`)
   return data
 }
 

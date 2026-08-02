@@ -107,12 +107,27 @@ describe('FeesService', () => {
       expect(result.totalFee).toBe(40000);
     });
 
-    it('should charge minimum 1 hour for sub-hour parking', async () => {
+    it('should grant 10-minute Grace Exit (0 VNĐ) for sub-hour walk-in parking', async () => {
       prisma.pricingConfig.findFirst.mockResolvedValue(makePricing());
 
       // 10 minutes
       const checkIn = new Date('2024-01-01T08:00:00Z');
       const checkOut = new Date('2024-01-01T08:10:00Z');
+      const session = makeSession({ checkInTime: checkIn, checkOutTime: checkOut });
+
+      const result = await service.calculate(session, false);
+
+      expect(result.roundedHours).toBe(1);
+      expect(result.baseFee).toBe(0);
+      expect(result.totalFee).toBe(0);
+    });
+
+    it('should charge 1 full hour for walk-in parking between 11 and 60 minutes', async () => {
+      prisma.pricingConfig.findFirst.mockResolvedValue(makePricing());
+
+      // 15 minutes
+      const checkIn = new Date('2024-01-01T08:00:00Z');
+      const checkOut = new Date('2024-01-01T08:15:00Z');
       const session = makeSession({ checkInTime: checkIn, checkOutTime: checkOut });
 
       const result = await service.calculate(session, false);
@@ -328,9 +343,9 @@ describe('FeesService', () => {
       expect(result.lostTicketPenalty).toBe(100000);
     });
 
-    it('should apply 20% discount on base fee when session comes from a reservation', async () => {
+    it('should waive 1st hour deposit and apply 20% discount on remaining hours when session comes from a reservation', async () => {
       const checkIn = new Date('2024-01-01T08:00:00Z');
-      const checkOut = new Date('2024-01-01T10:00:00Z'); // 2 hours = 40,000 VND
+      const checkOut = new Date('2024-01-01T10:00:00Z'); // 2 hours = 40,000 VND original
       const sessionData = makeSession({
         checkInTime: checkIn,
         checkOutTime: checkOut,
@@ -342,9 +357,10 @@ describe('FeesService', () => {
 
       expect(result.hasReservation).toBe(true);
       expect(result.originalBaseFee).toBe(40000);
-      expect(result.reservationDiscountAmount).toBe(8000); // 20% of 40,000
-      expect(result.baseFee).toBe(32000); // 40,000 - 8,000
-      expect(result.totalFee).toBe(32000);
+      expect(result.hourlyRate).toBe(16000); // 20% off 20,000
+      expect(result.baseFee).toBe(16000); // (2h - 1h deposit) * 16,000
+      expect(result.reservationDiscountAmount).toBe(24000); // 40,000 - 16,000
+      expect(result.totalFee).toBe(16000);
     });
   });
 });

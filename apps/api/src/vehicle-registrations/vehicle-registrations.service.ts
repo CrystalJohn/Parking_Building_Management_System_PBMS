@@ -26,36 +26,81 @@ export class VehicleRegistrationsService {
     private readonly configService: ConfigService,
   ) {}
 
-  private getSupabaseClient() {
-    const supabaseUrl = this.configService.get<string>('SUPABASE_URL') || process.env.SUPABASE_URL;
-    const supabaseKey = this.configService.get<string>('SUPABASE_SERVICE_KEY') || process.env.SUPABASE_SERVICE_KEY;
-    if (!supabaseUrl || !supabaseKey) {
-      throw new Error('Supabase credentials are not configured');
-    }
-    return createClient(supabaseUrl, supabaseKey, {
-      auth: { persistSession: false },
-      realtime: { transport: ws as any },
-    });
-  }
-
   private async uploadFile(
-    supabase: ReturnType<typeof this.getSupabaseClient>,
     file: { buffer: Buffer; mimetype: string; originalname: string },
     prefix: string,
   ): Promise<string> {
-    const fileExt = file.originalname.split('.').pop();
-    const fileName = `${prefix}-${Date.now()}.${fileExt}`;
-    const { error } = await supabase.storage
-      .from('vehicle-evidences')
-      .upload(fileName, file.buffer, { contentType: file.mimetype });
-    if (error) {
-      this.logger.error(`Failed to upload ${prefix} to Supabase`, error);
-      throw new BadRequestException('Không thể tải lên ảnh chứng minh. Vui lòng thử lại.');
+    const supabaseUrl = this.configService.get<string>('SUPABASE_URL') || process.env.SUPABASE_URL;
+    const supabaseKey = this.configService.get<string>('SUPABASE_SERVICE_KEY') || process.env.SUPABASE_SERVICE_KEY;
+
+    if (supabaseUrl && supabaseKey) {
+      try {
+        const supabase = createClient(supabaseUrl, supabaseKey, {
+          auth: { persistSession: false },
+          realtime: { transport: ws as any },
+        });
+        const fileExt = file.originalname.split('.').pop();
+        const fileName = `${prefix}-${Date.now()}.${fileExt}`;
+        const { error } = await supabase.storage
+          .from('vehicle-evidences')
+          .upload(fileName, file.buffer, { contentType: file.mimetype });
+        if (!error) {
+          const { data: { publicUrl } } = supabase.storage
+            .from('vehicle-evidences')
+            .getPublicUrl(fileName);
+          return publicUrl;
+        }
+        this.logger.warn(`Supabase upload error for ${prefix}: ${error.message}, falling back to Data URL`);
+      } catch (err) {
+        this.logger.warn(`Supabase client error for ${prefix}: ${err}, falling back to Data URL`);
+      }
     }
-    const { data: { publicUrl } } = supabase.storage
-      .from('vehicle-evidences')
-      .getPublicUrl(fileName);
-    return publicUrl;
+
+    // Fallback: Convert to Base64 Data URL so local development works seamlessly without Supabase!
+    const base64 = file.buffer.toString('base64');
+    return `data:${file.mimetype || 'image/jpeg'};base64,${base64}`;
+  }
+
+  private validateUploadedImages(
+    caVantFile: { buffer: Buffer; mimetype: string; originalname: string },
+    overallFile: { buffer: Buffer; mimetype: string; originalname: string },
+    plateFile: { buffer: Buffer; mimetype: string; originalname: string },
+  ) {
+    const allowedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    const minSizeBytes = 5 * 1024; // 5 KB minimum size
+
+    const files = [
+      { file: caVantFile, name: 'Ảnh cà vẹt / Giấy tờ xe' },
+      { file: overallFile, name: 'Ảnh toàn cảnh xe' },
+      { file: plateFile, name: 'Ảnh cận cảnh biển số xe' },
+    ];
+
+    for (const item of files) {
+      if (!item.file || !item.file.buffer) {
+        throw new BadRequestException(`${item.name} không được để trống.`);
+      }
+      if (!allowedMimeTypes.includes(item.file.mimetype?.toLowerCase())) {
+        throw new BadRequestException(
+          `${item.name} không đúng định dạng ảnh cho phép (chỉ chấp nhận JPG, PNG, WEBP).`,
+        );
+      }
+      if (item.file.buffer.length < minSizeBytes) {
+        throw new BadRequestException(
+          `${item.name} có dung lượng quá nhỏ (< 5KB), quá mờ hoặc không đạt tiêu chuẩn làm rõ. Vui lòng chụp lại ảnh rõ nét.`,
+        );
+      }
+    }
+
+    // Ensure the 3 uploaded images are 3 distinct files (not duplicates)
+    const hashCaVant = caVantFile.buffer.toString('hex', 0, 256);
+    const hashOverall = overallFile.buffer.toString('hex', 0, 256);
+    const hashPlate = plateFile.buffer.toString('hex', 0, 256);
+
+    if (hashCaVant === hashOverall || hashCaVant === hashPlate || hashOverall === hashPlate) {
+      throw new BadRequestException(
+        '3 ảnh tải lên phải là 3 hình ảnh riêng biệt (Giấy tờ, Xe và Biển số). Không được dùng trùng 1 tấm ảnh cho nhiều mục.',
+      );
+    }
   }
 
   async createRequest(
@@ -65,6 +110,9 @@ export class VehicleRegistrationsService {
     overallFile: { buffer: Buffer; mimetype: string; originalname: string },
     plateFile: { buffer: Buffer; mimetype: string; originalname: string },
   ) {
+    // 1. Hệ thống tự động xác minh 3 ảnh tải lên trước khi gửi cho Manager
+    this.validateUploadedImages(caVantFile, overallFile, plateFile);
+
     const normalizedPlate = normalizePlateNumber(dto.plateNumber);
     if (!normalizedPlate) {
       throw new BadRequestException('Invalid plate number');
@@ -102,12 +150,11 @@ export class VehicleRegistrationsService {
       throw new ConflictException('Another user has a pending registration request for this vehicle');
     }
 
-    // Upload 3 evidence files to Supabase Storage
-    const supabase = this.getSupabaseClient();
+    // Upload 3 evidence files (Supabase Storage with Base64 Data URL fallback)
     const [caVantUrl, overallUrl, plateUrl] = await Promise.all([
-      this.uploadFile(supabase, caVantFile, `${driverId}-cavant`),
-      this.uploadFile(supabase, overallFile, `${driverId}-overall`),
-      this.uploadFile(supabase, plateFile, `${driverId}-plate`),
+      this.uploadFile(caVantFile, `${driverId}-cavant`),
+      this.uploadFile(overallFile, `${driverId}-overall`),
+      this.uploadFile(plateFile, `${driverId}-plate`),
     ]);
 
     const request = await this.prisma.vehicleRegistrationRequest.create({

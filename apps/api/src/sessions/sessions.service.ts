@@ -278,13 +278,13 @@ export class SessionsService {
         const expectedStatus = activeReservation ? 'reserved' : 'available';
         const lockedSlot = await tx.$queryRaw<{ id: number; status: string }[]>`
           SELECT id, status FROM slots
-          WHERE id = ${slot.id} AND status = ${expectedStatus}::"SlotStatus"
+          WHERE id = ${slot.id} AND status IN ('reserved'::"SlotStatus", 'available'::"SlotStatus")
           FOR UPDATE SKIP LOCKED
         `;
 
         if (!lockedSlot || lockedSlot.length === 0) {
           throw new ConflictException(
-            `Slot ${slot.code} is no longer ${expectedStatus}. Please retry.`,
+            `Slot ${slot.code} is no longer available. Please retry.`,
           );
         }
 
@@ -468,12 +468,6 @@ export class SessionsService {
       );
     }
 
-    if (reservation.slot.status !== 'reserved') {
-      throw new ConflictException(
-        'Reserved slot is no longer available. Use OCR fallback.',
-      );
-    }
-
     return {
       reservationId: reservation.id,
       vehicleId: reservation.vehicle.id,
@@ -562,17 +556,24 @@ export class SessionsService {
           reservation.vehicle!.vehicleType,
         );
 
+        let targetSlotId = reservation.slotId;
+        let targetSlot = reservation.slot;
+
         const lockedSlot = await tx.$queryRaw<{ id: number; status: string }[]>`
           SELECT id, status
           FROM slots
-          WHERE id = ${reservation.slotId} AND status = ${'reserved'}::"SlotStatus"
+          WHERE id = ${reservation.slotId} AND status IN ('reserved'::"SlotStatus", 'available'::"SlotStatus")
           FOR UPDATE
         `;
 
         if (lockedSlot.length === 0) {
-          throw new ConflictException(
-            'Reserved slot is no longer available. Use OCR fallback.',
+          const { slot: allocatedSlot } = await this.allocationService.allocate(
+            reservation.vehicleType,
+            undefined,
+            tx,
           );
+          targetSlotId = allocatedSlot.id;
+          targetSlot = allocatedSlot as any;
         }
 
         const conflictingSession = await tx.parkingSession.findFirst({
@@ -600,15 +601,15 @@ export class SessionsService {
         });
 
         await tx.slot.update({
-          where: { id: reservation.slotId },
+          where: { id: targetSlotId },
           data: { status: 'occupied' },
         });
 
         const session = await this.createParkingSession(tx, {
           source: 'RESERVATION',
-          slotId: reservation.slotId,
-          floorId: reservation.slot.floorId,
-          zone: reservation.slot.zone,
+          slotId: targetSlotId,
+          floorId: targetSlot.floorId,
+          zone: targetSlot.zone,
           vehicleType: reservation.vehicle!.vehicleType,
           plateConfirmed: reservation.vehicle!.plateNumber,
           plateDisplay: PlateFormatter.toDisplay(reservation.vehicle!.plateNumber),
@@ -1083,8 +1084,8 @@ export class SessionsService {
       throw new ConflictException(`Reservation ${reservation.id} has no assigned slot`);
     }
 
-    if (reservation.slot.status && reservation.slot.status !== 'reserved') {
-      throw new ConflictException(
+    if (reservation.slot.status && reservation.slot.status !== 'reserved' && reservation.slot.status !== 'available') {
+      this.logger.warn(
         `Reserved slot for reservation ${reservation.id} is ${reservation.slot.status}`,
       );
     }
@@ -1118,9 +1119,9 @@ export class SessionsService {
       );
     }
 
-    if (!reservation.slot || reservation.slot.status !== 'reserved') {
+    if (!reservation.slot) {
       throw new ConflictException(
-        'Reserved slot is no longer available. Use OCR fallback.',
+        'Reservation has no slot. Use OCR fallback.',
       );
     }
   }
@@ -1717,6 +1718,7 @@ export class SessionsService {
       include: {
         slot: { include: { floor: true } },
         payment: true,
+        reservation: { select: { depositAmount: true, plannedArrivalAt: true } },
       },
       orderBy: { checkInTime: 'desc' },
     });

@@ -7,6 +7,9 @@ export interface ManagerReservation {
   status: ReservationStatus
   createdAt: string
   expiresAt: string
+  plannedArrivalAt?: string | null
+  isDepositPaid?: boolean
+  depositAmount?: number
   licensePlate?: string | null
   plateDisplay?: string | null
   driver: {
@@ -19,7 +22,7 @@ export interface ManagerReservation {
     plateNumber: string
     vehicleType: VehicleType
   } | null
-  slot: {
+  slot?: {
     id: number
     code: string
     zone: string
@@ -28,6 +31,10 @@ export interface ManagerReservation {
       floorNumber: number
       name: string
     } | null
+  } | null
+  session?: {
+    id: string
+    checkInTime?: string | null
   } | null
 }
 

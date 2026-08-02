@@ -6,9 +6,28 @@ import {
 import { formatDateTimeVN } from '../../lib/date-time'
 import { Card, CardContent } from '../../components/ui/card'
 import { Badge } from '../../components/ui/badge'
-import { Car, Bike, History as HistoryIcon, Clock, MapPin, Receipt, CheckCircle2 } from 'lucide-react'
+import { Car, Bike, History as HistoryIcon, Clock, MapPin, Receipt, CheckCircle2, Timer } from 'lucide-react'
 
 const VND = (n: number) => `${n.toLocaleString('vi-VN')} VND`
+
+function formatDuration(checkIn: string, checkOut?: string | null) {
+  if (!checkOut) return null
+  const start = new Date(checkIn).getTime()
+  const end = new Date(checkOut).getTime()
+  const diffMs = Math.max(0, end - start)
+
+  const totalSec = Math.floor(diffMs / 1000)
+  const h = Math.floor(totalSec / 3600)
+  const m = Math.floor((totalSec % 3600) / 60)
+  const s = totalSec % 60
+
+  const parts: string[] = []
+  if (h > 0) parts.push(`${h}h`)
+  parts.push(`${String(m).padStart(2, '0')}m`)
+  parts.push(`${String(s).padStart(2, '0')}s`)
+
+  return parts.join(' ')
+}
 
 export default function History() {
   const [sessions, setSessions] = useState<ParkingSessionHistory[]>([])
@@ -93,6 +112,7 @@ function SessionCard({ session }: { session: ParkingSessionHistory }) {
   const totalFee = (session.feeAmount ?? 0) + (session.penaltyAmount ?? 0)
   const formattedPlate = session.plateDisplay ?? session.licensePlate
   const isMotorbike = session.vehicleType === 'motorbike'
+  const durationStr = formatDuration(session.checkInTime, session.checkOutTime)
 
   return (
     <Card className="overflow-hidden border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm hover:shadow-md transition">
@@ -129,9 +149,16 @@ function SessionCard({ session }: { session: ParkingSessionHistory }) {
               </div>
 
               {session.checkOutTime && (
-                <div className="flex items-center gap-1.5 sm:col-span-2">
+                <div className="flex items-center gap-1.5">
                   <Receipt className="h-3.5 w-3.5 text-slate-400 shrink-0" />
                   <span>Out: {formatDateTimeVN(session.checkOutTime)}</span>
+                </div>
+              )}
+
+              {durationStr && (
+                <div className="flex items-center gap-1.5 font-semibold text-sky-800 dark:text-sky-300">
+                  <Timer className="h-3.5 w-3.5 text-sky-500 shrink-0" />
+                  <span>Duration: <strong className="font-mono text-sm font-black text-sky-600 dark:text-sky-400">{durationStr}</strong></span>
                 </div>
               )}
             </div>

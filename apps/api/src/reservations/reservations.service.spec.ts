@@ -214,14 +214,10 @@ describe('ReservationsService', () => {
       const result = await service.create(makeCreateDto(), 'driver-uuid');
 
       expect(result.reservation.expiresAt.toISOString()).toBe(
-        '2026-06-29T04:00:00.000Z',
+        '2026-06-29T02:15:00.000Z',
       );
       expect(result.slot.code).toBe('T1-A-01');
       expect(tx.$queryRaw).toHaveBeenCalled();
-      expect(tx.slot.update).toHaveBeenCalledWith({
-        where: { id: 1 },
-        data: { status: 'reserved' },
-      });
       expect(allocationService.allocate).toHaveBeenCalledWith(
         VehicleType.car,
         undefined,
@@ -356,10 +352,10 @@ describe('ReservationsService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('rejects plannedArrivalAt more than 2 hours ahead', async () => {
+    it('rejects plannedArrivalAt more than 24 hours ahead', async () => {
       await expect(
         service.create(
-          makeCreateDto({ plannedArrivalAt: '2026-06-29T04:01:00.000Z' }),
+          makeCreateDto({ plannedArrivalAt: '2026-06-30T03:01:00.000Z' }),
           'driver-uuid',
         ),
       ).rejects.toThrow(BadRequestException);
@@ -390,10 +386,6 @@ describe('ReservationsService', () => {
       await service.create(makeCreateDto(), 'driver-uuid');
 
       expect(allocationService.allocate).toHaveBeenCalledTimes(2);
-      expect(tx.slot.update).toHaveBeenCalledWith({
-        where: { id: 2 },
-        data: { status: 'reserved' },
-      });
     });
 
     it('returns 409 when every candidate lock attempt is lost', async () => {

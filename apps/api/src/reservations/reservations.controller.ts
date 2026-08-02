@@ -40,6 +40,16 @@ export class ReservationsController {
     return this.reservationsService.create(dto, driverId);
   }
 
+  @Post(':id/pay-deposit')
+  @UseGuards(RolesGuard)
+  @Roles(Role.driver)
+  payDeposit(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') driverId: string,
+  ) {
+    return this.reservationsService.createDepositPaymentUrl(id, driverId);
+  }
+
   @Get('quota')
   @UseGuards(RolesGuard)
   @Roles(Role.driver)

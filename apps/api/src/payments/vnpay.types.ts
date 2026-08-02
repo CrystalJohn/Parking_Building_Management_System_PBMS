@@ -4,14 +4,14 @@
  */
 
 export interface CreateVnpayPaymentUrlInput {
-  referenceType: 'session' | 'subscription';
-  referenceId: string;
+  referenceType: 'session' | 'subscription' | 'reservation_deposit';
+  referenceId?: string;
   referenceCode: string;
   description: string;
   /** Fee amount in VND (integer). Will be multiplied by 100 per VNPAY spec. */
   amount: number;
   /** Client IP address for vnp_IpAddr. */
-  ipAddr: string;
+  ipAddr?: string;
 }
 
 export interface CreateVnpayPaymentUrlResult {

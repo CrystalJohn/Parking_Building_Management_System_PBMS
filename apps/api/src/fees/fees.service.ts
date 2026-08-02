@@ -66,9 +66,10 @@ export class FeesService {
     const effectiveCheckOut =
       checkOutTime ?? session.checkOutTime ?? new Date();
 
-    // 14.2: Calculate duration and round up to full hours
+    // Calculate duration and rounded hours
     const durationMs =
       effectiveCheckOut.getTime() - session.checkInTime.getTime();
+    const durationMinutes = Math.floor(durationMs / 60000);
     const durationHours = durationMs / (1000 * 60 * 60);
     const roundedHours = Math.ceil(durationHours);
 
@@ -88,21 +89,54 @@ export class FeesService {
     }
 
     const hasReservation = hasReservationOverride ?? !!session.reservationId;
-    const discountPercent = pricing.reservationDiscountPercent ?? 20;
+    let discountPercent = pricing.reservationDiscountPercent ?? 20;
+    let hourlyRateBase = pricing.hourlyRate;
+    let hourlyRateDiscounted = Math.round(
+      pricing.hourlyRate * (1 - discountPercent / 100),
+    );
 
-    // Base fee = rounded hours * hourly rate (waived for subscribers)
-    const originalBaseFee = isSubscriber ? 0 : roundedHours * pricing.hourlyRate;
-    const reservationDiscountAmount =
-      !isSubscriber && hasReservation && originalBaseFee > 0
-        ? Math.round(originalBaseFee * (discountPercent / 100))
-        : 0;
-    const baseFee = originalBaseFee - reservationDiscountAmount;
+    // Chốt mức giá từ thời điểm đặt trước (nếu có reservationId)
+    if (hasReservation && session.reservationId) {
+      const lockedRes = await this.prisma.reservation.findUnique({
+        where: { id: session.reservationId },
+        select: { depositAmount: true },
+      });
+      if (lockedRes && lockedRes.depositAmount > 0) {
+        hourlyRateDiscounted = lockedRes.depositAmount;
+        hourlyRateBase = Math.round(
+          lockedRes.depositAmount / (1 - discountPercent / 100),
+        );
+      }
+    }
 
-    // 14.3: Overtime penalty when duration exceeds threshold
+    const originalBaseFee = isSubscriber ? 0 : roundedHours * hourlyRateBase;
+    let baseFee = 0;
+    let reservationDiscountAmount = 0;
+
+    if (isSubscriber) {
+      baseFee = 0;
+      reservationDiscountAmount = 0;
+    } else if (hasReservation) {
+      // Pre-booked driver: 1st hour is covered by deposit (waived at checkout)
+      // Remaining hours are charged at the locked discounted hourly rate
+      const billableHours = Math.max(0, roundedHours - 1);
+      baseFee = billableHours * hourlyRateDiscounted;
+      reservationDiscountAmount = originalBaseFee - baseFee;
+    } else {
+      // Walk-in driver: 10-minute Grace Exit is free (0 VNĐ)
+      if (durationMinutes <= 10) {
+        baseFee = 0;
+      } else {
+        baseFee = roundedHours * hourlyRateBase;
+      }
+      reservationDiscountAmount = 0;
+    }
+
+    // Overtime penalty when duration exceeds threshold
     const isOvertime = durationHours > pricing.overtimeThresholdHours;
     const overtimePenalty = isOvertime ? pricing.overtimePenalty : 0;
 
-    // 14.4: Lost ticket penalty
+    // Lost ticket penalty
     const lostTicketPenalty = isLost ? pricing.lostTicketPenalty : 0;
 
     const totalFee = baseFee + overtimePenalty + lostTicketPenalty;
@@ -115,7 +149,7 @@ export class FeesService {
       durationMs,
       durationHours,
       roundedHours,
-      hourlyRate: pricing.hourlyRate,
+      hourlyRate: hasReservation ? hourlyRateDiscounted : hourlyRateBase,
       originalBaseFee,
       reservationDiscountPercent: discountPercent,
       reservationDiscountAmount,

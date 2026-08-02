@@ -17,7 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { formatDateTimeVN } from '../../lib/date-time'
 import { formatVehicleType } from '../../lib/plate-format'
 import { cn } from '../../lib/utils'
-import { RefreshCw, Loader2, CalendarClock, CheckCircle2, XCircle, Clock, Search, Filter, CalendarIcon } from 'lucide-react'
+import { RefreshCw, Loader2, CalendarClock, CheckCircle2, XCircle, Clock, Search, Filter, CalendarIcon, ShieldCheck, ShieldOff } from 'lucide-react'
 
 const POLL_INTERVAL_MS = 30000
 
@@ -284,17 +284,18 @@ export default function Reservations() {
             <Table>
               <TableHeader className="bg-slate-50/50 dark:bg-slate-900/50">
                 <TableRow className="hover:bg-transparent border-b-slate-100 dark:border-b-white/5">
-                  <TableHead className="px-5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">Customer</TableHead>
-                  <TableHead className="px-5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">Vehicle</TableHead>
-                  <TableHead className="px-5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">Slot Assignment</TableHead>
-                  <TableHead className="px-5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">Timing</TableHead>
-                  <TableHead className="px-5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-foreground text-center">Status</TableHead>
+                  <TableHead className="px-5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">Khách hàng</TableHead>
+                  <TableHead className="px-5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">Xe</TableHead>
+                  <TableHead className="px-5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">Slot</TableHead>
+                  <TableHead className="px-5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">Mốc thời gian</TableHead>
+                  <TableHead className="px-5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">Cọc</TableHead>
+                  <TableHead className="px-5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-foreground text-center">Trạng thái</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredReservations.length === 0 ? (
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={5} className="py-16 text-center">
+                    <TableCell colSpan={6} className="py-16 text-center">
                       <div className="flex flex-col items-center justify-center text-muted-foreground">
                         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-900 mb-4 ring-1 ring-slate-200 dark:ring-white/10">
                           <Search className="h-6 w-6 text-slate-400" />
@@ -315,6 +316,7 @@ export default function Reservations() {
                       key={reservation.id} 
                       className="group hover:bg-slate-50/80 dark:hover:bg-slate-900/80 transition-colors duration-200 border-b-slate-100 dark:border-b-white/5"
                     >
+                      {/* Khách hàng */}
                       <TableCell className="px-5 py-4">
                         <div className="flex items-center gap-3">
                           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs text-slate-500 font-bold dark:bg-slate-800 dark:text-slate-400 ring-1 ring-slate-200 dark:ring-white/10 group-hover:bg-white dark:group-hover:bg-slate-700 transition-colors">
@@ -331,9 +333,10 @@ export default function Reservations() {
                         </div>
                       </TableCell>
 
+                      {/* Xe */}
                       <TableCell className="px-5 py-4">
                         <div>
-                          <div className="font-semibold text-foreground leading-none mb-1 uppercase tracking-tight">
+                          <div className="font-mono font-bold text-foreground leading-none mb-1 tracking-tight">
                             {(reservation.plateDisplay ?? reservation.licensePlate) || 'N/A'}
                           </div>
                           <div className="text-xs font-semibold text-muted-foreground">
@@ -342,32 +345,65 @@ export default function Reservations() {
                         </div>
                       </TableCell>
 
+                      {/* Slot – chỉ hiển thị sau khi xe đã check-in */}
                       <TableCell className="px-5 py-4">
-                        {reservation.slot ? (
+                        {reservation.session?.checkInTime && reservation.slot ? (
                           <div>
                             <div className="font-semibold text-foreground leading-none mb-1">
                               Slot {reservation.slot.code}
                             </div>
                             <div className="text-xs font-medium text-muted-foreground">
-                              {reservation.slot.floor ? `Floor ${reservation.slot.floor.floorNumber} (${reservation.slot.floor.name})` : 'Unknown Floor'} · Zone {reservation.slot.zone}
+                              {reservation.slot.floor
+                                ? `Tầng ${reservation.slot.floor.floorNumber} (${reservation.slot.floor.name})`
+                                : 'Tầng N/A'} · Khu {reservation.slot.zone}
                             </div>
                           </div>
                         ) : (
-                          <span className="text-sm font-medium text-muted-foreground">
-                            Unassigned
+                          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+                            <Clock className="h-3.5 w-3.5" />
+                            Chờ check-in
                           </span>
                         )}
                       </TableCell>
 
+                      {/* Mốc thời gian – 3 dòng: Đặt lúc / Hẹn đến / Hết hạn */}
                       <TableCell className="px-5 py-4">
-                        <div className="text-sm font-medium text-foreground">
-                          {formatDateTimeVN(reservation.createdAt)}
-                        </div>
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                          Expires: {formatDateTimeVN(reservation.expiresAt)}
+                        <div className="space-y-1.5 text-xs">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-[66px] shrink-0 font-bold text-muted-foreground uppercase tracking-wide">Đặt lúc</span>
+                            <span className="font-medium text-foreground">{formatDateTimeVN(reservation.createdAt)}</span>
+                          </div>
+                          {reservation.plannedArrivalAt ? (
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-[66px] shrink-0 font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wide">Hẹn đến</span>
+                              <span className="font-semibold text-amber-700 dark:text-amber-300">{formatDateTimeVN(reservation.plannedArrivalAt)}</span>
+                            </div>
+                          ) : null}
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-[66px] shrink-0 font-bold text-rose-500 dark:text-rose-400 uppercase tracking-wide">Hết hạn</span>
+                            <span className="font-medium text-rose-600 dark:text-rose-400">{formatDateTimeVN(reservation.expiresAt)}</span>
+                          </div>
                         </div>
                       </TableCell>
 
+                      {/* Trạng thái cọc */}
+                      <TableCell className="px-5 py-4">
+                        {reservation.isDepositPaid ? (
+                          <div className="flex items-center gap-1.5">
+                            <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                            <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                              {(reservation.depositAmount ?? 0).toLocaleString('vi-VN')}đ
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <ShieldOff className="h-4 w-4 text-slate-400" />
+                            <span className="text-xs font-medium text-muted-foreground">Chưa cọc</span>
+                          </div>
+                        )}
+                      </TableCell>
+
+                      {/* Status badge */}
                       <TableCell className="px-5 py-4 text-center">
                         <StatusBadge status={reservation.status} />
                       </TableCell>

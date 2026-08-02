@@ -40,11 +40,16 @@ import {
   cancelReservation,
   createReservation,
   createVehicleRegistrationRequest,
+  getMyActiveSessions,
   getMyReservations,
   getMyVehicleRegistrationRequests,
   getMyVehicles,
+  getPricing,
   getReservationQuota,
+  payReservationDeposit,
+  type ActiveSession,
   type DriverVehicle,
+  type PricingInfo,
   type Reservation,
   type ReservationQuotaSnapshot,
   type VehicleRegistrationRequest,
@@ -76,6 +81,8 @@ export default function Reservations() {
   const [searchParams] = useSearchParams()
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [vehicles, setVehicles] = useState<DriverVehicle[]>([])
+  const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([])
+  const [pricing, setPricing] = useState<PricingInfo[]>([])
   const [selectedVehicleId, setSelectedVehicleId] = useState('')
   const [quota, setQuota] = useState<ReservationQuotaSnapshot | null>(null)
   const [registrationRequests, setRegistrationRequests] = useState<VehicleRegistrationRequest[]>([])
@@ -93,6 +100,8 @@ export default function Reservations() {
   const [requestVehiclePhoto, setRequestVehiclePhoto] = useState<File | null>(null)
   const [requestPlatePhoto, setRequestPlatePhoto] = useState<File | null>(null)
   const [requestingVehicle, setRequestingVehicle] = useState(false)
+  const [vnpayModalUrl, setVnpayModalUrl] = useState<string | null>(null)
+  const [vnpayModalAmount] = useState<number>(8000)
   const paramVehicle = searchParams.get('vehicleId')
   const actionParam = searchParams.get('action')
   const mountRef = useRef(false)
@@ -101,16 +110,20 @@ export default function Reservations() {
     if (!silent) setLoading(true)
     setError(null)
     try {
-      const [vehicleData, reservationData, quotaData, requestData] = await Promise.all([
+      const [vehicleData, reservationData, quotaData, requestData, pricingData, activeSessionsData] = await Promise.all([
         getMyVehicles(),
         getMyReservations(),
         getReservationQuota(),
         getMyVehicleRegistrationRequests(),
+        getPricing(),
+        getMyActiveSessions().catch(() => []),
       ])
       setVehicles(vehicleData)
       setReservations(reservationData)
       setQuota(quotaData)
       setRegistrationRequests(requestData)
+      setPricing(pricingData)
+      setActiveSessions(activeSessionsData)
       setShowQr(false)
       if (vehicleData.length === 0 && requestData.length === 0) {
         setShowNewAccountPrompt(true)
@@ -169,7 +182,7 @@ export default function Reservations() {
     setActionError(typeof data?.message === 'string' ? data.message : fallback)
   }
 
-  const handleCreate = async () => {
+  const handleCreate = async (plannedArrivalAtISO?: string) => {
     if (!selectedVehicle) {
       setActionError('Choose a linked vehicle before reserving a spot.')
       return
@@ -177,9 +190,12 @@ export default function Reservations() {
     setCreating(true)
     setActionError(null)
     try {
-      const response = await createReservation(selectedVehicle.id)
+      const response = await createReservation(selectedVehicle.id, plannedArrivalAtISO)
       setQuota(response.quota)
       await loadPage()
+      if (response.paymentUrl) {
+        window.open(response.paymentUrl, '_blank')
+      }
     } catch (err) {
       applyApiError(err, 'Unable to reserve this spot. Please retry.')
     } finally {
@@ -203,7 +219,34 @@ export default function Reservations() {
 
   const handleVehicleRequest = async () => {
     const plate = requestPlate.trim().toUpperCase().replace(/\s+/g, '')
-    if (!plate || !requestEvidence || !requestVehiclePhoto || !requestPlatePhoto) return
+    if (!plate) {
+      setActionError('Vui lòng nhập biển số xe.')
+      return
+    }
+    if (!requestEvidence || !requestVehiclePhoto || !requestPlatePhoto) {
+      setActionError('Vui lòng tải lên đủ 3 hình ảnh xác minh (Cà vẹt, Xe và Biển số).')
+      return
+    }
+
+    // Pre-verification check: ensure 3 valid distinct image files
+    if (
+      requestEvidence.size < 5120 ||
+      requestVehiclePhoto.size < 5120 ||
+      requestPlatePhoto.size < 5120
+    ) {
+      setActionError('Xác minh ảnh thất bại: Kích thước ảnh quá nhỏ (< 5KB), bị lỗi hoặc mờ. Vui lòng chọn ảnh chụp rõ nét hơn.')
+      return
+    }
+
+    if (
+      (requestEvidence.name === requestVehiclePhoto.name && requestEvidence.size === requestVehiclePhoto.size) ||
+      (requestEvidence.name === requestPlatePhoto.name && requestEvidence.size === requestPlatePhoto.size) ||
+      (requestVehiclePhoto.name === requestPlatePhoto.name && requestVehiclePhoto.size === requestPlatePhoto.size)
+    ) {
+      setActionError('Xác minh ảnh thất bại: 3 ảnh chọn bị trùng lặp. Vui lòng chọn 3 ảnh riêng biệt cho Cà vẹt, Xe và Biển số.')
+      return
+    }
+
     setRequestingVehicle(true)
     setActionError(null)
     try {
@@ -264,12 +307,14 @@ export default function Reservations() {
                 <ReserveVehicleForm
                   vehicles={vehicles}
                   selectedVehicle={selectedVehicle}
+                  activeSessions={activeSessions}
                   creating={creating}
                   quota={quota}
                   actionError={actionError}
                   requests={registrationRequests}
+                  pricing={pricing}
                   onSelect={setSelectedVehicleId}
-                  onCreate={() => void handleCreate()}
+                  onCreate={(plannedArrivalISO) => void handleCreate(plannedArrivalISO)}
                   onRequestVehicle={() => setShowVehicleRequest(true)}
                 />
               )}
@@ -300,6 +345,50 @@ export default function Reservations() {
                   </ul>
                 </CardContent>
               </Card>
+
+              {/* Pricing Table Card */}
+              {pricing.length > 0 && (
+                <Card className="shadow-sm">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center gap-2">
+                      <FileText className="size-4 text-primary" />
+                      <CardTitle className="text-sm font-bold">Parking Fee Schedule</CardTitle>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Current effective rates at PBMS Tower</p>
+                  </CardHeader>
+                  <CardContent className="p-0 pb-4">
+                    <div className="overflow-hidden rounded-b-xl">
+                      {/* Header */}
+                      <div className="grid grid-cols-3 bg-muted/60 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                        <span>Vehicle Type</span>
+                        <span className="text-center">Standard Rate</span>
+                        <span className="text-right">Pre-booked (-{pricing[0]?.reservationDiscountPercent ?? 20}%)</span>
+                      </div>
+                      {pricing.map((p) => {
+                        const discountPct = p.reservationDiscountPercent ?? 20
+                        const discounted = Math.round(p.hourlyRate * (1 - discountPct / 100))
+                        const label = p.vehicleType === 'car' ? '🚗 Car' : '🏍️ Motorbike'
+                        return (
+                          <div key={p.vehicleType} className="grid grid-cols-3 items-center border-t px-4 py-3">
+                            <span className="text-xs font-semibold">{label}</span>
+                            <span className="text-center font-mono text-xs text-muted-foreground line-through">
+                              {p.hourlyRate.toLocaleString('vi-VN')}đ/h
+                            </span>
+                            <span className="text-right font-mono text-sm font-extrabold text-emerald-600 dark:text-emerald-400">
+                              {discounted.toLocaleString('vi-VN')}đ/h
+                            </span>
+                          </div>
+                        )
+                      })}
+                      <div className="border-t bg-amber-50/60 px-4 py-2.5 dark:bg-amber-500/5">
+                        <p className="text-[10px] text-amber-700 dark:text-amber-300 font-medium">
+                          💡 Pay 1-hour deposit at pre-booked rate. Remaining balance paid at exit gate.
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* Reservation History Section */}
               <ReservationHistoryList reservations={previousReservations} />
@@ -486,6 +575,170 @@ export default function Reservations() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* VNPAY-QR & Payment Gateway Dialog Modal */}
+      <BaseDialog open={Boolean(vnpayModalUrl)} onOpenChange={(open) => !open && setVnpayModalUrl(null)}>
+        <BaseDialogPopup from="top" className="sm:max-w-md text-center">
+          <BaseDialogHeader>
+            <BaseDialogTitle className="flex items-center justify-center gap-2 text-xl font-extrabold text-emerald-600 dark:text-emerald-400">
+              <ShieldCheck className="size-6 text-emerald-600" />
+              Cổng Thanh toán VNPAY-QR Sandbox
+            </BaseDialogTitle>
+            <BaseDialogDescription className="text-xs">
+              Website Merchant (TMN Code): <strong className="font-mono text-foreground font-bold">98VPQPTA</strong>
+            </BaseDialogDescription>
+          </BaseDialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Amount Display */}
+            <div className="rounded-xl border bg-emerald-500/10 p-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Số tiền cọc cần thanh toán</p>
+              <p className="font-mono text-2xl font-black text-emerald-600 dark:text-emerald-400">
+                {vnpayModalAmount.toLocaleString('vi-VN')} VNĐ
+              </p>
+            </div>
+
+            {/* QR Code Container */}
+            {vnpayModalUrl && (
+              <div className="flex flex-col items-center justify-center rounded-2xl border bg-white p-4 shadow-inner space-y-2">
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(vnpayModalUrl)}`}
+                  alt="VNPAY-QR Code"
+                  className="size-52 rounded-lg border p-2 shadow-sm"
+                />
+                <span className="text-[11px] font-bold text-slate-700">
+                  Quét mã VNPAY-QR bằng App Ngân hàng hoặc VNPAY App
+                </span>
+              </div>
+            )}
+
+            {/* Direct Portal Button */}
+            <Button
+              type="button"
+              size="lg"
+              className="w-full font-bold min-h-12 text-sm bg-emerald-600 hover:bg-emerald-700 text-white shadow-md"
+              onClick={() => {
+                if (vnpayModalUrl) window.location.href = vnpayModalUrl
+              }}
+            >
+              <ShieldCheck className="mr-2 size-5" />
+              Mở Cổng VNPay Sandbox (Nhập thẻ NCB / VISA)
+            </Button>
+            {/* Card Info Helper */}
+            <div className="rounded-xl border bg-muted/30 p-3 text-left text-xs space-y-1 text-muted-foreground">
+              <p className="font-bold text-foreground text-[11px] uppercase tracking-wider">Thẻ NCB Thử nghiệm (Thành công):</p>
+              <p>• Ngân hàng: <strong>NCB</strong> | Số thẻ: <code className="font-mono text-foreground font-bold">9704198526191432198</code></p>
+              <p>• Tên chủ thẻ: <strong>NGUYEN VAN A</strong> | Ngày PH: <strong>07/15</strong> | OTP: <strong>123456</strong></p>
+            </div>
+          </div>
+        </BaseDialogPopup>
+      </BaseDialog>
+    </div>
+  )
+}
+
+function ArrivalCountdown({
+  plannedArrivalAt,
+  expiresAt,
+  isPaid,
+}: {
+  plannedArrivalAt?: string | null
+  expiresAt: string
+  isPaid: boolean
+}) {
+  const [now, setNow] = useState(Date.now())
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  const plannedTime = plannedArrivalAt ? new Date(plannedArrivalAt).getTime() : null
+  const expireTime = new Date(expiresAt).getTime()
+
+  if (!isPaid) {
+    const diffSec = Math.max(0, Math.floor((expireTime - now) / 1000))
+    const m = Math.floor(diffSec / 60)
+    const s = diffSec % 60
+    return (
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3.5 text-rose-900 dark:text-rose-200">
+        <div className="flex items-center gap-2 text-xs font-medium">
+          <Clock3 className="size-4 shrink-0 text-rose-600 dark:text-rose-400" />
+          <span>Online deposit payment deadline:</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-base font-black text-rose-600 dark:text-rose-400 tabular-nums">
+            {String(m).padStart(2, '0')}:{String(s).padStart(2, '0')}
+          </span>
+          <Badge variant="destructive" className="text-[10px] font-bold">Auto-cancels in 15m</Badge>
+        </div>
+      </div>
+    )
+  }
+
+  if (plannedTime && now < plannedTime) {
+    const diffSec = Math.max(0, Math.floor((plannedTime - now) / 1000))
+    const h = Math.floor(diffSec / 3600)
+    const m = Math.floor((diffSec % 3600) / 60)
+    const s = diffSec % 60
+    const formattedDiff = h > 0 
+      ? `${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`
+      : `${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`
+
+    return (
+      <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-4 space-y-2 text-cyan-950 dark:text-cyan-100">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-xs font-semibold">
+            <Clock3 className="size-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
+            <span>Planned Arrival: <strong className="font-mono text-sm">{formatDateTimeVN(new Date(plannedTime))}</strong></span>
+          </div>
+          <Badge className="border-cyan-500/40 bg-cyan-500/20 text-cyan-800 dark:text-cyan-200 font-bold text-xs">
+            ⏰ Arrival Countdown
+          </Badge>
+        </div>
+        <div className="flex items-baseline justify-between border-t border-cyan-500/20 pt-2">
+          <span className="text-xs font-medium text-cyan-800 dark:text-cyan-200">Time Remaining:</span>
+          <span className="font-mono text-xl font-extrabold text-cyan-700 dark:text-cyan-300 tabular-nums">
+            {formattedDiff}
+          </span>
+        </div>
+        <div className="space-y-1 pt-1 text-[11px] text-cyan-700 dark:text-cyan-300 leading-tight">
+          <p className="italic">
+            💡 You can arrive early anytime! Gate check-in is allowed whenever a spot is available.
+          </p>
+          <p className="font-semibold text-rose-700 dark:text-rose-300">
+            ⚠️ Grace Expiry Rule: You have up to 15 minutes grace period past planned arrival. After <strong>{formatDateTimeVN(new Date(expireTime))}</strong> (+15m late), the reservation will <strong>automatically expire</strong> and be cancelled.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // Arrival window active or grace period
+  const diffSec = Math.max(0, Math.floor((expireTime - now) / 1000))
+  const m = Math.floor(diffSec / 60)
+  const s = diffSec % 60
+
+  return (
+    <div className="rounded-xl border border-amber-500/40 bg-amber-500/15 p-4 space-y-2 text-amber-950 dark:text-amber-100">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-xs font-bold text-amber-900 dark:text-amber-200">
+          <Clock3 className="size-4 text-amber-600 shrink-0" />
+          <span>Arrival window active! Awaiting gate entry.</span>
+        </div>
+        <Badge className="border-amber-500/40 bg-amber-500 text-white font-bold text-xs animate-pulse">
+          🔥 Arrival Window Active
+        </Badge>
+      </div>
+      <div className="flex items-baseline justify-between border-t border-amber-500/20 pt-2">
+        <span className="text-xs font-medium text-amber-800 dark:text-amber-200">Latest gate entry (+15m grace expiry):</span>
+        <span className="font-mono text-xl font-extrabold text-amber-700 dark:text-amber-300 tabular-nums">
+          {String(m).padStart(2, '0')}:{String(s).padStart(2, '0')}
+        </span>
+      </div>
+      <p className="text-[11px] font-semibold text-rose-700 dark:text-rose-300">
+        ⚠️ Exceeding 15-minute grace period ({formatDateTimeVN(new Date(expireTime))}), this reservation will automatically be cancelled by system.
+      </p>
     </div>
   )
 }
@@ -501,15 +754,16 @@ function CurrentReservationCard({
 }) {
   const rawPlate = reservation.licensePlate ?? reservation.vehicle?.plateNumber ?? ''
   const plate = reservation.plateDisplay ?? rawPlate
-  const slot = reservation.slot
+  const isPaid = Boolean(reservation.isDepositPaid)
+  const depositAmt = reservation.depositAmount || (reservation.vehicleType === 'car' ? 16000 : 8000)
 
   return (
-    <Card className="border-emerald-500/30 shadow-sm">
-      <CardHeader className="border-b bg-emerald-500/5 pb-4 dark:bg-emerald-500/10">
+    <Card className={`shadow-sm ${isPaid ? 'border-emerald-500/30' : 'border-amber-500/40 bg-amber-500/5'}`}>
+      <CardHeader className={`border-b pb-4 ${isPaid ? 'bg-emerald-500/5 dark:bg-emerald-500/10' : 'bg-amber-500/10'}`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Badge className="border-emerald-500/30 bg-emerald-500/15 font-semibold text-emerald-700 dark:text-emerald-300">
-              Active Reservation
+            <Badge className={isPaid ? 'border-emerald-500/30 bg-emerald-500/15 font-semibold text-emerald-700 dark:text-emerald-300' : 'border-amber-500/30 bg-amber-500 text-white font-bold'}>
+              {isPaid ? 'Active Reservation' : 'Pending Deposit Payment'}
             </Badge>
             <Badge className="border-emerald-600/30 bg-emerald-600 text-white font-bold text-[10px]">
               20% OFF FEE
@@ -520,50 +774,98 @@ function CurrentReservationCard({
             {formatVehicleType(reservation.vehicleType)}
           </Badge>
         </div>
-        <CardTitle className="mt-2.5 text-xl font-bold">Your Spot is Reserved</CardTitle>
-        <CardDescription>Present your license plate or QR code at the gate. Enjoy a 20% discount on standard parking rates.</CardDescription>
+        <CardTitle className="mt-2.5 text-xl font-bold">
+          {isPaid ? 'Your Spot is Guaranteed' : '1-Hour Deposit Required'}
+        </CardTitle>
+        <CardDescription>
+          {isPaid
+            ? 'Present your license plate or QR code at entrance gate. Enjoy 20% discount on parking fees.'
+            : `Please pay 1-hour deposit (${depositAmt.toLocaleString('vi-VN')} VNĐ) via VNPay Sandbox to activate your reservation.`}
+        </CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-4 p-5 sm:p-6">
         {/* Main Details Box */}
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border bg-muted/40 p-4">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Reserved Vehicle</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">RESERVED VEHICLE</p>
             <p className="mt-1 font-mono text-2xl font-black tracking-wider text-foreground">{plate}</p>
           </div>
           <div className="text-right">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Allocated Spot</p>
-            <p className="mt-1 text-base font-extrabold text-primary">
-              {slot ? `Slot ${slot.code}` : 'Auto-assigned at gate'}
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">VEHICLE TYPE</p>
+            <p className="mt-1 font-sans text-sm font-bold text-primary">
+              {reservation.vehicleType === 'car' ? 'Car' : 'Motorbike'}
             </p>
           </div>
         </div>
 
-        {/* Countdown Banner */}
-        <div className="flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-amber-900 dark:text-amber-200">
-          <Clock3 className="size-5 shrink-0 text-amber-600 dark:text-amber-400" />
-          <Countdown expiresAt={reservation.expiresAt} />
-        </div>
+        {/* Planned Arrival Time & Countdown */}
+        <ArrivalCountdown
+          plannedArrivalAt={reservation.plannedArrivalAt}
+          expiresAt={reservation.expiresAt}
+          isPaid={isPaid}
+        />
 
         {/* Parking Journey Stepper */}
         <ParkingJourneyStepper reservation={reservation} />
 
-        {/* Action Buttons */}
-        <div className="flex flex-col gap-2.5 sm:flex-row">
-          <Button type="button" size="lg" className="min-h-11 flex-1 font-semibold shadow-sm" onClick={onShowQr}>
-            <QrCode className="mr-2 size-4" />
-            Digital Parking Pass
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="lg"
-            className="min-h-11 border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900/50 dark:text-rose-400 dark:hover:bg-rose-950/40"
-            onClick={onCancel}
-          >
-            Cancel reservation
-          </Button>
-        </div>
+        {!isPaid ? (
+          /* Unpaid Deposit Alert & Pay Actions */
+          <div className="space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+            <div className="flex items-center gap-2 text-xs font-bold text-amber-900 dark:text-amber-200">
+              <Clock3 className="size-4 text-amber-600 shrink-0" />
+              <span>1-Hour Deposit Required to Complete Reservation</span>
+            </div>
+            <p className="text-xs text-amber-800/90 dark:text-amber-200/90 leading-relaxed">
+              You have 15 minutes to pay the <strong>{depositAmt.toLocaleString('vi-VN')} VNĐ</strong> deposit via VNPay Sandbox. Once paid, your spot capacity will be fully protected.
+            </p>
+            <div className="flex flex-col gap-2 pt-1 sm:flex-row">
+              <Button
+                type="button"
+                size="lg"
+                className="flex-1 font-bold bg-amber-600 text-white hover:bg-amber-700 shadow-sm"
+                onClick={async () => {
+                  try {
+                    const data = await payReservationDeposit(reservation.id)
+                    if (data.paymentUrl) window.open(data.paymentUrl, '_blank')
+                  } catch {
+                    window.open('http://sandbox.vnpayment.vn/tryitnow/Home/CreateOrder', '_blank')
+                  }
+                }}
+              >
+                <ShieldCheck className="mr-2 size-4" />
+                Pay VNPay Sandbox Deposit Now
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                className="font-bold border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300"
+                onClick={onCancel}
+              >
+                Cancel Reservation
+              </Button>
+            </div>
+          </div>
+        ) : (
+          /* Paid Deposit: Action Buttons */
+          <div className="flex flex-col gap-2.5 sm:flex-row">
+            <Button type="button" size="lg" className="min-h-11 flex-1 font-semibold shadow-sm" onClick={onShowQr}>
+              <QrCode className="mr-2 size-4" />
+              Digital Gate Pass
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              className="min-h-11 border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900/50 dark:text-rose-400 dark:hover:bg-rose-950/40"
+              onClick={onCancel}
+            >
+              Cancel Reservation
+            </Button>
+          </div>
+        )}
 
         {/* Footer Info Row */}
         <div className="flex items-center justify-between border-t pt-3 text-xs text-muted-foreground">
@@ -576,44 +878,61 @@ function CurrentReservationCard({
 }
 
 function ParkingJourneyStepper({ reservation }: { reservation: Reservation }) {
-  const steps = [
-    {
-      id: 'created',
-      label: 'Reservation Created',
-      description: 'Spot held in system',
-      status: 'completed',
-    },
-    {
-      id: 'slot',
-      label: 'Slot Assigned',
-      description: reservation.slot ? `Slot ${reservation.slot.code}` : 'Auto-allocated',
-      status: 'completed',
-    },
-    {
-      id: 'arrival',
-      label: 'Waiting for Arrival',
-      description: 'Drive to PBMS Tower gate',
-      status: 'active',
-    },
-    {
-      id: 'checkin',
-      label: 'Vehicle Check-in',
-      description: 'OCR recognition or QR scan',
-      status: 'pending',
-    },
-    {
-      id: 'parking',
-      label: 'Parking Active',
-      description: 'Vehicle parked in allocated spot',
-      status: 'pending',
-    },
-    {
-      id: 'completed',
-      label: 'Completed',
-      description: 'Gate checkout & session closed',
-      status: 'pending',
-    },
-  ]
+  const isPaid = Boolean(reservation.isDepositPaid)
+
+  const steps = isPaid
+    ? [
+        {
+          id: 'created',
+          label: 'Reservation Created',
+          description: 'Recorded in system',
+          status: 'completed',
+        },
+        {
+          id: 'slot',
+          label: 'Spot Protection Active',
+          description: 'Capacity guaranteed for arrival',
+          status: 'completed',
+        },
+        {
+          id: 'arrival',
+          label: 'Waiting for Arrival',
+          description: 'Drive to PBMS Tower gate',
+          status: 'active',
+        },
+        {
+          id: 'checkin',
+          label: 'Vehicle Check-in',
+          description: 'OCR plate recognition or QR scan',
+          status: 'pending',
+        },
+        {
+          id: 'parking',
+          label: 'Parking Active',
+          description: 'Vehicle parked in allocated spot',
+          status: 'pending',
+        },
+        {
+          id: 'completed',
+          label: 'Completed',
+          description: 'Gate checkout & session closed',
+          status: 'pending',
+        },
+      ]
+    : [
+        {
+          id: 'deposit',
+          label: 'Parking Active',
+          description: 'Vehicle parked in allocated spot',
+          status: 'pending',
+        },
+        {
+          id: 'completed',
+          label: 'Completed',
+          description: 'Gate checkout & session closed',
+          status: 'pending',
+        },
+      ]
 
   return (
     <div className="rounded-xl border bg-card p-4 shadow-sm">
@@ -691,38 +1010,303 @@ function ParkingJourneyStepper({ reservation }: { reservation: Reservation }) {
   )
 }
 
+function ManualTimePicker({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string
+  onChange: (isoString: string) => void
+  disabled?: boolean
+}) {
+  // Ticking live clock
+  const [now, setNow] = useState(new Date())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000)
+  const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`
+
+  const [selectedDay, setSelectedDay] = useState<'today' | 'tomorrow'>('today')
+
+  // Strict 60 min (3,600,000 ms) lead time threshold
+  const minValidTimestamp = useMemo(() => now.getTime() + 60 * 60_000, [now])
+  const maxValidTimestamp = useMemo(() => now.getTime() + 24 * 60 * 60 * 1000, [now])
+
+  const isTimeValid = (day: 'today' | 'tomorrow', h: number, m: number) => {
+    const targetDayStr = day === 'today' ? todayStr : tomorrowStr
+    const [year, month, d] = targetDayStr.split('-').map(Number)
+    const targetDate = new Date(year, month - 1, d, h, m, 0)
+    const ts = targetDate.getTime()
+    return ts >= minValidTimestamp && ts <= maxValidTimestamp
+  }
+
+  // Find first valid time for initial state
+  const firstValidTime = useMemo(() => {
+    for (let h = 0; h <= 23; h++) {
+      for (let m of [0, 15, 30, 45]) {
+        if (isTimeValid('today', h, m)) {
+          return { day: 'today' as const, hour: h, minute: m }
+        }
+      }
+    }
+    for (let h = 0; h <= 23; h++) {
+      for (let m of [0, 15, 30, 45]) {
+        if (isTimeValid('tomorrow', h, m)) {
+          return { day: 'tomorrow' as const, hour: h, minute: m }
+        }
+      }
+    }
+    return { day: 'tomorrow' as const, hour: 8, minute: 0 }
+  }, [minValidTimestamp, maxValidTimestamp])
+
+  const [selectedHour, setSelectedHour] = useState<number>(firstValidTime.hour)
+  const [selectedMinute, setSelectedMinute] = useState<number>(firstValidTime.minute)
+
+  useEffect(() => {
+    updateISO(selectedDay, selectedHour, selectedMinute)
+  }, [selectedDay, selectedHour, selectedMinute])
+
+  const updateISO = (day: 'today' | 'tomorrow', h: number, m: number) => {
+    const targetDayStr = day === 'today' ? todayStr : tomorrowStr
+    const [year, month, d] = targetDayStr.split('-').map(Number)
+    const targetDate = new Date(year, month - 1, d, h, m, 0)
+    onChange(targetDate.toISOString())
+  }
+
+  // Available hours for the selected day
+  const availableHours = useMemo(() => {
+    const hours: number[] = []
+    for (let h = 0; h <= 23; h++) {
+      if ([0, 15, 30, 45].some((m) => isTimeValid(selectedDay, h, m))) {
+        hours.push(h)
+      }
+    }
+    return hours
+  }, [selectedDay, minValidTimestamp, maxValidTimestamp])
+
+  // Available minutes for the selected day and hour
+  const availableMinutes = useMemo(() => {
+    return [0, 15, 30, 45].filter((m) => isTimeValid(selectedDay, selectedHour, m))
+  }, [selectedDay, selectedHour, minValidTimestamp, maxValidTimestamp])
+
+  // Real-time auto-correct: if time ticks and selected slot drops below 60 min, auto-select next valid slot without page reload
+  useEffect(() => {
+    if (availableHours.length > 0 && !availableHours.includes(selectedHour)) {
+      const nextH = availableHours[0]
+      const validMins = [0, 15, 30, 45].filter((m) => isTimeValid(selectedDay, nextH, m))
+      const nextM = validMins[0] ?? 0
+      setSelectedHour(nextH)
+      setSelectedMinute(nextM)
+      updateISO(selectedDay, nextH, nextM)
+    } else if (availableMinutes.length > 0 && !availableMinutes.includes(selectedMinute)) {
+      const nextM = availableMinutes[0]
+      setSelectedMinute(nextM)
+      updateISO(selectedDay, selectedHour, nextM)
+    }
+  }, [now, selectedDay, availableHours, availableMinutes])
+
+  const handleDayChange = (day: 'today' | 'tomorrow') => {
+    setSelectedDay(day)
+    for (let h = 0; h <= 23; h++) {
+      const validMins = [0, 15, 30, 45].filter((m) => isTimeValid(day, h, m))
+      if (validMins.length > 0) {
+        const nextM = validMins[0]
+        setSelectedHour(h)
+        setSelectedMinute(nextM)
+        updateISO(day, h, nextM)
+        return
+      }
+    }
+  }
+
+  const handleHourChange = (h: number) => {
+    setSelectedHour(h)
+    const validMins = [0, 15, 30, 45].filter((m) => isTimeValid(selectedDay, h, m))
+    const nextM = validMins.includes(selectedMinute) ? selectedMinute : (validMins[0] ?? 0)
+    setSelectedMinute(nextM)
+    updateISO(selectedDay, h, nextM)
+  }
+
+  const handleMinuteChange = (m: number) => {
+    setSelectedMinute(m)
+    updateISO(selectedDay, selectedHour, m)
+  }
+
+  const parsedTarget = useMemo(() => {
+    if (!value) return new Date(now.getTime() + 60 * 60_000)
+    const d = new Date(value)
+    return isNaN(d.getTime()) ? new Date(now.getTime() + 60 * 60_000) : d
+  }, [value, now])
+
+  const diffMs = Math.max(0, parsedTarget.getTime() - now.getTime())
+  const diffHours = Math.floor(diffMs / (3600 * 1000))
+  const diffMins = Math.floor((diffMs % (3600 * 1000)) / (60 * 1000))
+
+  return (
+    <div className="rounded-2xl border bg-card p-4 space-y-3.5 shadow-sm">
+      {/* Real-Time Clock Header & Rule Badge */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2.5">
+        <div className="flex items-center gap-2">
+          <Clock3 className="size-4 text-primary animate-pulse" />
+          <span className="text-xs font-bold uppercase tracking-wider text-foreground">
+            CURRENT TIME: {formatDateTimeVN(now)}
+          </span>
+        </div>
+        <Badge variant="outline" className="font-mono text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/30">
+          At least 1h advance
+        </Badge>
+      </div>
+
+      {/* Manual Dropdown Controls */}
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+        {/* Day Select */}
+        <div className="space-y-1">
+          <label className="text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground">
+            1. SELECT DATE:
+          </label>
+          <select
+            value={selectedDay}
+            disabled={disabled}
+            onChange={(e) => handleDayChange(e.target.value as 'today' | 'tomorrow')}
+            className="w-full h-10 rounded-xl border bg-background px-3 font-sans text-xs font-bold outline-none focus:ring-2 focus:ring-primary shadow-sm"
+          >
+            <option value="today">Today ({todayStr.split('-').reverse().slice(0, 2).join('/')})</option>
+            <option value="tomorrow">Tomorrow ({tomorrowStr.split('-').reverse().slice(0, 2).join('/')})</option>
+          </select>
+        </div>
+
+        {/* Hour Select */}
+        <div className="space-y-1">
+          <label className="text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground">
+            2. SELECT HOUR:
+          </label>
+          <select
+            value={selectedHour}
+            disabled={disabled}
+            onChange={(e) => handleHourChange(Number(e.target.value))}
+            className="w-full h-10 rounded-xl border bg-background px-3 font-mono text-xs font-bold outline-none focus:ring-2 focus:ring-primary shadow-sm"
+          >
+            {availableHours.map((h) => (
+              <option key={h} value={h}>
+                {String(h).padStart(2, '0')}:00
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Minute Select */}
+        <div className="space-y-1">
+          <label className="text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground">
+            3. SELECT MINUTE:
+          </label>
+          <select
+            value={selectedMinute}
+            disabled={disabled}
+            onChange={(e) => handleMinuteChange(Number(e.target.value))}
+            className="w-full h-10 rounded-xl border bg-background px-3 font-mono text-xs font-bold outline-none focus:ring-2 focus:ring-primary shadow-sm"
+          >
+            {availableMinutes.map((m) => (
+              <option key={m} value={m}>
+                {String(m).padStart(2, '0')} mins
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Confirmation & Status Banner */}
+      <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-xs text-emerald-950 dark:text-emerald-100 flex items-center justify-between gap-2 shadow-sm">
+        <div className="flex items-center gap-2 font-semibold">
+          <CheckCircle2 className="size-4 text-emerald-600 shrink-0" />
+          <span>Planned Arrival: <strong>{formatDateTimeVN(parsedTarget)}</strong></span>
+        </div>
+        <span className="font-mono text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+          (In {diffHours > 0 ? `${diffHours}h ${diffMins}m` : `${diffMins}m`})
+        </span>
+      </div>
+    </div>
+  )
+}
+
 function ReserveVehicleForm({
   vehicles,
   selectedVehicle,
+  activeSessions = [],
   creating,
   quota,
   actionError,
   requests = [],
+  pricing = [],
   onSelect,
   onCreate,
   onRequestVehicle,
 }: {
   vehicles: DriverVehicle[]
   selectedVehicle: DriverVehicle | null
+  activeSessions?: ActiveSession[]
   creating: boolean
   quota: ReservationQuotaSnapshot | null
   actionError: string | null
   requests?: VehicleRegistrationRequest[]
+  pricing?: PricingInfo[]
   onSelect: (id: string) => void
-  onCreate: () => void
+  onCreate: (plannedArrivalISO?: string) => void
   onRequestVehicle: () => void
 }) {
   const [, refresh] = useState(0)
+  const [showPricingModal, setShowPricingModal] = useState(false)
+  const [plannedArrivalInput, setPlannedArrivalInput] = useState('')
   useEffect(() => {
     const timer = window.setInterval(() => refresh((value) => value + 1), 1000)
     return () => window.clearInterval(timer)
   }, [])
   const cooldownActive = Boolean(quota?.cooldownUntil && new Date(quota.cooldownUntil).getTime() > Date.now())
   const quotaReached = quota?.remaining === 0
-  const disabled = creating || !selectedVehicle || cooldownActive || quotaReached
+
+  const parkedPlates = useMemo(() => {
+    return new Set(activeSessions.map((s) => s.licensePlate))
+  }, [activeSessions])
+
+  const isSelectedVehicleParked = useMemo(() => {
+    if (!selectedVehicle) return false
+    return (
+      parkedPlates.has(selectedVehicle.plateNumber) ||
+      (selectedVehicle.plateDisplay ? parkedPlates.has(selectedVehicle.plateDisplay) : false)
+    )
+  }, [selectedVehicle, parkedPlates])
+
+  const isInvalidArrival = useMemo(() => {
+    if (!plannedArrivalInput) return false
+    const d = new Date(plannedArrivalInput)
+    if (isNaN(d.getTime())) return true
+    const now = Date.now()
+    return d.getTime() < now - 2 * 60_000 || d.getTime() > now + 24 * 60 * 60 * 1000
+  }, [plannedArrivalInput])
+
+  const disabled = creating || !selectedVehicle || cooldownActive || quotaReached || isInvalidArrival || isSelectedVehicleParked
 
   const pendingRequests = requests.filter((r) => r.status === 'pending')
   const rejectedRequests = requests.filter((r) => r.status === 'rejected')
+
+  const vehicleType = selectedVehicle?.vehicleType ?? 'car'
+  const isCar = vehicleType === 'car'
+
+  // Dùng giá từ DB (pricingConfig) nếu có, fallback hardcode
+  const pricingForType = pricing.find((p) => p.vehicleType === vehicleType)
+  const DISCOUNT_PERCENT = pricingForType?.reservationDiscountPercent ?? 20
+  const baseRate = pricingForType?.hourlyRate ?? (isCar ? 20000 : 10000)
+  const discountedRate = Math.round(baseRate * (1 - DISCOUNT_PERCENT / 100))
+  const depositAmount = discountedRate
+
+  const handleConfirmAndPay = () => {
+    setShowPricingModal(false)
+    const plannedIso = plannedArrivalInput ? new Date(plannedArrivalInput).toISOString() : undefined
+    onCreate(plannedIso)
+  }
 
   return (
     <Card className="shadow-sm">
@@ -900,35 +1484,67 @@ function ReserveVehicleForm({
               <div className="grid gap-3 sm:grid-cols-2">
                 {vehicles.map((vehicle) => {
                   const isSelected = selectedVehicle?.id === vehicle.id
+                  const isParked =
+                    parkedPlates.has(vehicle.plateNumber) ||
+                    (vehicle.plateDisplay ? parkedPlates.has(vehicle.plateDisplay) : false)
+
                   return (
                     <button
                       key={vehicle.id}
                       type="button"
                       aria-pressed={isSelected}
-                      disabled={creating}
+                      disabled={creating || isParked}
                       onClick={() => onSelect(vehicle.id)}
                       className={`flex min-h-20 flex-col justify-between rounded-xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60 ${
                         isSelected
                           ? 'border-primary bg-primary/10 ring-2 ring-primary/40'
-                          : 'bg-card hover:border-primary/40 hover:bg-muted/30'
+                          : isParked
+                            ? 'border-amber-500/30 bg-amber-500/5 cursor-not-allowed'
+                            : 'bg-card hover:border-primary/40 hover:bg-muted/30'
                       }`}
                     >
                       <div className="flex items-center justify-between w-full">
                         <span className="font-mono text-base font-extrabold tracking-wider text-foreground">
                           {vehicle.plateDisplay ?? vehicle.plateNumber}
                         </span>
-                        <Badge variant={isSelected ? 'default' : 'outline'} className="text-[10px]">
-                          {formatVehicleType(vehicle.vehicleType)}
-                        </Badge>
+                        {isParked ? (
+                          <Badge className="border-amber-500/40 bg-amber-500/20 text-amber-800 dark:text-amber-200 text-[10px] font-bold">
+                            Parked in Building
+                          </Badge>
+                        ) : (
+                          <Badge variant={isSelected ? 'default' : 'outline'} className="text-[10px]">
+                            {formatVehicleType(vehicle.vehicleType)}
+                          </Badge>
+                        )}
                       </div>
                       <span className="mt-2 text-xs font-medium text-muted-foreground capitalize">
-                        Role: {vehicle.linkedRole}
+                        {isParked ? '⚠️ Currently parked inside building' : `Role: ${vehicle.linkedRole}`}
                       </span>
                     </button>
                   )
                 })}
               </div>
             </div>
+
+            {/* Warning if selected vehicle is currently parked inside building */}
+            {isSelectedVehicleParked ? (
+              <div role="alert" className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3.5 text-xs text-amber-900 dark:text-amber-200 font-semibold space-y-1">
+                <p className="flex items-center gap-1.5 font-bold text-amber-950 dark:text-amber-100">
+                  <CircleAlert className="size-4 text-amber-600 shrink-0" />
+                  Vehicle Currently Parked Inside Building
+                </p>
+                <p className="text-[11px] font-normal text-amber-800 dark:text-amber-200 leading-relaxed">
+                  Vehicle <strong>{selectedVehicle?.plateDisplay ?? selectedVehicle?.plateNumber}</strong> is currently parked in PBMS Tower. You cannot create a reservation for a vehicle that is already inside the building.
+                </p>
+              </div>
+            ) : null}
+
+            {/* Simple, Clean & Strict Manual Dropdown Form Picker */}
+            <ManualTimePicker
+              value={plannedArrivalInput}
+              onChange={setPlannedArrivalInput}
+              disabled={creating}
+            />
 
             {pendingRequests.length > 0 ? (
               <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs text-sky-800 dark:border-sky-400/20 dark:bg-sky-500/10 dark:text-sky-200">
@@ -947,14 +1563,116 @@ function ReserveVehicleForm({
               size="lg"
               className="min-h-12 w-full text-base font-semibold shadow-sm"
               disabled={disabled}
-              onClick={onCreate}
+              onClick={() => setShowPricingModal(true)}
             >
               {creating
                 ? 'Allocating spot...'
-                : `Reserve spot for ${selectedVehicle?.plateDisplay ?? selectedVehicle?.plateNumber ?? 'selected vehicle'}`}
+                : isSelectedVehicleParked
+                  ? 'Vehicle already parked in building'
+                  : `Reserve spot for ${selectedVehicle?.plateDisplay ?? selectedVehicle?.plateNumber ?? 'selected vehicle'}`}
             </Button>
 
             <QuotaNote quota={quota} />
+
+            {/* Pricing & VNPay Deposit Confirmation Modal */}
+            <BaseDialog open={showPricingModal} onOpenChange={setShowPricingModal}>
+              <BaseDialogPopup from="top" className="sm:max-w-lg p-5">
+                <BaseDialogHeader className="pb-3 border-b">
+                  <div className="flex items-center justify-between">
+                    <BaseDialogTitle className="flex items-center gap-2 text-lg font-bold text-foreground">
+                      <FileText className="size-5 text-primary" />
+                      Reservation Breakdown
+                    </BaseDialogTitle>
+                    <Badge className="border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-extrabold text-[11px]">
+                      20% DISCOUNT
+                    </Badge>
+                  </div>
+                  <BaseDialogDescription className="text-xs text-muted-foreground mt-0.5">
+                    Review your booking details, rate discount, and deposit rules before paying.
+                  </BaseDialogDescription>
+                </BaseDialogHeader>
+
+                <div className="space-y-3.5 pt-3">
+                  {/* Grid 1: Vehicle & Arrival Summary */}
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="rounded-xl border bg-muted/20 p-3 space-y-0.5">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+                        <span>Vehicle</span>
+                        <Badge variant="outline" className="text-[9px] h-4 px-1 font-semibold">{isCar ? 'Car' : 'Motorbike'}</Badge>
+                      </div>
+                      <p className="font-mono text-base font-black tracking-wider text-foreground">
+                        {selectedVehicle?.plateDisplay ?? selectedVehicle?.plateNumber}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-0.5">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-primary flex items-center gap-1">
+                        <Clock3 className="size-3" /> Planned Arrival
+                      </p>
+                      <p className="font-mono text-sm font-black text-primary">
+                        {plannedArrivalInput ? formatDateTimeVN(plannedArrivalInput) : 'As Selected'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Card 2: Deposit & Pricing Breakdown */}
+                  <div className="rounded-xl border bg-card p-3.5 space-y-2 text-xs shadow-xs">
+                    <div className="flex items-center justify-between border-b pb-2">
+                      <span className="text-muted-foreground">Standard Walk-in Rate:</span>
+                      <span className="font-mono font-semibold line-through text-muted-foreground">
+                        {baseRate.toLocaleString('vi-VN')} VNĐ/h
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between border-b pb-2">
+                      <span className="font-semibold text-emerald-600 dark:text-emerald-400">Pre-booked Hourly Rate (-20%):</span>
+                      <span className="font-mono font-extrabold text-emerald-600 dark:text-emerald-400">
+                        {discountedRate.toLocaleString('vi-VN')} VNĐ/h
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-0.5">
+                      <div>
+                        <span className="font-bold text-foreground block">Mandatory 1-Hour Deposit:</span>
+                        <span className="text-[10px] text-muted-foreground">(Covers 1st hour at exit gate)</span>
+                      </div>
+                      <span className="font-mono text-lg font-black text-primary">
+                        {depositAmount.toLocaleString('vi-VN')} VNĐ
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Card 3: Key Rules & Fee Example */}
+                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 space-y-2 text-xs text-amber-900 dark:text-amber-200">
+                    <div className="flex items-center gap-1.5 font-bold">
+                      <ShieldCheck className="size-4 text-amber-600 shrink-0" />
+                      Reservation Rules & Checkout Examples:
+                    </div>
+                    <ul className="space-y-1 text-[11px] text-amber-800/90 dark:text-amber-200/90 leading-tight">
+                      <li>• <strong>15m Grace Period</strong>: Arrive within 15 mins of planned time or deposit is forfeited.</li>
+                      <li>• <strong>1st Hour Covered</strong>: Stay ≤ 60 mins → <strong>0 VNĐ</strong> payable at exit gate.</li>
+                      <li>• <strong>3h Stay Example</strong>: Pay <strong>{(2 * discountedRate).toLocaleString('vi-VN')} VNĐ</strong> at exit (2h × {discountedRate.toLocaleString('vi-VN')}đ).</li>
+                    </ul>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center justify-end gap-2.5 pt-2 border-t">
+                    <Button type="button" variant="outline" className="min-h-10 text-xs font-semibold" onClick={() => setShowPricingModal(false)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      disabled={creating}
+                      onClick={handleConfirmAndPay}
+                      className="min-h-10 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm flex-1 sm:flex-none"
+                    >
+                      <ShieldCheck className="mr-1.5 size-4" />
+                      {creating ? 'Processing...' : `Pay ${depositAmount.toLocaleString('vi-VN')} VNĐ Deposit`}
+                    </Button>
+                  </div>
+                </div>
+              </BaseDialogPopup>
+            </BaseDialog>
           </>
         )}
       </CardContent>
@@ -1038,8 +1756,8 @@ function PreviousReservationRow({ reservation }: { reservation: Reservation }) {
               {formatVehicleType(reservation.vehicleType)}
             </Badge>
           </div>
-          <p className="text-xs text-muted-foreground">
-            {reservation.slot ? `Slot ${reservation.slot.code}` : 'Slot unallocated'}
+          <p className="text-xs font-medium text-muted-foreground">
+            PBMS Tower • Guaranteed Spot
           </p>
           <p className="text-[11px] text-muted-foreground">{formatDateTimeVN(reservation.createdAt)}</p>
         </div>
@@ -1051,29 +1769,6 @@ function PreviousReservationRow({ reservation }: { reservation: Reservation }) {
     </Card>
   )
 }
-
-function Countdown({ expiresAt }: { expiresAt: string }) {
-  const [remaining, setRemaining] = useState(() => calcRemaining(expiresAt))
-  useEffect(() => {
-    const timer = window.setInterval(() => setRemaining(calcRemaining(expiresAt)), 1000)
-    return () => window.clearInterval(timer)
-  }, [expiresAt])
-
-  if (remaining <= 0) return <span className="text-sm font-semibold text-rose-600 dark:text-rose-400">Reservation expired</span>
-  return (
-    <span className="text-sm font-semibold">
-      Arrive within{' '}
-      <span className="font-mono text-base font-extrabold text-amber-700 dark:text-amber-300 tabular-nums">
-        {String(Math.floor(remaining / 60)).padStart(2, '0')}:{String(remaining % 60).padStart(2, '0')}
-      </span>
-    </span>
-  )
-}
-
-function calcRemaining(expiresAt: string) {
-  return Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000))
-}
-
 function formatClock(value: string) {
   return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(new Date(value))
 }
@@ -1082,3 +1777,5 @@ function formatCountdown(value: Date) {
   const remaining = Math.max(0, Math.ceil((value.getTime() - Date.now()) / 1000))
   return `${String(Math.floor(remaining / 60)).padStart(2, '0')}:${String(remaining % 60).padStart(2, '0')}`
 }
+
+

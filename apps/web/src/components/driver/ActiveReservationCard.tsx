@@ -22,13 +22,12 @@ export function ActiveReservationCard({ reservation, onCancel }: { reservation: 
         </div>
       </CardHeader>
       <CardContent className="space-y-4 pt-5">
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2">
           <Info label="Vehicle" value={plate} mono />
-          <Info label="Type" value={reservation.vehicleType === 'car' ? 'Car' : 'Motorbike'} />
-          <Info label="Location" value={reservation.slot ? `${reservation.slot.code} · Floor ${reservation.slot.floor.floorNumber}` : 'Assigned slot'} />
+          <Info label="Type" value={reservation.vehicleType === 'car' ? 'Ô tô (Car)' : 'Xe máy (Motorbike)'} />
         </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground"><MapPin className="size-4" />{reservation.slot?.floor.name ?? 'Parking building'} · {reservation.slot?.zone === 'A' ? 'Car zone' : 'Motorbike zone'}</div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground"><CalendarClock className="size-4" />Expires {formatDateTimeVN(reservation.expiresAt)}</div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground"><MapPin className="size-4" />Tòa nhà PBMS · {reservation.vehicleType === 'car' ? 'Khu vực Ô tô' : 'Khu vực Xe máy'}</div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground"><CalendarClock className="size-4" />Hạn chót check-in: {formatDateTimeVN(reservation.expiresAt)}</div>
         <ReservationCheckInQr reservation={reservation} />
         <div className="grid gap-2 sm:grid-cols-2">
           <Button asChild className="min-h-11"><Link to="/driver/reservations">Manage reservation</Link></Button>

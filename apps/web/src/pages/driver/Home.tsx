@@ -1,18 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { ArrowRight, Car, Plus, RefreshCw, Sparkles } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
-import { ActiveReservationCard } from '@/components/driver/ActiveReservationCard'
 import { AvailabilitySummary } from '@/components/driver/AvailabilitySummary'
-import { cancelReservation, getAvailability, getMyReservations, getMyVehicles, getPricing, type AvailabilityItem, type DriverVehicle, type PricingInfo, type Reservation } from '@/lib/driver-api'
+import { getAvailability, getMyReservations, getMyVehicles, type AvailabilityItem, type DriverVehicle, type Reservation } from '@/lib/driver-api'
 
 const ACTIVE_REFRESH_MS = 30_000
 
 export default function DriverHome() {
   const [availability, setAvailability] = useState<AvailabilityItem[]>([])
-  const [reservations, setReservations] = useState<Reservation[]>([])
+  const [, setReservations] = useState<Reservation[]>([])
   const [vehicles, setVehicles] = useState<DriverVehicle[]>([])
-  const [pricing, setPricing] = useState<PricingInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -21,10 +19,8 @@ export default function DriverHome() {
   const loadAvailability = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true)
     try {
-      const [availabilityResult, pricingResult] = await Promise.allSettled([getAvailability(), getPricing()])
-      if (availabilityResult.status === 'rejected') throw availabilityResult.reason
-      setAvailability(availabilityResult.value)
-      if (pricingResult.status === 'fulfilled') setPricing(pricingResult.value)
+      const availabilityData = await getAvailability()
+      setAvailability(availabilityData)
       setError(null)
     } catch {
       setError('Unable to load parking availability.')
@@ -61,17 +57,7 @@ export default function DriverHome() {
     return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', refreshWhenVisible) }
   }, [loadAvailability])
 
-  const activeReservations = useMemo(() => reservations.filter((reservation) => reservation.status === 'active'), [reservations])
 
-  const handleCancel = async (id: string) => {
-    if (!window.confirm('Cancel this active reservation? The reserved slot will be released.')) return
-    try {
-      await cancelReservation(id)
-      await loadReservations()
-    } catch {
-      setReservationError('Unable to cancel this reservation. Please retry.')
-    }
-  }
 
   return <div className="min-h-[calc(100dvh-3.5rem)] bg-slate-50/70 dark:bg-slate-950/40">
     <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-5 sm:px-6 sm:py-7">
@@ -106,37 +92,21 @@ export default function DriverHome() {
       ) : null}
 
       {loading ? <HomeSkeleton /> : <>
-        {activeReservations.length > 0 ? (
-          <section aria-labelledby="active-reservations" className="space-y-3">
+        <section className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/10 via-background to-background p-6 shadow-sm sm:p-8">
+          <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">Priority</p>
-              <h2 id="active-reservations" className="text-lg font-semibold">Your active reservations</h2>
-            </div>
-            {activeReservations.map((reservation) => (
-              <ActiveReservationCard key={reservation.id} reservation={reservation} onCancel={handleCancel} />
-            ))}
-          </section>
-        ) : (
-          <section className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/10 via-background to-background p-6 shadow-sm sm:p-8">
-            <div className="relative z-10">
-              <h2 className="text-2xl font-bold tracking-tight">Need a parking spot?</h2>
-              <p className="mt-2 max-w-xl text-muted-foreground">
-                You don't have any active reservations. Browse the live availability below and secure a spot for your vehicle before you arrive.
+              <h2 className="text-xl font-bold tracking-tight">Live Real-time Building Capacity &amp; Availability</h2>
+              <p className="mt-1 max-w-xl text-xs text-muted-foreground">
+                View real-time open parking spots at PBMS Tower. Reserve in advance to lock your 20% discounted spot.
               </p>
-              <div className="mt-6 flex flex-wrap items-center gap-3">
-                <Button asChild size="lg" className="rounded-full shadow-md">
-                  <Link to="/driver/reservations">Reserve now <ArrowRight className="ml-2 size-4" /></Link>
-                </Button>
-                <Button asChild variant="outline" size="lg" className="rounded-full bg-background/50 backdrop-blur">
-                  <Link to="/driver/my-qr">View my QR</Link>
-                </Button>
-              </div>
             </div>
-            {/* Decorative background elements */}
-            <div className="pointer-events-none absolute -right-10 -top-10 z-0 h-40 w-40 rounded-full bg-primary/20 blur-3xl" />
-            <div className="pointer-events-none absolute -bottom-10 right-20 z-0 h-32 w-32 rounded-full bg-blue-500/10 blur-2xl" />
-          </section>
-        )}
+            <div className="flex items-center gap-3 shrink-0">
+              <Button asChild size="lg" className="rounded-xl shadow-md font-bold text-xs">
+                <Link to="/driver/reservations">Reserve Spot Now <ArrowRight className="ml-2 size-4" /></Link>
+              </Button>
+            </div>
+          </div>
+        </section>
 
         <section aria-labelledby="availability" className="space-y-3">
           <div className="flex items-end justify-between gap-3">
@@ -147,8 +117,8 @@ export default function DriverHome() {
             <span className="text-xs text-muted-foreground">Updates every 30 seconds</span>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <AvailabilitySummary items={availability.filter((item) => item.vehicleType === 'car')} vehicleType="car" rate={pricing.find((item) => item.vehicleType === 'car')?.hourlyRate ?? 20_000} />
-            <AvailabilitySummary items={availability.filter((item) => item.vehicleType === 'motorbike')} vehicleType="motorbike" rate={pricing.find((item) => item.vehicleType === 'motorbike')?.hourlyRate ?? 10_000} />
+            <AvailabilitySummary items={availability.filter((item) => item.vehicleType === 'car')} vehicleType="car" />
+            <AvailabilitySummary items={availability.filter((item) => item.vehicleType === 'motorbike')} vehicleType="motorbike" />
           </div>
           {availability.length === 0 ? <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">No availability data is available right now.</p> : null}
         </section>

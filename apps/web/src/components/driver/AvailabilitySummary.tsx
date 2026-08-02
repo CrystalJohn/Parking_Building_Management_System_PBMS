@@ -2,7 +2,7 @@ import { Bike, CarFront } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import type { AvailabilityItem, VehicleType } from '@/lib/driver-api'
 
-export function AvailabilitySummary({ items, vehicleType, rate }: { items: AvailabilityItem[]; vehicleType: VehicleType; rate: number }) {
+export function AvailabilitySummary({ items, vehicleType }: { items: AvailabilityItem[]; vehicleType: VehicleType; rate?: number }) {
   const available = items.reduce((sum, item) => sum + item.available, 0)
   const total = items.reduce((sum, item) => sum + item.total, 0)
   const percentage = total > 0 ? Math.round((available / total) * 100) : 0
@@ -15,10 +15,10 @@ export function AvailabilitySummary({ items, vehicleType, rate }: { items: Avail
         </div>
         <div className="min-w-0 flex-1">
           <h3 className="text-base font-semibold text-foreground">
-            {vehicleType === 'car' ? 'Car' : 'Motorbike'}
+            {vehicleType === 'car' ? 'Cars (4-Wheelers)' : 'Motorbikes (2-Wheelers)'}
           </h3>
-          <p className="text-xs font-medium text-muted-foreground">
-            {new Intl.NumberFormat('vi-VN').format(rate)} VND / hour
+          <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+            {available > 0 ? `${available} spots available` : 'Fully Occupied'}
           </p>
         </div>
         <div className="text-right">
@@ -29,7 +29,7 @@ export function AvailabilitySummary({ items, vehicleType, rate }: { items: Avail
             <span className="text-sm font-normal text-muted-foreground"> / {total}</span>
           </p>
           <p className="text-[11px] font-medium text-muted-foreground">
-            {percentage}% available
+            {percentage}% Open
           </p>
         </div>
       </CardContent>

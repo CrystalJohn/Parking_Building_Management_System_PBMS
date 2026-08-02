@@ -7,12 +7,14 @@ import {
   HttpStatus,
   NotFoundException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { NotificationType, Prisma, VehicleType } from '@prisma/client';
+import { NotificationType, Prisma, SessionStatus, VehicleType } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { VnpayService } from '../payments/vnpay.service';
 import { normalizePlateNumber } from '../vehicles/vehicles.service';
 import { PlateFormatter } from '../plates';
 import { AllocationService } from '../slots/allocation.service';
@@ -37,8 +39,8 @@ export interface ReservationQuotaSnapshot {
 export class ReservationsService {
   private readonly logger = new Logger(ReservationsService.name);
 
-  private static readonly DEFAULT_TIMEOUT_MINUTES = 60;
-  private static readonly MAX_ADVANCE_MINUTES = 120;
+  private static readonly DEFAULT_TIMEOUT_MINUTES = 15;
+  private static readonly MAX_ADVANCE_MINUTES = 1440; // 24 hours advance booking
   private static readonly MAX_SLOT_LOCK_ATTEMPTS = 3;
   private static readonly RESERVATION_RATE_LIMIT = 5;
   private static readonly RESERVATION_RATE_WINDOW_MS = 10 * 60_000;
@@ -49,6 +51,7 @@ export class ReservationsService {
     private readonly allocationService: AllocationService,
     private readonly jwtService: JwtService,
     private readonly notificationsService: NotificationsService,
+    @Optional() private readonly vnpayService?: VnpayService,
   ) {}
 
   /**
@@ -137,6 +140,23 @@ export class ReservationsService {
               );
             }
 
+            const existingActiveSession = await tx.parkingSession.findFirst({
+              where: {
+                status: { in: [SessionStatus.active, SessionStatus.checkout_pending, SessionStatus.exit_authorized] },
+                OR: [
+                  { vehicleId: vehicle.id },
+                  { licensePlate: vehicle.plateNumber },
+                ],
+              },
+              select: { id: true, licensePlate: true },
+            });
+
+            if (existingActiveSession) {
+              throw new ConflictException(
+                `Vehicle ${vehicle.plateNumber} is currently parked inside the building.`,
+              );
+            }
+
             const timeoutMinutes = await this.getTimeoutMinutes(tx);
             const excludedSlotIds = new Set<number>();
 
@@ -158,13 +178,20 @@ export class ReservationsService {
                 continue;
               }
 
-              await tx.slot.update({
-                where: { id: slot.id },
-                data: { status: 'reserved' },
-              });
+              // Unpaid reservation expires in 15 minutes if deposit is not paid
+              const unpaidExpiresAt = new Date(Date.now() + 15 * 60_000);
 
-              const expiresAt = new Date(
-                plannedArrivalAt.getTime() + timeoutMinutes * 60_000,
+              const pricing = tx.pricingConfig
+                ? await tx.pricingConfig.findFirst({
+                    where: { vehicleType: vehicle.vehicleType },
+                  })
+                : null;
+              const hourlyRate =
+                pricing?.hourlyRate ??
+                (vehicle.vehicleType === 'car' ? 20000 : 10000);
+              const discountPercent = pricing?.reservationDiscountPercent ?? 20;
+              const depositAmount = Math.round(
+                hourlyRate * (1 - discountPercent / 100),
               );
 
               return tx.reservation.create({
@@ -174,7 +201,9 @@ export class ReservationsService {
                   vehicleId: vehicle.id,
                   vehicleType: vehicle.vehicleType,
                   plannedArrivalAt,
-                  expiresAt,
+                  expiresAt: unpaidExpiresAt,
+                  depositAmount,
+                  isDepositPaid: false, // Bắt buộc thanh toán cọc mới kích hoạt
                 },
                 include: {
                   driver: { select: { fullName: true, phone: true } },
@@ -186,7 +215,7 @@ export class ReservationsService {
 
             throw new ConflictException('No slot available for this time');
           },
-          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 15000, maxWait: 20000 },
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
         ),
       ),
     );
@@ -195,8 +224,24 @@ export class ReservationsService {
       `Reservation created | reservationId=${reservation.id} driverId=${driverId} vehicleId=${reservation.vehicleId ?? 'unknown'} plate=${reservation.vehicle?.plateNumber ?? 'unknown'} vehicleType=${reservation.vehicleType} slotId=${reservation.slotId} slotCode=${reservation.slot.code} expiresAt=${reservation.expiresAt.toISOString()}`,
     );
 
+    let paymentUrl: string | null = null;
+    if (this.vnpayService?.isConfigured()) {
+      try {
+        const vnpayResult = this.vnpayService.createPaymentUrl({
+          amount: reservation.depositAmount || (reservation.vehicleType === 'car' ? 16000 : 8000),
+          referenceCode: reservation.id,
+          referenceType: 'reservation_deposit',
+          description: `Dat coc PBMS cho xe ${reservation.vehicle?.plateNumber ?? ''}`.trim(),
+        });
+        paymentUrl = vnpayResult.checkoutUrl;
+      } catch (err) {
+        this.logger.warn(`Could not generate VNPay URL for reservation ${reservation.id}: ${err}`);
+      }
+    }
+
     return {
       quota: await this.getQuotaSnapshot(driverId),
+      paymentUrl,
       reservation: {
         id: reservation.id,
         vehicleId: reservation.vehicleId,
@@ -226,6 +271,33 @@ export class ReservationsService {
         },
       },
     };
+  }
+
+  async createDepositPaymentUrl(reservationId: string, driverId: string) {
+    const reservation = await this.prisma.reservation.findUnique({
+      where: { id: reservationId },
+      include: { vehicle: true },
+    });
+    if (!reservation) {
+      throw new NotFoundException('Reservation not found');
+    }
+    if (reservation.driverId !== driverId) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    const amount = reservation.depositAmount || (reservation.vehicleType === 'car' ? 16000 : 8000);
+    const vnpayResult = this.vnpayService?.createPaymentUrl({
+      amount,
+      referenceCode: reservation.id,
+      referenceType: 'reservation_deposit',
+      description: `Dat coc PBMS cho xe ${reservation.vehicle?.plateNumber ?? ''}`.trim(),
+    });
+
+    if (!vnpayResult) {
+      throw new BadRequestException('VNPAY payment gateway is not available');
+    }
+
+    return { paymentUrl: vnpayResult.checkoutUrl };
   }
 
   async findMyReservations(driverId: string) {
@@ -603,24 +675,25 @@ export class ReservationsService {
   }
 
   private parsePlannedArrival(value?: string): Date {
-    const plannedArrivalAt = value ? new Date(value) : new Date();
+    const now = new Date();
+    const defaultLeadMs = 60 * 60_000;
+    const plannedArrivalAt = value ? new Date(value) : new Date(now.getTime() + defaultLeadMs);
 
     if (Number.isNaN(plannedArrivalAt.getTime())) {
       throw new BadRequestException('plannedArrivalAt must be a valid ISO date string');
     }
 
-    const now = new Date();
-    if (plannedArrivalAt.getTime() < now.getTime()) {
-      throw new BadRequestException('Arrival time cannot be in the past');
+    // Must be at least 1 hour in advance (with 30 sec grace for HTTP request transit)
+    const minLeadMs = 59.5 * 60_000;
+    if (plannedArrivalAt.getTime() < now.getTime() + minLeadMs) {
+      throw new BadRequestException('Lượt đặt chỗ phải được chọn trước ít nhất 1 giờ.');
     }
 
     const maxArrival = new Date(
       now.getTime() + ReservationsService.MAX_ADVANCE_MINUTES * 60_000,
     );
     if (plannedArrivalAt.getTime() > maxArrival.getTime()) {
-      throw new BadRequestException(
-        'You can only reserve for arrival within the next 2 hours',
-      );
+      throw new BadRequestException('Thời gian đến dự kiến không được vượt quá 24 giờ.');
     }
 
     return plannedArrivalAt;
@@ -648,6 +721,8 @@ export class ReservationsService {
   }) {
     return {
       ...reservation,
+      depositAmount: (reservation as any).depositAmount ?? 0,
+      isDepositPaid: (reservation as any).isDepositPaid ?? false,
       licensePlate: reservation.vehicle?.plateNumber ?? null,
       plateDisplay: reservation.vehicle ? PlateFormatter.toDisplay(reservation.vehicle.plateNumber) : null,
       vehicle: reservation.vehicle
@@ -682,9 +757,18 @@ export class ReservationsService {
             floor: { select: { id: true, floorNumber: true, name: true } },
           },
         },
+        session: {
+          select: { id: true, checkInTime: true },
+        },
       },
     });
-    return reservations.map((r) => this.mapReservationDetail(r as any));
+    return reservations.map((r) => ({
+      ...this.mapReservationDetail(r as any),
+      plannedArrivalAt: r.plannedArrivalAt ?? null,
+      isDepositPaid: r.isDepositPaid,
+      depositAmount: r.depositAmount,
+      session: r.session ? { id: r.session.id, checkInTime: r.session.checkInTime ?? null } : null,
+    }));
   }
 }
 

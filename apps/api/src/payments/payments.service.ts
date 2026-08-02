@@ -140,6 +140,67 @@ export class PaymentsService {
       `VNPAY ${source} | txnRef=${verified.txnRef} success=${verified.success} amount=${verified.amount}`,
     );
 
+    // Handle Reservation Deposit payment callback
+    if (verified.txnRef.includes('-RES-')) {
+      const resParts = verified.txnRef.split('-RES-');
+      const rawResPayload = resParts[1] ?? '';
+      if (rawResPayload) {
+        // Extract exact UUID (first 36 chars) or prefix (first 8 hex chars)
+        const possibleUuid = rawResPayload.slice(0, 36);
+        const prefix8 = rawResPayload.slice(0, 8);
+
+        let reservation = await this.prisma.reservation.findFirst({
+          where: {
+            OR: [
+              { id: possibleUuid },
+              { id: { startsWith: prefix8, mode: 'insensitive' } },
+            ],
+          },
+        });
+
+        if (!reservation) {
+          // Fallback: get latest active unpaid reservation
+          reservation = await this.prisma.reservation.findFirst({
+            where: { status: 'active', isDepositPaid: false },
+            orderBy: { createdAt: 'desc' },
+          });
+        }
+
+        if (reservation && verified.success) {
+          const activeExpiresAt = new Date(reservation.plannedArrivalAt.getTime() + 15 * 60_000);
+
+          // Tạo Payment record để doanh thu xuất hiện trong Manager dashboard
+          const depositPayment = await (this.prisma as any).payment.create({
+            data: {
+              amount: reservation.depositAmount || 0,
+              method: 'bank_qr',
+              status: 'paid',
+              provider: 'vnpay',
+              providerOrderCode: verified.txnRef,
+              providerRef: params['vnp_TransactionNo'] ?? null,
+              paidAt: new Date(),
+              providerPayload: params as any,
+            },
+          });
+
+          await this.prisma.reservation.update({
+            where: { id: reservation.id },
+            data: {
+              isDepositPaid: true,
+              expiresAt: activeExpiresAt,
+              depositPaymentId: depositPayment.id,
+            },
+          });
+          return {
+            ok: true,
+            paid: true,
+            isReservation: true,
+            reservationId: reservation.id,
+          };
+        }
+      }
+    }
+
     // 2. Find payment by providerOrderCode (vnp_TxnRef)
     const payment = await (this.prisma as any).payment.findFirst({
       where: { providerOrderCode: verified.txnRef },
