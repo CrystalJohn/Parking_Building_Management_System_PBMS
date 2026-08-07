@@ -1,6 +1,7 @@
 import {
   normalizePlateForApi,
   isValidVietnamesePlate,
+  formatVietnamesePlateDisplay,
   formatVehicleType,
 } from './plate-format'
 
@@ -14,6 +15,25 @@ describe('normalizePlateForApi', () => {
   it('returns empty string for null/undefined input', () => {
     expect(normalizePlateForApi(null)).toBe('')
     expect(normalizePlateForApi(undefined)).toBe('')
+  })
+})
+
+describe('formatVietnamesePlateDisplay', () => {
+  it('formats car plates with dash + dot', () => {
+    expect(formatVietnamesePlateDisplay('30a12345')).toBe('30A-123.45')
+    expect(formatVietnamesePlateDisplay('30A12345')).toBe('30A-123.45')
+  })
+
+  it('formats motorcycle plates with dash + space + dot', () => {
+    expect(formatVietnamesePlateDisplay('59d166666')).toBe('59-D1 666.66')
+    expect(formatVietnamesePlateDisplay('59D166666')).toBe('59-D1 666.66')
+  })
+
+  it('returns null for incomplete or invalid plates', () => {
+    expect(formatVietnamesePlateDisplay('30a1234')).toBe(null)
+    expect(formatVietnamesePlateDisplay('30a1234567')).toBe(null)
+    expect(formatVietnamesePlateDisplay('abc')).toBe(null)
+    expect(formatVietnamesePlateDisplay('')).toBe(null)
   })
 })
 

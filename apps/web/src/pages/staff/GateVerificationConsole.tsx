@@ -6,32 +6,48 @@ import {
   CheckCircle2,
   Keyboard,
   Loader2,
+  Pencil,
   RotateCcw,
   ScanLine,
   X,
+  Info,
 } from 'lucide-react'
 
-import { normalizePlateForApi } from '../../lib/plate-format'
+import {
+  normalizePlateForApi,
+  isValidVietnamesePlate,
+  formatVietnamesePlateDisplay,
+} from '../../lib/plate-format'
 import {
   scanGatePlate,
   verifyGatePlate,
+  getCheckoutPreview,
   type GateCheckoutSubMode,
   type GateRecommendedAction,
   type GateVehicleStatus,
   type GateVerifyResponse,
 } from '../../lib/sessions-api'
+import { CheckoutPreviewModal } from './CheckoutPreviewModal'
 import type { useToasts } from '../../lib/use-toasts'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { useGateStateMachine } from './useGateStateMachine'
+
+function extractErrorMessage(err: unknown): string {
+  if (isAxiosError(err)) return err.response?.data?.message ?? err.message
+  if (err instanceof Error) return err.message
+  return 'An unexpected error occurred'
+}
 
 const BUILDING_NAME = import.meta.env.VITE_PBMS_BUILDING_NAME ?? 'PBMS Building'
 const GATE_NAME = import.meta.env.VITE_PBMS_GATE_NAME ?? 'Main Gate'
 const CAMERA_ID = import.meta.env.VITE_PLATE_RECOGNIZER_CAMERA_ID ?? 'staff-gate-camera'
 
-type Phase = 'IDLE' | 'SCANNING' | 'RESULT_DISPLAYED' | 'CONFIRMED' | 'ERROR'
+const OCR_HIGH_CONF_THRESHOLD = Number(import.meta.env.VITE_OCR_HIGH_CONFIDENCE_THRESHOLD) || 0.95
+const OCR_LOW_CONF_THRESHOLD = Number(import.meta.env.VITE_OCR_LOW_CONFIDENCE_THRESHOLD) || 0.85
 
 export type GateConfirmPayload = {
   displayPlate: string
@@ -48,7 +64,7 @@ export type GateConfirmPayload = {
 }
 
 type GateVerificationConsoleProps = {
-  onConfirm: (payload: GateConfirmPayload) => void
+  onConfirm: (payload: GateConfirmPayload, action?: GateRecommendedAction) => Promise<void> | void
   onOpenOverride?: (payload: GateConfirmPayload) => void
   toasts: ReturnType<typeof useToasts>
 }
@@ -88,14 +104,12 @@ export function GateVerificationConsole({
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
 
-  const [phase, setPhase] = useState<Phase>('IDLE')
+  const { state, dispatch } = useGateStateMachine()
+  const { phase, verificationResult, ocrEvidenceId, manualPlate, error, previewData, checkoutSnapshotUrl } = state
+
   const [cameraError, setCameraError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [capturedImageUrl, setCapturedImageUrl] = useState<string | null>(null)
-  const [ocrEvidenceId, setOcrEvidenceId] = useState<string | null>(null)
-  const [manualMode, setManualMode] = useState(false)
-  const [manualPlate, setManualPlate] = useState('')
-  const [verifyResult, setVerifyResult] = useState<GateVerifyResponse | null>(null)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const restartCamera = useCallback(async () => {
     try {
@@ -109,8 +123,8 @@ export function GateVerificationConsole({
         await videoRef.current.play().catch(() => undefined)
       }
       setCameraError(null)
-    } catch (error) {
-      setCameraError(extractErrorMessage(error))
+    } catch (err) {
+      setCameraError(extractErrorMessage(err))
     }
   }, [])
 
@@ -133,9 +147,9 @@ export function GateVerificationConsole({
           await videoRef.current.play().catch(() => undefined)
         }
         setCameraError(null)
-      } catch (error) {
-        setCameraError(extractErrorMessage(error))
-        setManualMode(true)
+      } catch (err) {
+        setCameraError(extractErrorMessage(err))
+        dispatch({ type: 'SET_MANUAL_ENTRY' })
       }
     }
 
@@ -149,55 +163,57 @@ export function GateVerificationConsole({
         URL.revokeObjectURL(capturedImageUrl)
       }
     }
-    // capturedImageUrl intentionally excluded; cleanup runs for the screen lifecycle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const reset = useCallback(() => {
-    setPhase('IDLE')
+    dispatch({ type: 'RESET' })
     setCapturedImageUrl((current) => {
       if (current) URL.revokeObjectURL(current)
       return null
     })
-    setOcrEvidenceId(null)
-    setVerifyResult(null)
-    setErrorMessage(null)
-    setManualMode(false)
-    setManualPlate('')
     void restartCamera()
-  }, [restartCamera])
-
+  }, [restartCamera, dispatch])
 
   const requestVerify = useCallback(
-    async (canonicalPlate: string, ocrEvidenceId?: string) => {
-      setPhase('SCANNING')
+    async (canonicalPlate: string, currentEvidenceId?: string | null) => {
+      dispatch({ type: 'START_VERIFY', evidenceId: currentEvidenceId ?? undefined })
       try {
-        const result = await verifyGatePlate({ canonicalPlate, ocrEvidenceId })
-        setVerifyResult(result)
-        setPhase('RESULT_DISPLAYED')
-        toasts.showSuccess(`Plate detected: ${result.plate}`)
-      } catch (error) {
-        const message = extractErrorMessage(error)
-        setErrorMessage(message)
-        setPhase('ERROR')
+        const result = await verifyGatePlate({ canonicalPlate, ocrEvidenceId: currentEvidenceId ?? undefined })
+        if (result.vehicleStatus === 'ACTIVE_SESSION' && result.recommendedAction === 'CHECKOUT' && result.sessionId) {
+          dispatch({ type: 'SET_RESULT', result })
+          dispatch({ type: 'START_CHECKOUT_PREVIEW', snapshotUrl: capturedImageUrl || '' })
+          try {
+            const previewData = await getCheckoutPreview(result.sessionId)
+            dispatch({ type: 'SET_CHECKOUT_PREVIEW', data: previewData })
+          } catch (err) {
+            const message = extractErrorMessage(err)
+            dispatch({ type: 'SET_ERROR', error: message })
+            toasts.showError(message)
+          }
+          return
+        }
+
+        dispatch({ type: 'SET_RESULT', result })
+        toasts.showSuccess(`Plate detected: ${result.displayPlate}`)
+      } catch (err) {
+        const message = extractErrorMessage(err)
+        dispatch({ type: 'SET_ERROR', error: message })
         toasts.showError(message)
       }
     },
-    [toasts],
+    [toasts, dispatch, capturedImageUrl],
   )
 
   const captureAndRecognize = useCallback(async () => {
-    if (phase !== 'IDLE') return
+    if (phase !== 'IDLE' && phase !== 'MANUAL_ENTRY') return
     const video = videoRef.current
     if (!video || video.readyState < 2) {
       toasts.showError('Camera is not ready yet')
       return
     }
 
-    setPhase('SCANNING')
-    // Downscale to max 1280px width (keeps aspect ratio) - full camera
-    // resolution (1080p/4K) produces 2-5MB JPEGs, far above Plate
-    // Recognizer Cloud's 3MB limit - mirrors StaffOcrCheckInPanel's pipeline.
+    dispatch({ type: 'START_SCAN' })
     const MAX_CAPTURE_WIDTH = 1280
     const sourceWidth = video.videoWidth || MAX_CAPTURE_WIDTH
     const sourceHeight = video.videoHeight || 720
@@ -207,8 +223,7 @@ export function GateVerificationConsole({
     canvas.height = Math.round(sourceHeight * scale)
     const context = canvas.getContext('2d')
     if (!context) {
-      setErrorMessage('Cannot capture camera frame')
-      setPhase('ERROR')
+      dispatch({ type: 'SET_ERROR', error: 'Cannot capture camera frame' })
       toasts.showError('Cannot capture camera frame')
       return
     }
@@ -218,8 +233,7 @@ export function GateVerificationConsole({
       canvas.toBlob((value) => resolve(value), 'image/jpeg', 0.8)
     })
     if (!blob) {
-      setErrorMessage('Cannot prepare image for OCR')
-      setPhase('ERROR')
+      dispatch({ type: 'SET_ERROR', error: 'Cannot prepare image for OCR' })
       toasts.showError('Cannot prepare image for OCR')
       return
     }
@@ -232,7 +246,6 @@ export function GateVerificationConsole({
     streamRef.current?.getTracks().forEach((track) => track.stop())
     streamRef.current = null
     if (videoRef.current) videoRef.current.srcObject = null
-    setOcrEvidenceId(null)
 
     try {
       const response = await scanGatePlate({
@@ -242,55 +255,92 @@ export function GateVerificationConsole({
         gateName: GATE_NAME,
       })
 
-      if (response.mode === 'NEEDS_MANUAL_PLATE') {
-        setOcrEvidenceId(response.ocrEvidenceId ?? '')
-        setManualPlate('')
-        setManualMode(true)
-        setPhase('IDLE')
-        toasts.showError('Could not read the plate. Type the plate below to verify.')
+      const evidenceId = response.ocrEvidenceId ?? undefined
+
+      if (!response.canonicalPlate || (response.confidence != null && response.confidence < OCR_LOW_CONF_THRESHOLD)) {
+        dispatch({ type: 'SET_MANUAL_ENTRY', evidenceId })
+        toasts.showError('Could not read the plate clearly. Type the plate below to verify.')
         return
       }
 
-      const evidenceId = response.ocrEvidenceId ?? ''
-      setOcrEvidenceId(evidenceId)
-      const canonicalPlate = normalizePlateForApi(response.plateDisplay ?? response.plateConfirmed)
-      if (canonicalPlate) {
-        await requestVerify(canonicalPlate, evidenceId || undefined)
-      } else {
-        setErrorMessage('No plate detected. Enter the plate manually.')
-        setManualMode(true)
-        setPhase('ERROR')
+      if (response.vehicleStatus === 'ACTIVE_SESSION' && response.recommendedAction === 'CHECKOUT' && response.sessionId) {
+        dispatch({ type: 'SET_RESULT', result: response })
+        dispatch({ type: 'START_CHECKOUT_PREVIEW', snapshotUrl: capturedUrl })
+        try {
+          const previewData = await getCheckoutPreview(response.sessionId)
+          dispatch({ type: 'SET_CHECKOUT_PREVIEW', data: previewData })
+        } catch (err) {
+          const message = extractErrorMessage(err)
+          dispatch({ type: 'SET_ERROR', error: message })
+          toasts.showError(message)
+        }
+        return
       }
-    } catch (error) {
-      const message = extractErrorMessage(error)
-      setErrorMessage(message)
-      setPhase('ERROR')
+
+      dispatch({ type: 'SET_RESULT', result: response })
+    } catch (err) {
+      const message = extractErrorMessage(err)
+      dispatch({ type: 'SET_ERROR', error: message })
       toasts.showError(message)
     }
-  }, [phase, requestVerify, toasts])
+  }, [phase, dispatch, toasts])
 
   const buildPayload = useCallback((): GateConfirmPayload | null => {
-    if (!verifyResult) return null
+    if (!verificationResult) return null
+    console.log('[GATE_TRACE] buildPayload', {
+      sessionCode: verificationResult.sessionId ?? '-',
+      plate: verificationResult.canonicalPlate,
+      ocrEvidenceId: ocrEvidenceId ?? null,
+      vehicleStatus: verificationResult.vehicleStatus,
+    })
     return {
-      displayPlate: verifyResult.displayPlate,
-      vehicleType: verifyResult.vehicleType,
-      canonicalPlate: verifyResult.canonicalPlate,
-      vehicleStatus: verifyResult.vehicleStatus,
-      recommendedAction: verifyResult.recommendedAction,
-      confidence: verifyResult.confidence,
-      sessionId: verifyResult.sessionId,
-      reservationId: verifyResult.reservationId,
-      subMode: verifyResult.subMode,
+      displayPlate: verificationResult.displayPlate,
+      vehicleType: verificationResult.vehicleType,
+      canonicalPlate: verificationResult.canonicalPlate,
+      vehicleStatus: verificationResult.vehicleStatus,
+      recommendedAction: verificationResult.recommendedAction,
+      confidence: verificationResult.confidence,
+      sessionId: verificationResult.sessionId,
+      reservationId: verificationResult.reservationId,
+      subMode: verificationResult.subMode,
       ocrEvidenceId: ocrEvidenceId || undefined,
     }
-  }, [verifyResult, ocrEvidenceId])
+  }, [verificationResult, ocrEvidenceId])
 
-  const confirmPrimary = useCallback(() => {
+  const confirmPrimary = useCallback(async () => {
     const payload = buildPayload()
     if (!payload) return
-    onConfirm(payload)
-    setPhase('CONFIRMED')
-  }, [buildPayload, onConfirm])
+    setIsSubmitting(true)
+    try {
+      await onConfirm(payload)
+      dispatch({ type: 'SUBMIT_CONFIRM', action: payload.recommendedAction })
+      
+      // Auto-reset after a short delay to reopen the camera
+      setTimeout(() => {
+        reset()
+      }, 1500)
+    } catch (err) {
+      const message = extractErrorMessage(err)
+      dispatch({ type: 'SET_ERROR', error: message })
+      toasts.showError(message)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }, [buildPayload, onConfirm, dispatch, toasts, reset])
+
+  const confirmCheckout = useCallback(async () => {
+    const payload = buildPayload()
+    if (!payload || phase === 'SUBMITTING_CONFIRM') return
+    dispatch({ type: 'SUBMIT_CONFIRM', action: 'CHECKOUT' })
+    try {
+      await onConfirm(payload, 'CHECKOUT')
+      reset()
+    } catch (e) {
+      if (previewData) {
+        dispatch({ type: 'SET_CHECKOUT_PREVIEW', data: previewData })
+      }
+    }
+  }, [buildPayload, onConfirm, dispatch, reset, phase, previewData])
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -302,13 +352,17 @@ export function GateVerificationConsole({
 
       if (isTyping) return
 
-      if (event.code === 'Space' && phase === 'IDLE' && !manualMode) {
+      if (event.code === 'Space' && (phase === 'IDLE' || phase === 'MANUAL_ENTRY')) {
         event.preventDefault()
         void captureAndRecognize()
       }
       if (event.key === 'Enter' && phase === 'RESULT_DISPLAYED') {
         event.preventDefault()
-        confirmPrimary()
+        void confirmPrimary()
+      }
+      if (event.key === 'Enter' && (phase === 'CHECKOUT_PREVIEW')) {
+        event.preventDefault()
+        void confirmCheckout()
       }
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -318,7 +372,7 @@ export function GateVerificationConsole({
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [captureAndRecognize, confirmPrimary, phase, manualMode, reset])
+  }, [captureAndRecognize, confirmPrimary, confirmCheckout, phase, reset])
 
   const handleOverride = useCallback(() => {
     const payload = buildPayload()
@@ -329,10 +383,11 @@ export function GateVerificationConsole({
   const confirmManualPlate = useCallback(() => {
     const canonicalPlate = normalizePlateForApi(manualPlate)
     if (!canonicalPlate) return
-    void requestVerify(canonicalPlate, ocrEvidenceId || undefined)
+    void requestVerify(canonicalPlate, ocrEvidenceId)
   }, [manualPlate, ocrEvidenceId, requestVerify])
 
-  const scanDisabled = phase === 'SCANNING' || phase === 'RESULT_DISPLAYED' || phase === 'CONFIRMED'
+  const scanDisabled = phase === 'SCANNING' || phase === 'VERIFYING' || phase === 'RESULT_DISPLAYED' || phase === 'SUBMITTING_CONFIRM'
+  const isManualMode = phase === 'MANUAL_ENTRY' || phase === 'VERIFYING' || (phase === 'ERROR' && manualPlate !== '') || phase === 'CHECKOUT_PREVIEW_LOADING' || phase === 'CHECKOUT_PREVIEW'
 
   return (
     <div className="space-y-4">
@@ -359,6 +414,16 @@ export function GateVerificationConsole({
                 {cameraError}
               </div>
             ) : null}
+
+            {/* Loading Checkout Preview */}
+            {phase === 'CHECKOUT_PREVIEW_LOADING' && (
+              <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/80 text-white rounded-2xl animate-in fade-in">
+                <Loader2 className="size-10 animate-spin text-primary mb-4" />
+                <h3 className="text-xl font-semibold mb-2">Loading session details...</h3>
+                <p className="text-white/70">Calculating fee...</p>
+                <p className="text-white/50 text-sm mt-1">Preparing checkout preview...</p>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -379,8 +444,7 @@ export function GateVerificationConsole({
               type="button"
               variant="outline"
               onClick={() => {
-                setManualPlate('')
-                setManualMode(true)
+                dispatch({ type: 'SET_MANUAL_ENTRY' })
               }}
               disabled={scanDisabled}
               className="h-11"
@@ -390,40 +454,69 @@ export function GateVerificationConsole({
             </Button>
           </div>
 
-          {manualMode ? (
+          {isManualMode ? (
             <ManualPlateEntry
               capturedImageUrl={capturedImageUrl}
               value={manualPlate}
-              onChange={setManualPlate}
+              onChange={(p) => dispatch({ type: 'SET_MANUAL_PLATE', plate: p })}
               onConfirm={confirmManualPlate}
               onClose={() => reset()}
-              isLoading={phase === 'SCANNING'}
+              isLoading={phase === 'VERIFYING'}
             />
           ) : null}
         </CardContent>
       </Card>
 
-      {verifyResult ? (
+      {/* Checkout Preview Modal */}
+      {(phase === 'CHECKOUT_PREVIEW' || phase === 'SUBMITTING_CONFIRM') && previewData && (
+        <CheckoutPreviewModal
+          previewData={previewData}
+          checkoutSnapshotUrl={checkoutSnapshotUrl}
+          exitConfidence={verificationResult?.confidence ?? null}
+          exitVehicleType={verificationResult?.vehicleTypeDetected ?? null}
+          exitPlate={verificationResult?.displayPlate ?? verificationResult?.canonicalPlate ?? null}
+          submitting={phase === 'SUBMITTING_CONFIRM'}
+          onConfirm={confirmCheckout}
+          onCancel={reset}
+          onOverride={() => {
+            if (buildPayload()) {
+              onConfirm(buildPayload()!, 'MANUAL_REVIEW')
+            }
+          }}
+        />
+      )}
+
+      {/* Result Card Modal */}
+      {(phase === 'RESULT_DISPLAYED' || phase === 'ERROR') && verificationResult && (
         <ScanResultCard
-          result={verifyResult}
+          result={verificationResult}
           capturedImageUrl={capturedImageUrl}
           onConfirm={confirmPrimary}
           onOverride={onOpenOverride ? handleOverride : undefined}
-          open={phase === 'RESULT_DISPLAYED'}
+          onReverify={(plate) => {
+            const canonical = normalizePlateForApi(plate)
+            if (!isValidVietnamesePlate(canonical)) {
+              toasts.showError('Biển số không hợp lệ. Vui lòng nhập biển số VN (vd. 30A-123.45 hoặc 59D1-666.66).')
+              return
+            }
+            void requestVerify(canonical, ocrEvidenceId)
+          }}
+          open={true}
+          submitting={isSubmitting}
           onOpenChange={(open) => {
             if (!open) reset()
           }}
         />
-      ) : null}
+      )}
 
-      {phase === 'CONFIRMED' && verifyResult ? (
+      {phase === 'SUBMITTING_CONFIRM' && verificationResult ? (
         <Card className="border-emerald-200 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/20">
           <CardContent className="flex items-center justify-between gap-3 p-5">
             <div className="flex items-center gap-3">
               <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400" />
               <div>
                 <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-100">Confirmed</p>
-                <p className="font-mono text-xs text-emerald-700 dark:text-emerald-300/80">{verifyResult.plate}</p>
+                <p className="font-mono text-xs text-emerald-700 dark:text-emerald-300/80">{verificationResult.displayPlate}</p>
               </div>
             </div>
             <Button type="button" variant="outline" onClick={reset} className="h-10">
@@ -439,7 +532,7 @@ export function GateVerificationConsole({
           <Alert variant="destructive">
             <AlertTriangle className="size-4" />
             <AlertTitle>Verification failed</AlertTitle>
-            <AlertDescription>{errorMessage ?? 'Unable to verify this plate.'}</AlertDescription>
+            <AlertDescription>{error ?? 'Unable to verify this plate.'}</AlertDescription>
           </Alert>
           <Button type="button" variant="outline" onClick={reset} className="h-10">
             <RotateCcw className="size-4" />
@@ -456,32 +549,152 @@ function ScanResultCard({
   capturedImageUrl,
   onConfirm,
   onOverride,
+  onReverify,
   open,
+  submitting,
   onOpenChange,
 }: {
   result: GateVerifyResponse
   capturedImageUrl: string | null
   onConfirm: () => void
   onOverride?: () => void
+  onReverify?: (plate: string) => void
   open: boolean
+  submitting?: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const status = STATUS_BADGE[result.vehicleStatus]
+  const [isEditing, setIsEditing] = useState(false)
+  const [editValue, setEditValue] = useState('')
+  const editInputRef = useRef<HTMLInputElement | null>(null)
+
+  function startEdit() {
+    setEditValue(normalizePlateForApi(result.displayPlate ?? ''))
+    setIsEditing(true)
+    setTimeout(() => editInputRef.current?.focus(), 0)
+  }
+
+  function cancelEdit() {
+    setIsEditing(false)
+    setEditValue('')
+  }
+
+  // Raw (unformatted) plate typed by staff — e.g. "69d166666"
+  const editRaw = normalizePlateForApi(editValue)
+  // Live-formatted preview — e.g. "69-D1 666.66"; null until valid length/shape
+  const editDisplay = formatVietnamesePlateDisplay(editRaw)
+  const isEditValid = isValidVietnamesePlate(editRaw)
+
+  function submitEdit() {
+    if (!isEditValid || !onReverify) return
+    // Do NOT clear isEditing here: requestVerify dispatches START_VERIFY,
+    // which unmounts this card and re-opens it fresh on SET_RESULT.
+    onReverify(editRaw)
+  }
+
+  let status = STATUS_BADGE[result.vehicleStatus]
+  if (result.vehicleStatus === 'UNKNOWN' && result.recommendedAction === 'CHECKIN') {
+    status = {
+      label: 'READY FOR CHECK-IN',
+      className: 'border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-400',
+    }
+  }
+
+  const isLowConfidence = result.confidence != null && result.confidence < OCR_HIGH_CONF_THRESHOLD && result.confidence >= OCR_LOW_CONF_THRESHOLD
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl sm:max-w-[600px] p-0 overflow-hidden">
-        <DialogHeader className="border-b bg-muted/30 px-6 py-4">
-          <DialogTitle>Scan result</DialogTitle>
-        </DialogHeader>
+      <DialogContent className="max-w-2xl sm:max-w-[600px] p-0 overflow-hidden flex flex-col">
+        {result.recommendedAction !== 'MANUAL_REVIEW' && (
+          <div className={`px-6 py-4 font-black text-2xl text-white uppercase text-center tracking-widest ${result.recommendedAction === 'CHECKIN' ? 'bg-blue-600' : 'bg-emerald-600'}`}>
+            {result.recommendedAction === 'CHECKIN' ? 'CHECK-IN' : 'CHECK-OUT'}
+          </div>
+        )}
         <div className="p-6 space-y-6">
+          {isLowConfidence && (
+            <Alert className="bg-amber-50 text-amber-900 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800/50 dark:text-amber-200">
+              <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400" />
+              <AlertTitle>Low Confidence Reading</AlertTitle>
+              <AlertDescription>
+                The camera is not fully confident ({Math.round(result.confidence! * 100)}%). Please double-check the plate.
+              </AlertDescription>
+            </Alert>
+          )}
+
           <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                Detected plate
-              </p>
-              <p className="mt-1 break-all font-mono text-3xl font-black tracking-[0.12em] text-foreground">
-                {result.displayPlate}
-              </p>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  Detected plate
+                </p>
+                {!isEditing && onReverify && (
+                  <button
+                    type="button"
+                    onClick={startEdit}
+                    title="Edit plate"
+                    className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                  >
+                    <Pencil className="size-3" />
+                    Edit
+                  </button>
+                )}
+              </div>
+
+              {isEditing ? (
+                <div className="space-y-2">
+                  <input
+                    ref={editInputRef}
+                    type="text"
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); submitEdit() }
+                      if (e.key === 'Escape') { e.preventDefault(); cancelEdit() }
+                    }}
+                    placeholder="69D166666"
+                    inputMode="text"
+                    autoCapitalize="characters"
+                    autoComplete="off"
+                    spellCheck={false}
+                    aria-invalid={editRaw.length > 0 && !isEditValid}
+                    className={`h-11 w-full rounded-lg border px-3 font-mono text-xl font-black uppercase tracking-widest placeholder:text-amber-300 focus:outline-none focus:ring-2 dark:bg-amber-950/40 dark:text-amber-100 ${
+                      editRaw.length > 0 && !isEditValid
+                        ? 'border-red-400 bg-red-50 focus:border-red-500 focus:ring-red-500/20 dark:border-red-700'
+                        : 'border-amber-300 bg-amber-50 focus:border-amber-500 focus:ring-amber-500/20 dark:border-amber-700'
+                    }`}
+                  />
+                  {editDisplay ? (
+                    <p className="font-mono text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                      → {editDisplay}
+                    </p>
+                  ) : editRaw.length > 0 ? (
+                    <p className="text-xs font-medium text-red-600 dark:text-red-400">
+                      Biển số chưa đúng định dạng VN (xe máy 9 ký tự, xe hơi 8 ký tự).
+                    </p>
+                  ) : null}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={submitEdit}
+                      disabled={!isEditValid}
+                      className="flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-40 transition-colors"
+                    >
+                      <RotateCcw className="size-3.5" />
+                      Re-verify
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelEdit}
+                      className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-1 break-all font-mono text-3xl font-black tracking-[0.12em] text-foreground">
+                  {result.displayPlate}
+                </p>
+              )}
             </div>
             {capturedImageUrl ? (
               <img
@@ -501,7 +714,7 @@ function ScanResultCard({
               {result.sessionId && (
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Session</p>
-                  <div className="mt-1.5 font-mono text-sm font-semibold text-foreground">{result.sessionId}</div>
+                  <div className="mt-1.5 font-mono text-sm font-semibold text-foreground">{result.sessionId.slice(0, 8)}...</div>
                 </div>
               )}
               <div>
@@ -509,11 +722,6 @@ function ScanResultCard({
                 <div className="mt-1.5 text-sm font-bold text-foreground">
                   {result.confidence != null ? `${Math.round(result.confidence * 100)}%` : '—'}
                 </div>
-              </div>
-              {/* Future Compatibility for ReID */}
-              <div className="hidden">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Vehicle Match</p>
-                <div className="mt-1.5 text-sm font-bold text-foreground">98%</div>
               </div>
             </div>
 
@@ -532,8 +740,16 @@ function ScanResultCard({
                     <li className="flex items-center gap-2"><CheckCircle2 className="size-4 text-emerald-500" /> Reservation still valid</li>
                   </>
                 )}
-                {result.vehicleStatus === 'UNKNOWN' && (
-                  <li className="flex items-center gap-2"><AlertTriangle className="size-4 text-amber-500" /> No active session or reservation</li>
+                {result.vehicleStatus === 'UNKNOWN' && result.recommendedAction === 'CHECKIN' && (
+                  <>
+                    <li className="flex items-center gap-2"><CheckCircle2 className="size-4 text-emerald-500" /> New vehicle detected</li>
+                    <li className="flex items-center gap-2"><CheckCircle2 className="size-4 text-emerald-500" /> Ready to assign parking session</li>
+                  </>
+                )}
+                {result.vehicleStatus === 'UNKNOWN' && result.recommendedAction === 'MANUAL_REVIEW' && (
+                  <>
+                    <li className="flex items-center gap-2"><Info className="size-4 text-slate-500" /> No active session or reservation</li>
+                  </>
                 )}
               </ul>
               <p className="mt-4 text-sm font-semibold text-foreground">
@@ -543,9 +759,17 @@ function ScanResultCard({
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row pt-2">
-            <Button type="button" onClick={onConfirm} className="h-11 flex-1">
-              <CheckCircle2 className="size-4" />
-              {CONFIRM_LABEL[result.recommendedAction]} (Enter)
+            <Button type="button" onClick={onConfirm} className="h-11 flex-1" disabled={submitting}>
+              {submitting ? (
+                <div className="flex items-center gap-2">
+                  <RotateCcw className="size-4 animate-spin" /> Processing...
+                </div>
+              ) : (
+                <>
+                  <CheckCircle2 className="size-4" />
+                  {CONFIRM_LABEL[result.recommendedAction]} (Enter)
+                </>
+              )}
             </Button>
             {onOverride ? (
               <Button type="button" variant="outline" onClick={onOverride} className="h-11">
@@ -644,13 +868,3 @@ function ManualPlateEntry({
   )
 }
 
-function extractErrorMessage(error: unknown): string {
-  if (isAxiosError(error)) {
-    const raw = error.response?.data?.message
-    if (Array.isArray(raw)) return raw.join(', ')
-    if (typeof raw === 'string') return raw
-    return `Request failed (${error.response?.status ?? 'network'})`
-  }
-  if (error instanceof Error) return error.message
-  return 'Unexpected error'
-}

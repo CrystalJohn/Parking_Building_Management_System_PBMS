@@ -22,6 +22,7 @@ import {
 import { useLocation } from 'react-router-dom'
 import { useToasts } from '../../lib/use-toasts'
 import {
+  checkIn,
   checkOut,
   confirmPayment,
   confirmCashPayment,
@@ -49,9 +50,9 @@ import { Receipt } from '../../components/receipt/Receipt'
 import { RequestManagerReviewDialog } from '../../components/operation-issues/RequestManagerReviewDialog'
 import { QRScanner } from '../../components/qr-scanner/QRScanner'
 import { RecentSessionsCard } from '../../components/ui/RecentSessionsCard'
+
 import { formatDateTimeVN } from '../../lib/date-time'
 import { formatVehicleType, normalizePlateForApi } from '../../lib/plate-format'
-import { StaffOcrCheckInPanel } from './StaffOcrCheckInPanel'
 import { StaffReservationQrCheckInPanel } from './StaffReservationQrCheckInPanel'
 import { GateVerificationConsole, type GateConfirmPayload } from './GateVerificationConsole'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -67,7 +68,34 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+
+function extractErrorMessage(err: unknown): string {
+  if (isAxiosError(err)) {
+    const msg: unknown = err.response?.data?.message
+    const text = Array.isArray(msg) ? msg.join(', ') : (msg as string | undefined)
+    if (!text) {
+      if (!err.response) return 'Không thể kết nối đến máy chủ'
+      return err.message || 'Đã xảy ra lỗi'
+    }
+    // Translate common backend messages into clear Vietnamese hints.
+    if (/No active session found/i.test(text)) {
+      return 'Phiên này không còn ở trạng thái đang đỗ. Có thể xe đã được xác nhận ra cổng trước đó — hãy kiểm tra lại hoặc tạo phiên mới.'
+    }
+    if (/already inside parking/i.test(text)) {
+      return 'Xe này đang còn trong bãi (đã check-in). Không thể check-in trùng.'
+    }
+    if (/GATE_LANE_ASSIGNMENT_REQUIRED/i.test(text)) {
+      return 'Bạn chưa được gán lane tại cổng. Hãy nhờ manager gán lane trước khi thao tác.'
+    }
+    if (/Foreign key constraint/i.test(text)) {
+      return 'Dữ liệu không hợp lệ (sai mã lane/phiên). Vui lòng thử lại hoặc báo kỹ thuật.'
+    }
+    return text
+  }
+  if (err instanceof Error) return err.message
+  return 'Đã xảy ra lỗi không xác định'
+}
+
 import {
   Card,
   CardAction,
@@ -207,7 +235,7 @@ export default function Gate() {
     if (tab === 'check-out') return 'checkout'
     return 'verify'
   })
-  
+
   const [checkoutQuery, setCheckoutQuery] = useState<{ kind: 'licensePlate' | 'sessionCode', value: string } | null>(null)
   const [overrideDialogOpen, setOverrideDialogOpen] = useState(false)
   const [overridePayload, setOverridePayload] = useState<GateConfirmPayload | null>(null)
@@ -267,13 +295,51 @@ export default function Gate() {
           {activeWorkflow === 'verify' && (
             <GateVerificationConsole
               toasts={toasts}
-              onConfirm={(payload) => {
-                 if (payload.recommendedAction === 'CHECKOUT') {
-                   setCheckoutQuery({ kind: 'licensePlate', value: payload.canonicalPlate });
-                   setActiveWorkflow('checkout');
-                 } else {
-                   setActiveWorkflow('checkin');
-                 }
+              onConfirm={async (payload, action) => {
+                if (action === 'CHECKOUT' || (payload.recommendedAction === 'CHECKOUT' && action !== 'MANUAL_REVIEW')) {
+                  try {
+                    const res = await checkOut({ sessionId: payload.sessionId!, licensePlate: payload.canonicalPlate })
+                    if (res.fee.total > 0 && !res.isPaid) {
+                      await confirmCashPayment(payload.sessionId!)
+                    }
+                    await confirmVehicleExited(payload.sessionId!)
+                    toasts.showSuccess('Checkout completed successfully. Gate opened.')
+                  } catch (err) {
+                    toasts.showError(extractErrorMessage(err))
+                    throw err
+                  }
+                  return
+                }
+
+                if (action === 'CHECKIN' || (payload.recommendedAction === 'CHECKIN' && action !== 'MANUAL_REVIEW')) {
+                  try {
+                    console.log('[GATE_TRACE] Gate.onConfirm', {
+                      sessionCode: payload.sessionId ?? '-',
+                      plate: payload.canonicalPlate,
+                      ocrEvidenceId: payload.ocrEvidenceId ?? null,
+                      vehicleStatus: payload.vehicleStatus ?? '-',
+                    })
+                    await checkIn({
+                      licensePlate: payload.canonicalPlate,
+                      vehicleType: payload.vehicleType === 'CAR' ? 'car' : 'motorbike',
+                      ocrEvidenceId: payload.ocrEvidenceId,
+                      reservationId: payload.reservationId,
+                      identificationMethod: 'OCR',
+                      identificationConfidence: payload.confidence ?? undefined,
+                    });
+                    toasts.showSuccess('Check-in completed successfully. Gate opened.');
+                  } catch (err) {
+                    throw err;
+                  }
+                  return;
+                }
+
+                if (payload.recommendedAction === 'CHECKOUT') {
+                  setCheckoutQuery({ kind: 'licensePlate', value: payload.canonicalPlate });
+                  setActiveWorkflow('checkout');
+                } else {
+                  setActiveWorkflow('checkin');
+                }
               }}
               onOpenOverride={(payload) => {
                 setOverridePayload(payload);
@@ -291,7 +357,6 @@ export default function Gate() {
               </div>
               <GateOperationsPanel
                 toasts={toasts}
-                laneVehicleType={lane.vehicleType}
                 onRouteToCheckout={() => setActiveWorkflow('checkout')}
               />
             </div>
@@ -307,30 +372,30 @@ export default function Gate() {
                   ← Back to Verification
                 </Button>
               </div>
-              <CheckOutPanel 
-                toasts={toasts} 
+              <CheckOutPanel
+                toasts={toasts}
                 initialLookupKind={checkoutQuery?.kind}
                 initialLookupValue={checkoutQuery?.value}
                 onResetToGateOps={() => {
-                   setCheckoutQuery(null);
-                   setActiveWorkflow('verify');
+                  setCheckoutQuery(null);
+                  setActiveWorkflow('verify');
                 }}
               />
             </div>
           )}
 
-          <GateOverrideDialog 
+          <GateOverrideDialog
             open={overrideDialogOpen}
             onOpenChange={setOverrideDialogOpen}
             payload={overridePayload}
             onOverrideSubmitted={(action) => {
-               setOverrideDialogOpen(false);
-               if (action === 'CHECKOUT') {
-                 setCheckoutQuery({ kind: 'licensePlate', value: overridePayload?.canonicalPlate || '' });
-                 setActiveWorkflow('checkout');
-               } else {
-                 setActiveWorkflow('checkin');
-               }
+              setOverrideDialogOpen(false);
+              if (action === 'CHECKOUT') {
+                setCheckoutQuery({ kind: 'licensePlate', value: overridePayload?.canonicalPlate || '' });
+                setActiveWorkflow('checkout');
+              } else {
+                setActiveWorkflow('checkin');
+              }
             }}
             toasts={toasts}
           />
@@ -366,6 +431,7 @@ function GateOverrideDialog({
     try {
       await recordGateOverride({
         canonicalPlate: payload.canonicalPlate,
+        plateDisplay: payload.displayPlate,
         vehicleStatus: payload.vehicleStatus,
         recommendedAction: payload.recommendedAction,
         actualAction: action,
@@ -377,7 +443,7 @@ function GateOverrideDialog({
       setReason('')
       toasts.showSuccess(`Override logged. Proceeding with ${action}.`)
     } catch (err) {
-       toasts.showError('Failed to record override.')
+      toasts.showError('Failed to record override.')
     } finally {
       setSubmitting(false)
     }
@@ -389,38 +455,38 @@ function GateOverrideDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Staff Override</AlertDialogTitle>
           <AlertDialogDescription>
-            System recommended <strong>{payload?.recommendedAction}</strong>. 
+            System recommended <strong>{payload?.recommendedAction}</strong>.
             Select an alternative action. This will be logged.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="space-y-4 py-4">
           <div className="space-y-2">
             <Label htmlFor="override-reason">Reason for override</Label>
-            <Input 
-              id="override-reason" 
-              placeholder="e.g. Plate misread, customer request..." 
-              value={reason} 
-              onChange={e => setReason(e.target.value)} 
+            <Input
+              id="override-reason"
+              placeholder="e.g. Plate misread, customer request..."
+              value={reason}
+              onChange={e => setReason(e.target.value)}
             />
           </div>
         </div>
         <AlertDialogFooter className="flex-col sm:flex-col gap-2">
-           <Button variant="outline" disabled={submitting} onClick={() => handleSubmit('CHECKIN')}>
-              Force Check-in
-           </Button>
-           <Button variant="outline" disabled={submitting} onClick={() => handleSubmit('CHECKOUT')}>
-              Force Check-out
-           </Button>
-           <Button variant="ghost" disabled={submitting} onClick={() => onOpenChange(false)}>
-              Cancel
-           </Button>
+          <Button variant="outline" disabled={submitting} onClick={() => handleSubmit('CHECKIN')}>
+            Force Check-in
+          </Button>
+          <Button variant="outline" disabled={submitting} onClick={() => handleSubmit('CHECKOUT')}>
+            Force Check-out
+          </Button>
+          <Button variant="ghost" disabled={submitting} onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
   )
 }
 
-function GateOperationsPanel({ toasts, laneVehicleType, onRouteToCheckout }: PanelProps & { laneVehicleType: 'car' | 'motorbike'; onRouteToCheckout?: () => void }) {
+function GateOperationsPanel({ toasts, onRouteToCheckout }: PanelProps & { onRouteToCheckout?: () => void }) {
   const [mode, setMode] = useState<'scan-plate' | 'reservation-qr'>('scan-plate')
 
   if (mode === 'reservation-qr') {
@@ -434,12 +500,11 @@ function GateOperationsPanel({ toasts, laneVehicleType, onRouteToCheckout }: Pan
   }
 
   return (
-    <StaffOcrCheckInPanel
-      toasts={toasts}
-      laneVehicleType={laneVehicleType}
-      onSwitchToReservationQr={() => setMode('reservation-qr')}
-      onRouteToCheckout={() => onRouteToCheckout?.()}
-    />
+    <div className="p-8 text-center text-muted-foreground border rounded-xl bg-muted/20">
+      <Loader2 className="size-8 animate-spin mx-auto mb-4 text-primary" />
+      <p>Processing Check-in...</p>
+      {/* We can put the actual checkIn API call here later or route it differently */}
+    </div>
   )
 }
 
@@ -569,8 +634,8 @@ export function LegacyCheckOutPanel({ toasts }: PanelProps) {
           <dt className="text-gray-500">License plate</dt>
           <dd className="font-medium">{feePreview.licensePlate}</dd>
 
-          <dt className="text-gray-500">Slot</dt>
-          <dd className="font-mono">{feePreview.slotCode}</dd>
+          <dt className="text-gray-500">Exit lane</dt>
+          <dd className="font-mono">{feePreview.slotCode ?? 'Ground floor'}</dd>
 
           <dt className="text-gray-500">Check-in</dt>
           <dd>{formatDateTime(feePreview.checkInTime)}</dd>
@@ -732,7 +797,7 @@ function CheckOutPanel({
         ? {
           ...current,
           session: { ...current.session, ...data.session },
-          slot: { ...current.slot, ...data.slot },
+          slot: current.slot ?? null,
           payment: data.payment,
         }
         : current,
@@ -754,7 +819,7 @@ function CheckOutPanel({
       checkInTime: current.session.checkInTime,
       checkOutTime,
       durationHours: current.fee.durationHours,
-      slotCode: current.slot.code,
+      slotCode: current.slot?.code ?? '—',
       fee: current.fee,
       paymentId: current.payment.id,
       paymentMethod: current.payment.method,
@@ -1055,10 +1120,8 @@ function CheckOutPanel({
           status: response.session.status,
           checkOutTime: response.session.checkOutTime,
         },
-        slot: {
-          ...workflow.slot,
-          status: response.slot.status,
-        },
+        slot: workflow.slot ?? null,
+        checkOutLane: workflow.checkOutLane ?? null,
       }
       const finalReceipt = buildReceiptFromWorkflow(
         completedWorkflow,
@@ -1076,14 +1139,12 @@ function CheckOutPanel({
               status: response.session.status,
               checkOutTime: response.session.checkOutTime,
             },
-            slot: {
-              ...current.slot,
-              status: response.slot.status,
-            },
+            slot: current.slot ?? null,
+            checkOutLane: current.checkOutLane ?? null,
           }
           : current,
       )
-      toasts.showSuccess('Vehicle exit confirmed. Slot released.')
+      toasts.showSuccess('Vehicle exit confirmed. Lane cleared.')
     } catch (err) {
       const { message } = extractError(err)
       toasts.showError(message || 'Exit confirmation failed.')
@@ -1371,7 +1432,7 @@ function CheckOutPanel({
             {isCompleted ? (
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-950">
                 <p className="text-sm font-semibold">Checkout completed</p>
-                <p className="mt-1 text-sm text-emerald-800">Vehicle exited. Slot released.</p>
+                <p className="mt-1 text-sm text-emerald-800">Vehicle exited. Lane cleared.</p>
               </div>
             ) : null}
 
@@ -1403,7 +1464,7 @@ function CheckOutPanel({
                       defaultNote={managerReviewNote}
                       sessionId={workflow.session.id}
                       paymentId={workflow.payment?.id}
-                      slotId={workflow.slot.id}
+                      slotId={workflow.slot?.id}
                       plateNumber={workflow.session.licensePlate}
                     />
                   ) : null}
@@ -1632,7 +1693,7 @@ function CheckOutPanel({
                 defaultNote={`Plate mismatch detected for ${plateDisplay}. Check-in plate: ${(workflow?.session.plateDisplay ?? checkInPlateNormalized) || 'N/A'}. Check-out plate: ${(workflow?.session.plateDisplay ?? checkOutPlateNormalized) || 'N/A'}.`}
                 sessionId={workflow.session.id}
                 paymentId={workflow.payment?.id}
-                slotId={workflow.slot.id}
+                slotId={workflow.slot?.id}
                 plateNumber={workflow.session.licensePlate}
                 trigger={
                   <AlertDialogAction asChild variant="outline">
@@ -1754,7 +1815,7 @@ function SessionSummary({
           Session summary
         </p>
         <Badge variant="outline" className="h-5 font-semibold bg-primary/5 text-primary border-primary/20">
-          Slot {workflow.slot.code}
+          {workflow.checkOutLane ? workflow.checkOutLane.code : 'Ground floor'}
         </Badge>
       </div>
       <div className="mt-3 space-y-2 text-sm">
@@ -1802,7 +1863,22 @@ function SessionSummary({
             )
           }
         />
-        <SummaryRow label="Floor / Zone" value={`${workflow.slot.floor.name} / Zone ${workflow.slot.zone}`} />
+        <SummaryRow
+          label="Exit lane"
+          value={
+            workflow.checkOutLane
+              ? `${workflow.checkOutLane.code} · ${readableVehicleType(workflow.checkOutLane.vehicleType)}`
+              : 'Ground floor · checkout gate'
+          }
+        />
+        <SummaryRow
+          label="Floor / Zone"
+          value={
+            workflow.session.floor
+              ? `${workflow.session.floor.name} · Zone ${workflow.session.zone ?? '-'}`
+              : (workflow.session.zone ? `Zone ${workflow.session.zone}` : '—')
+          }
+        />
 
         {hasPenalty ? (
           <>

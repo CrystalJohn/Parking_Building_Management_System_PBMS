@@ -10,6 +10,8 @@ export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'cancelled' | 'expir
 export type PaymentMethod = 'cash' | 'bank_qr'
 export type CheckInIdentificationMethod = 'RESERVATION_QR' | 'OCR' | 'MANUAL_PLATE'
 export type VehicleLookupMode = 'WALK_IN' | 'REGISTERED' | 'SUBSCRIBER'
+/** Gate v1.6: Runtime-derived evidence lifecycle status. Never persisted in DB. */
+export type EvidenceStatus = 'LINKED' | 'AUTO_RECONCILED' | 'MANUAL_ENTRY' | 'MISSING'
 
 export interface CheckInRequest {
   licensePlate: string
@@ -230,6 +232,7 @@ export type GateScanResponse =
 export interface GateVerifyResponse {
   displayPlate: string
   vehicleType: 'CAR' | 'MOTORBIKE' | 'UNKNOWN'
+  vehicleTypeDetected?: string | null
   canonicalPlate: string
   vehicleStatus: GateVehicleStatus
   recommendedAction: GateRecommendedAction
@@ -237,16 +240,22 @@ export interface GateVerifyResponse {
   sessionId?: string
   reservationId?: string
   subMode?: GateCheckoutSubMode
+  ocrEvidenceId?: string
 }
 
 export interface GateAuditRequest {
   canonicalPlate: string
+  plateDisplay: string
   vehicleStatus: GateVehicleStatus
   recommendedAction: GateRecommendedAction
   actualAction: GateRecommendedAction
   reason?: string
   sessionId?: string
   reservationId?: string
+  confidence?: number | null
+  action?: string
+  source?: string
+  corrected?: boolean
 }
 
 export interface GateAuditResponse {
@@ -320,9 +329,22 @@ export interface CheckoutSessionInfo {
   isLostTicket: boolean
   driverName?: string | null
   driverPhone?: string | null
+  /** Gate v1.6: persisted identification method from check-in */
+  identificationMethod?: string | null
+  /** OCR reading at capture time (null when no OCR scan occurred) */
+  plateNumberOcr?: string | null
+  /** Plate the staff confirmed (equals licensePlate). Differs from plateNumberOcr when a correction happened */
+  plateNumberConfirmed?: string | null
+  /** Staff who performed the check-in / plate correction */
+  checkedInById?: string | null
+  checkedInByName?: string | null
+  /** Floor/zone derived from the assigned gate lane at check-in (slot removed) */
+  floorId?: number | null
+  zone?: Zone | null
+  floor?: { id: number; floorNumber: number; name: string } | null
 }
 
-export interface CheckoutSlotInfo {
+interface CheckoutSlotInfo {
   id: number
   code: string
   status: 'available' | 'occupied' | 'reserved' | 'maintenance'
@@ -330,8 +352,16 @@ export interface CheckoutSlotInfo {
   floor: FloorInfo
 }
 
-export interface CheckInEvidence {
+export interface CheckOutLaneInfo {
   id: string
+  code: string
+  vehicleType: 'car' | 'motorbike'
+}
+
+export interface CheckInEvidence {
+  id?: string | null
+  /** Gate v1.6: runtime-derived evidence lifecycle status */
+  status: EvidenceStatus
   thumbnailUrl: string | null
   imageUrl: string | null
   capturedAt: string | null
@@ -340,6 +370,7 @@ export interface CheckInEvidence {
   displayPlate?: string | null
   canonicalPlate?: string | null
   ocrConfidence: number | null
+  vehicleType?: string | null
 }
 
 export interface CheckoutEvidence extends CheckInEvidence {
@@ -348,10 +379,12 @@ export interface CheckoutEvidence extends CheckInEvidence {
 
 export interface CheckoutWorkflowResponse {
   session: CheckoutSessionInfo
-  slot: CheckoutSlotInfo
+  slot?: CheckoutSlotInfo | null
+  checkOutLane?: CheckOutLaneInfo | null
   fee: FeeBreakdown
   payment: PaymentInfo | null
-  checkInEvidence: CheckInEvidence | null
+  /** Gate v1.6: Always present. status field indicates evidence lifecycle. */
+  checkInEvidence: CheckInEvidence
   exitEvidence?: CheckoutEvidence | null
 }
 
@@ -368,7 +401,7 @@ export interface CheckOutResponse {
   vehicleType: VehicleType
   checkInTime: string
   checkOutTime: string
-  slotCode: string
+  slotCode?: string | null
   fee: FeeBreakdown
   isPaid: boolean
 }
@@ -428,7 +461,8 @@ interface BackendLookupCheckoutResponse {
   slot: CheckoutSlotInfo
   fee: FeeBreakdown
   payment: PaymentInfo | null
-  checkInEvidence: CheckInEvidence | null
+  /** Gate v1.6: backend always returns this shape; status field always present */
+  checkInEvidence: CheckInEvidence
 }
 
 interface BackendCheckOutResponse {
@@ -449,14 +483,22 @@ interface BackendCheckOutResponse {
     penaltyAmount: number
     isOvertime: boolean
     isLostTicket: boolean
+    floorId?: number | null
+    zone?: Zone | null
+    floor?: { id: number; floorNumber: number; name: string } | null
   }
-  slot: {
+  slot?: {
     id: number
     code: string
     status: 'available' | 'occupied' | 'reserved' | 'maintenance'
     zone: Zone
     floor: FloorInfo
-  }
+  } | null
+  checkOutLane?: {
+    id: string
+    code: string
+    vehicleType: 'car' | 'motorbike'
+  } | null
   breakdown: BackendBreakdown
   payment: {
     id: string
@@ -468,6 +510,13 @@ interface BackendCheckOutResponse {
     qrCode?: string | null
     expiredAt?: string | null
   }
+  /**
+   * Entry OCR evidence for the session, when the backend includes it.
+   * Optional for backward compatibility: older/missing payloads omit it and
+   * the mapper falls back to `null` so behavior matches the prior hard-coded
+   * `checkInEvidence: null`.
+   */
+  checkInEvidence?: CheckInEvidence | null
 }
 
 interface BackendConfirmPaymentResponse {
@@ -532,14 +581,30 @@ function mapBackendCheckout(data: BackendCheckOutResponse): CheckoutWorkflowResp
       penaltyAmount: data.session.penaltyAmount,
       isOvertime: data.session.isOvertime,
       isLostTicket: data.session.isLostTicket,
+      floorId: data.session.floorId ?? null,
+      zone: data.session.zone ?? null,
+      floor: data.session.floor ?? null,
     },
-    slot: data.slot,
+    slot: data.slot ?? null,
+    checkOutLane: data.checkOutLane ?? null,
     fee: mapBreakdownToFee(data.breakdown),
     payment: {
       ...data.payment,
       sessionId: data.session.id,
     },
-    checkInEvidence: null,
+    // Gate v1.6: Pass through backend evidence. Backend always returns a
+    // checkInEvidence shape with a `status` field (LINKED/AUTO_RECONCILED/MANUAL_ENTRY/MISSING).
+    // Fall back to MISSING status for backward compat with older backend responses.
+    checkInEvidence: (data as any).checkInEvidence ?? {
+      status: 'MISSING' as EvidenceStatus,
+      thumbnailUrl: null,
+      imageUrl: null,
+      capturedAt: null,
+      ocrPlate: null,
+      confirmedPlate: null,
+      ocrConfidence: null,
+      vehicleType: null,
+    },
   }
 }
 
@@ -595,14 +660,14 @@ export async function scanGatePlate(input: {
   cameraId?: string
   buildingName?: string
   gateName?: string
-}): Promise<GateScanResponse> {
+}): Promise<GateVerifyResponse> {
   const formData = new FormData()
   formData.append('image', input.image, 'gate-frame.jpg')
   if (input.cameraId) formData.append('cameraId', input.cameraId)
   if (input.buildingName) formData.append('buildingName', input.buildingName)
   if (input.gateName) formData.append('gateName', input.gateName)
 
-  const { data } = await api.post<GateScanResponse>('/gate/scan-plate', formData)
+  const { data } = await api.post<GateVerifyResponse>('/gate/scan-plate', formData)
   return data
 }
 
@@ -649,6 +714,12 @@ export async function lookupSessionForCheckout(input: CheckoutLookupInput): Prom
   return data
 }
 
+export async function getCheckoutPreview(sessionId: string): Promise<CheckoutWorkflowResponse> {
+  const { data } = await api.get<BackendLookupCheckoutResponse>(`/sessions/${sessionId}/checkout-preview`)
+  return data
+}
+
+
 export async function requestCheckout(input: CheckoutLookupInput): Promise<CheckoutWorkflowResponse> {
   const { data } = await api.post<BackendCheckOutResponse>('/sessions/check-out', {
     sessionId: input.sessionCode || undefined,
@@ -668,7 +739,7 @@ export async function checkOut(request: CheckOutRequest): Promise<CheckOutRespon
     vehicleType: data.session.vehicleType,
     checkInTime: data.session.checkInTime,
     checkOutTime: data.fee.checkOutTime ?? new Date().toISOString(),
-    slotCode: data.slot.code,
+    slotCode: data.slot?.code ?? null,
     fee: data.fee,
     isPaid: data.session.isPaid,
   }

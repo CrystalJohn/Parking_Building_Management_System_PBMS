@@ -11,6 +11,17 @@ export function isValidVietnamesePlate(value: string | null | undefined): boolea
   return VIETNAMESE_PLATE_REGEX.test(normalized)
 }
 
+export function formatVietnamesePlateDisplay(value: string | null | undefined): string | null {
+  const normalized = normalizePlateForApi(value)
+  if (normalized.length === 8 && /^\d{2}[A-Z]\d{5}$/.test(normalized)) {
+    return `${normalized.slice(0, 3)}-${normalized.slice(3, 6)}.${normalized.slice(6)}`
+  }
+  if (normalized.length === 9 && /^\d{2}[A-Z]\d{6}$/.test(normalized)) {
+    return `${normalized.slice(0, 2)}-${normalized.slice(2, 4)} ${normalized.slice(4, 7)}.${normalized.slice(7)}`
+  }
+  return null
+}
+
 export function formatVehicleType(value: string | null | undefined): string {
   if (!value) return ''
   const str = value.trim()
