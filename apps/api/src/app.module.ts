@@ -25,6 +25,7 @@ import { OperationIssuesModule } from './operation-issues/operation-issues.modul
 import { VehicleRegistrationsModule } from './vehicle-registrations/vehicle-registrations.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { GateLanesModule } from './gate-lanes/gate-lanes.module';
+import { GatesModule } from './gates/gates.module';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { GateLanesModule } from './gate-lanes/gate-lanes.module';
     VehicleRegistrationsModule,
     SubscriptionsModule,
     GateLanesModule,
+    GatesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

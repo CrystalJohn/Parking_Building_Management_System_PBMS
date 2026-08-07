@@ -188,6 +188,8 @@ export class OcrService {
         displayPlate: true,
         ocrConfidence: true,
         providerFilename: true,
+        vehicleType: true,
+        autoReconciled: true,
       },
       orderBy: { capturedAt: 'desc' },
     });

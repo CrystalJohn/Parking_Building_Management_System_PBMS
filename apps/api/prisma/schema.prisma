@@ -25,6 +25,11 @@ enum Zone {
   B
 }
 
+enum GateType {
+  CHECK_IN
+  CHECK_OUT
+}
+
 enum VehicleType {
   car
   motorbike
@@ -81,6 +86,11 @@ enum SubscriptionStatus {
   active
   expired
   cancelled
+}
+
+enum RateTableType {
+  DEFAULT
+  EVENT
 }
 
 enum NotificationType {
@@ -154,6 +164,7 @@ model User {
   subscriptionsCreated         Subscription[]               @relation("SubscriptionCreatedBy")
   gateAssignment               StaffGateAssignment?         @relation("StaffGateAssignment")
   gateAssignmentsCreated       StaffGateAssignment[]        @relation("GateAssignmentsCreated")
+  rateTablesCreated            RateTable[]                  @relation("RateTableCreatedBy")
 
   @@map("users")
 }
@@ -177,17 +188,42 @@ model Vehicle {
   @@map("vehicles")
 }
 
+model Gate {
+  id          String      @id @default(uuid())
+  code        String      @unique
+  name        String
+  gateType    GateType    @map("gate_type")
+  floorId     Int?        @map("floor_id")
+  isActive    Boolean     @default(true) @map("is_active")
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  floor Floor?    @relation(fields: [floorId], references: [id])
+  lanes GateLane[]
+
+  @@index([gateType, isActive], map: "idx_gates_type_active")
+  @@map("gates")
+}
+
 model GateLane {
   id          String      @id @default(uuid())
   code        String      @unique
   name        String
   vehicleType VehicleType @map("vehicle_type")
+  gateId      String?     @map("gate_id")
   cameraId    String?     @map("camera_id")
+  floorId     Int?         @map("floor_id")
   isActive    Boolean     @default(true) @map("is_active")
   createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
 
+  gate        Gate?        @relation(fields: [gateId], references: [id])
+  floor       Floor?       @relation(fields: [floorId], references: [id])
+
   assignments StaffGateAssignment[]
+
+  // Relations
+  sessions ParkingSession[] @relation("GateLaneCheckoutSessions")
 
   @@index([vehicleType, isActive], map: "idx_gate_lanes_type_active")
   @@map("gate_lanes")
@@ -253,7 +289,10 @@ model Floor {
   name        String
 
   // Relations
-  slots Slot[]
+  slots      Slot[]
+  gateLanes  GateLane[]
+  gates      Gate[]
+  sessions   ParkingSession[]
 
   @@map("floors")
 }
@@ -282,7 +321,7 @@ model ParkingSession {
   id                    String        @id @default(uuid())
   driverId              String?       @map("driver_id")
   vehicleId             String?       @map("vehicle_id")
-  slotId                Int           @map("slot_id")
+  slotId                Int?          @map("slot_id")
   reservationId         String?       @unique @map("reservation_id")
   licensePlate          String        @map("license_plate")
   plateDisplay          String?       @map("plate_display")
@@ -303,23 +342,28 @@ model ParkingSession {
   isSynthetic           Boolean       @default(false) @map("is_synthetic")
   checkedInById         String?       @map("checked_in_by")
   checkedOutById        String?       @map("checked_out_by")
+  checkOutLaneId        String?       @map("check_out_lane_id")
   sessionCode           String        @unique @map("session_code")
   ticketGeneratedAt     DateTime?     @map("ticket_generated_at") @db.Timestamptz(3)
   ticketIssuedAt        DateTime?     @map("ticket_issued_at") @db.Timestamptz(3)
   ticketIssuedByStaffId String?       @map("ticket_issued_by_staff_id")
-  allocationStrategy    String?       @map("allocation_strategy")
-  allocationTimeMs      Int?          @map("allocation_time_ms")
+  allocationStrategy      String?       @map("allocation_strategy")
+  allocationTimeMs        Int?          @map("allocation_time_ms")
   // 32: Denormalized metrics for research queries (avoid JOINs)
-  floorId               Int?          @map("floor_id")
-  zone                  Zone?
+  floorId                 Int?          @map("floor_id")
+  zone                    Zone?
+  // Gate v1.6: how the vehicle was identified at check-in (OCR | MANUAL_PLATE | RESERVATION_QR)
+  identificationMethod    String?       @map("identification_method")
 
   // Relations
   driver              User?            @relation("DriverSessions", fields: [driverId], references: [id])
   vehicle             Vehicle?         @relation(fields: [vehicleId], references: [id])
-  slot                Slot             @relation(fields: [slotId], references: [id])
+  slot                Slot?            @relation(fields: [slotId], references: [id])
+  floor               Floor?           @relation(fields: [floorId], references: [id])
   reservation         Reservation?     @relation(fields: [reservationId], references: [id])
   checkedInBy         User?            @relation("CheckedInBy", fields: [checkedInById], references: [id])
   checkedOutBy        User?            @relation("CheckedOutBy", fields: [checkedOutById], references: [id])
+  checkOutLane        GateLane?        @relation("GateLaneCheckoutSessions", fields: [checkOutLaneId], references: [id])
   ticketIssuedByStaff User?            @relation("TicketIssuedBy", fields: [ticketIssuedByStaffId], references: [id])
   payment             Payment?
   ocrEvidences        OcrEvidence[]
@@ -350,11 +394,17 @@ model Reservation {
   cancelledAt      DateTime?         @map("cancelled_at") @db.Timestamptz(3)
   remindedAt       DateTime?         @map("reminded_at") @db.Timestamptz(3)
   status           ReservationStatus @default(active)
+  // Price lock-in (BR-09)
+  estimatedCost     Int?     @map("estimated_cost")
+  lockedRateTableId String?  @map("locked_rate_table_id")
+  lockedHourlyRate  Int?     @map("locked_hourly_rate")
+  pricedAt          DateTime? @map("priced_at") @db.Timestamptz(3)
 
   // Relations
   driver          User             @relation(fields: [driverId], references: [id])
   slot            Slot             @relation(fields: [slotId], references: [id])
   vehicle         Vehicle?         @relation(fields: [vehicleId], references: [id])
+  lockedRateTable RateTable?       @relation(fields: [lockedRateTableId], references: [id])
   session         ParkingSession?
   ocrEvidences    OcrEvidence[]
   operationIssues OperationIssue[]
@@ -454,10 +504,11 @@ model GateAuditLog {
   id                String   @id @default(uuid())
   staffId           String   @map("staff_id")
   canonicalPlate    String   @map("canonical_plate")
-  vehicleStatus     String   @map("vehicle_status")     // ACTIVE_SESSION | ACTIVE_RESERVATION | UNKNOWN
+  plateDisplay      String   @map("plate_display")
+  vehicleStatus     String   @map("vehicle_status") // ACTIVE_SESSION | ACTIVE_RESERVATION | UNKNOWN
   recommendedAction String   @map("recommended_action") // CHECKOUT | CHECKIN | MANUAL_REVIEW
-  actualAction      String   @map("actual_action")      // what staff actually did
-  reason            String?                             // staff-provided reason
+  actualAction      String   @map("actual_action") // what staff actually did
+  reason            String? // staff-provided reason
   sessionId         String?  @map("session_id")
   reservationId     String?  @map("reservation_id")
   createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -468,22 +519,46 @@ model GateAuditLog {
 }
 
 model PricingConfig {
-  id                     Int         @id @default(autoincrement())
-  vehicleType            VehicleType @map("vehicle_type")
-  hourlyRate             Int         @map("hourly_rate")
-  overtimePenalty        Int         @map("overtime_penalty")
-  lostTicketPenalty      Int         @map("lost_ticket_penalty")
-  overtimeThresholdHours Int         @default(24) @map("overtime_threshold_hours")
-  reservationDiscountPercent Int     @default(20) @map("reservation_discount_percent")
-  monthlyRate            Int         @default(300000) @map("monthly_rate")
-  yearlyRate             Int         @default(3000000) @map("yearly_rate")
-  updatedAt              DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
-  updatedBy              String?     @map("updated_by")
+  id                         Int         @id @default(autoincrement())
+  vehicleType                VehicleType @map("vehicle_type")
+  overtimePenalty            Int         @map("overtime_penalty")
+  lostTicketPenalty          Int         @map("lost_ticket_penalty")
+  overtimeThresholdHours     Int         @default(24) @map("overtime_threshold_hours")
+  reservationDiscountPercent Int         @default(20) @map("reservation_discount_percent")
+  monthlyRate                Int         @default(300000) @map("monthly_rate")
+  yearlyRate                 Int         @default(3000000) @map("yearly_rate")
+  updatedAt                  DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedBy                  String?     @map("updated_by")
 
   // Relations
   updatedByUser User? @relation("PricingUpdatedBy", fields: [updatedBy], references: [id])
 
   @@map("pricing_configs")
+}
+
+model RateTable {
+  id            String        @id @default(uuid())
+  name          String?
+  type          RateTableType
+  vehicleType   VehicleType   @map("vehicle_type")
+  hourlyRate    Int           @map("hourly_rate")
+  effectiveFrom DateTime?     @map("effective_from") @db.Timestamptz(3)
+  effectiveTo   DateTime?     @map("effective_to") @db.Timestamptz(3)
+  priority      Int           @default(0)
+  isActive      Boolean       @default(true) @map("is_active")
+  createdBy     String        @map("created_by")
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  // Relations
+  createdByUser User  @relation("RateTableCreatedBy", fields: [createdBy], references: [id])
+  lockedReservations Reservation[]
+
+  // BR-01: exactly one DEFAULT per vehicleType — enforced via partial unique index in migration
+  // Prisma cannot model partial indexes; constraint applied in raw SQL
+  @@index([type, vehicleType, isActive], map: "idx_rate_table_type_vehicle")
+  @@index([type, vehicleType, effectiveFrom, effectiveTo], map: "idx_rate_table_effective_range")
+  @@map("rate_tables")
 }
 
 model SystemConfig {
@@ -534,6 +609,8 @@ model OcrEvidence {
   imageMimeType      String?      @map("image_mime_type")
   imageSizeBytes     Int?         @map("image_size_bytes")
   imageSha256        String?      @map("image_sha256")
+  vehicleImageUrl    String?      @map("vehicle_image_url")
+  plateImageUrl      String?      @map("plate_image_url")
   imageExpiresAt     DateTime?    @map("image_expires_at") @db.Timestamptz(3)
   imageDeletedAt     DateTime?    @map("image_deleted_at") @db.Timestamptz(3)
   thumbnailExpiresAt DateTime?    @map("thumbnail_expires_at") @db.Timestamptz(3)
@@ -547,10 +624,13 @@ model OcrEvidence {
   displayPlate       String?      @map("display_plate")
   ocrConfidence      Float?       @map("ocr_confidence")
   confirmedPlate     String?      @map("confirmed_plate")
+  wasCorrected       Boolean      @default(false) @map("was_corrected")
   vehicleType        String?      @map("vehicle_type")
   buildingName       String?      @map("building_name")
   gateName           String?      @map("gate_name")
   errorMessage       String?      @map("error_message")
+  // Gate v1.6: true when evidence was attached via auto-reconciliation (not direct link)
+  autoReconciled     Boolean      @default(false) @map("auto_reconciled")
   capturedAt         DateTime     @default(now()) @map("captured_at") @db.Timestamptz(3)
   checkInTime        DateTime?    @map("check_in_time") @db.Timestamptz(3)
   staffId            String?      @map("staff_id")
@@ -571,19 +651,19 @@ model OcrEvidence {
 }
 
 model VehicleRegistrationRequest {
-  id           String                    @id @default(uuid())
-  driverId     String                    @map("driver_id")
-  plateNumber  String                    @map("plate_number")
-  vehicleType  VehicleType               @map("vehicle_type")
-  evidenceUrlCaVant  String?            @map("evidence_url_ca_vant")
-  evidenceUrlOverall String?             @map("evidence_url_overall")
-  evidenceUrlPlate   String?             @map("evidence_url_plate")
-  status       VehicleRegistrationStatus @default(pending)
-  reviewedById String?                   @map("reviewed_by_id")
-  reviewedAt   DateTime?                 @map("reviewed_at") @db.Timestamptz(3)
-  rejectReason String?                   @map("reject_reason")
-  createdAt    DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt    DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                 String                    @id @default(uuid())
+  driverId           String                    @map("driver_id")
+  plateNumber        String                    @map("plate_number")
+  vehicleType        VehicleType               @map("vehicle_type")
+  evidenceUrlCaVant  String?                   @map("evidence_url_ca_vant")
+  evidenceUrlOverall String?                   @map("evidence_url_overall")
+  evidenceUrlPlate   String?                   @map("evidence_url_plate")
+  status             VehicleRegistrationStatus @default(pending)
+  reviewedById       String?                   @map("reviewed_by_id")
+  reviewedAt         DateTime?                 @map("reviewed_at") @db.Timestamptz(3)
+  rejectReason       String?                   @map("reject_reason")
+  createdAt          DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   driver     User  @relation("VehicleRegistrationDriver", fields: [driverId], references: [id])
   reviewedBy User? @relation("VehicleRegistrationReviewer", fields: [reviewedById], references: [id])

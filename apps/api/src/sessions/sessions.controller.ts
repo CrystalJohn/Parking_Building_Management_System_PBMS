@@ -139,6 +139,20 @@ export class SessionsController {
   }
 
   /**
+   * GET /sessions/:sessionId/checkout-preview
+   * Staff only — Direct preview data for Gate v1.1 checkout flow.
+   */
+  @Get(':sessionId/checkout-preview')
+  @UseGuards(RolesGuard)
+  @Roles(Role.staff)
+  getCheckoutPreview(
+    @Param('sessionId') sessionId: string,
+    @CurrentUser('id') staffId?: string,
+  ) {
+    return this.sessionsService.lookupForCheckout({ sessionCode: sessionId }, staffId!);
+  }
+
+  /**
    * GET /sessions/my-active
    * Driver only — list own active sessions.
    * 23.4

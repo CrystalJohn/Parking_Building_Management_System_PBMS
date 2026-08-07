@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { SessionStatus } from '@prisma/client';
 import { UploadedOcrImage } from '../ocr/ocr.types';
 import { OcrService } from '../ocr';
@@ -17,29 +17,35 @@ export type GateVerifyResponse =
   | {
     displayPlate: string;
     vehicleType: 'CAR' | 'MOTORBIKE' | 'UNKNOWN';
+    vehicleTypeDetected?: string | null;
     canonicalPlate: string;
     vehicleStatus: 'ACTIVE_SESSION';
     recommendedAction: 'CHECKOUT';
     confidence: number | null;
     sessionId: string;
     subMode: GateCheckoutSubMode;
+    ocrEvidenceId?: string;
   }
   | {
     displayPlate: string;
     vehicleType: 'CAR' | 'MOTORBIKE' | 'UNKNOWN';
+    vehicleTypeDetected?: string | null;
     canonicalPlate: string;
     vehicleStatus: 'ACTIVE_RESERVATION';
     recommendedAction: 'CHECKIN';
     confidence: number | null;
     reservationId: string;
+    ocrEvidenceId?: string;
   }
   | {
     displayPlate: string;
     vehicleType: 'CAR' | 'MOTORBIKE' | 'UNKNOWN';
+    vehicleTypeDetected?: string | null;
     canonicalPlate: string;
     vehicleStatus: 'UNKNOWN';
-    recommendedAction: 'MANUAL_REVIEW';
+    recommendedAction: 'MANUAL_REVIEW' | 'CHECKIN';
     confidence: number | null;
+    ocrEvidenceId?: string;
   };
 
 export type GateScanResponse =
@@ -82,33 +88,43 @@ export class GateService {
     private readonly prisma: PrismaService,
   ) { }
 
+  private recentGateEvents = new Map<string, number>();
+
   async scanPlate(
     file: UploadedOcrImage,
     input: ScanPlateDto,
     staffId: string,
-  ): Promise<GateScanResponse> {
-    const [lane, ocr] = await Promise.all([
-      this.gateLanesService.requireActiveLane(staffId),
-      this.ocrService.recognize(file, input, staffId),
-    ]);
-
-    if (!ocr.detectedPlate) {
+  ): Promise<GateVerifyResponse> {
+    const lane = await this.gateLanesService.requireActiveLane(staffId);
+    const ocr = await this.ocrService.recognize(file, input, staffId);
+    
+    const canonicalPlate = ocr.detectedPlate ? normalizePlateNumber(ocr.detectedPlate) : '';
+    
+    if (canonicalPlate) {
+      const key = `${canonicalPlate}_${lane.gateLane.id}`;
+      const now = Date.now();
+      const lastEvent = this.recentGateEvents.get(key);
+      if (lastEvent && now - lastEvent < 30000) {
+         throw new ConflictException('Duplicate scan within 30 seconds.');
+      }
+      this.recentGateEvents.set(key, now);
+    }
+    
+    if (!canonicalPlate) {
       return {
-        mode: 'NEEDS_MANUAL_PLATE',
-        source: 'OCR',
+        displayPlate: '',
+        vehicleType: 'UNKNOWN',
+        canonicalPlate: '',
+        vehicleStatus: 'UNKNOWN',
+        recommendedAction: 'MANUAL_REVIEW',
+        confidence: ocr.confidence ?? 0,
         ocrEvidenceId: ocr.ocrEvidenceId,
-        error: ocr.error ?? 'No plate detected',
       };
     }
 
-    return this.resolvePlateMode({
-      plate: ocr.detectedPlate,
-      source: 'OCR',
+    return this.verifyPlate({
+      canonicalPlate,
       ocrEvidenceId: ocr.ocrEvidenceId,
-      staffId,
-      plateOcr: ocr.detectedPlate,
-      confidence: ocr.confidence,
-      lane,
     });
   }
 
@@ -126,14 +142,15 @@ export class GateService {
   async verifyPlate(input: {
     canonicalPlate: string;
     ocrEvidenceId?: string;
-    staffId?: string;
   }): Promise<GateVerifyResponse> {
     console.log(`[GateService:verifyPlate] start: canonicalPlate=${input.canonicalPlate}`);
     const canonicalPlate = normalizePlateNumber(input.canonicalPlate);
     const displayPlate = PlateFormatter.toDisplay(canonicalPlate) ?? canonicalPlate;
     const kind = PlateFormatter.inferKind(canonicalPlate);
     const vehicleType = kind === 'car' ? 'CAR' : kind === 'motorbike' ? 'MOTORBIKE' : 'UNKNOWN';
-    const confidence = await this.loadOcrConfidence(input.ocrEvidenceId);
+    const ocrAttrs = await this.loadOcrEvidenceAttrs(input.ocrEvidenceId);
+    const confidence = ocrAttrs.confidence;
+    const vehicleTypeDetected = ocrAttrs.vehicleType;
 
     // STEP 1: active session wins (checkout)
     const checkout = await this.sessionsService.lookupOpenForGateByPlate(canonicalPlate);
@@ -142,10 +159,12 @@ export class GateService {
       return {
         displayPlate,
         vehicleType,
+        vehicleTypeDetected,
         canonicalPlate,
         vehicleStatus: 'ACTIVE_SESSION',
         recommendedAction: 'CHECKOUT',
         confidence,
+        ocrEvidenceId: input.ocrEvidenceId,
         sessionId: checkout.session.id,
         subMode: this.mapCheckoutSubMode(checkout.session.status),
       };
@@ -158,28 +177,33 @@ export class GateService {
       return {
         displayPlate,
         vehicleType,
+        vehicleTypeDetected,
         canonicalPlate,
         vehicleStatus: 'ACTIVE_RESERVATION',
         recommendedAction: 'CHECKIN',
         confidence,
+        ocrEvidenceId: input.ocrEvidenceId,
         reservationId: reservation.id,
       };
     }
 
-    // STEP 3: unknown vehicle -> manual review
-    console.log(`[GateService:verifyPlate] matched UNKNOWN (manual review)`);
+    // STEP 3: unknown vehicle -> check-in
+    console.log(`[GateService:verifyPlate] matched UNKNOWN -> CHECKIN`);
     return {
       displayPlate,
       vehicleType,
+      vehicleTypeDetected,
       canonicalPlate,
       vehicleStatus: 'UNKNOWN',
-      recommendedAction: 'MANUAL_REVIEW',
+      recommendedAction: 'CHECKIN',
       confidence,
+      ocrEvidenceId: input.ocrEvidenceId,
     };
   }
 
   async recordOverride(input: {
     canonicalPlate: string;
+    plateDisplay: string;
     vehicleStatus: string;
     recommendedAction: string;
     actualAction: string;
@@ -188,11 +212,12 @@ export class GateService {
     reservationId?: string;
     staffId: string;
   }) {
-    console.log(`[GateService:recordOverride] plate=${input.canonicalPlate}, recommended=${input.recommendedAction}, actual=${input.actualAction}, reason=${input.reason}`);
+    console.log(`[GateService:recordAudit] plate=${input.canonicalPlate}, recommended=${input.recommendedAction}, actual=${input.actualAction}, reason=${input.reason}`);
     return this.prisma.gateAuditLog.create({
       data: {
         staffId: input.staffId,
         canonicalPlate: input.canonicalPlate,
+        plateDisplay: input.plateDisplay,
         vehicleStatus: input.vehicleStatus,
         recommendedAction: input.recommendedAction,
         actualAction: input.actualAction,
@@ -203,15 +228,18 @@ export class GateService {
     });
   }
 
-  private async loadOcrConfidence(ocrEvidenceId?: string): Promise<number | null> {
+  private async loadOcrEvidenceAttrs(ocrEvidenceId?: string): Promise<{ confidence: number | null, vehicleType: string | null }> {
     if (!ocrEvidenceId) {
-      return null;
+      return { confidence: null, vehicleType: null };
     }
     const evidence = await this.prisma.ocrEvidence.findUnique({
       where: { id: ocrEvidenceId },
-      select: { ocrConfidence: true },
+      select: { ocrConfidence: true, vehicleType: true },
     });
-    return evidence?.ocrConfidence ?? null;
+    return {
+      confidence: evidence?.ocrConfidence ?? null,
+      vehicleType: evidence?.vehicleType ?? null,
+    };
   }
 
   private async resolvePlateMode(input: {

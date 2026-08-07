@@ -30,4 +30,8 @@ export class RecordGateAuditDto {
   @IsOptional()
   @IsUUID()
   reservationId?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  plateDisplay: string;
 }

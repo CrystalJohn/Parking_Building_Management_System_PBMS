@@ -1,4 +1,4 @@
-import { PrismaClient, Role, Zone, VehicleType } from '@prisma/client';
+import { PrismaClient, Role, Zone, VehicleType, RateTableType } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -130,12 +130,11 @@ async function main() {
   console.log(`✅ Slots seeded: ${slotCount} total`);
 
   // ─── 4. PricingConfig ────────────────────────────────────────────────────
-  // Car: 20000 VND/h, overtime 50k, lost ticket 100k, threshold 24h
+  // Car: overtime 50k, lost ticket 100k, threshold 24h
   await prisma.pricingConfig.upsert({
     where: { id: 1 },
     update: {
       vehicleType: VehicleType.car,
-      hourlyRate: 20000,
       overtimePenalty: 50000,
       lostTicketPenalty: 100000,
       overtimeThresholdHours: 24,
@@ -144,7 +143,6 @@ async function main() {
     },
     create: {
       vehicleType: VehicleType.car,
-      hourlyRate: 20000,
       overtimePenalty: 50000,
       lostTicketPenalty: 100000,
       overtimeThresholdHours: 24,
@@ -153,12 +151,11 @@ async function main() {
     },
   });
 
-  // Motorbike: 10000 VND/h, overtime 50k, lost ticket 100k, threshold 24h
+  // Motorbike: overtime 50k, lost ticket 100k, threshold 24h
   await prisma.pricingConfig.upsert({
     where: { id: 2 },
     update: {
       vehicleType: VehicleType.motorbike,
-      hourlyRate: 10000,
       overtimePenalty: 50000,
       lostTicketPenalty: 100000,
       overtimeThresholdHours: 24,
@@ -167,7 +164,6 @@ async function main() {
     },
     create: {
       vehicleType: VehicleType.motorbike,
-      hourlyRate: 10000,
       overtimePenalty: 50000,
       lostTicketPenalty: 100000,
       overtimeThresholdHours: 24,
@@ -177,6 +173,35 @@ async function main() {
   });
 
   console.log('✅ PricingConfig seeded: car 20000 VND/h, motorbike 10000 VND/h');
+
+  // ─── 4b. RateTable (DEFAULT) ─────────────────────────────────────────────
+  // Seed a manager user for the createdBy field
+  const managerUser = await prisma.user.findFirst({
+    where: { role: Role.manager },
+  });
+  const managerId = managerUser?.id ?? 'system';
+
+  await prisma.rateTable.create({
+    data: {
+      type: RateTableType.DEFAULT,
+      vehicleType: VehicleType.car,
+      hourlyRate: 20000,
+      name: null,
+      createdBy: managerId,
+    },
+  });
+
+  await prisma.rateTable.create({
+    data: {
+      type: RateTableType.DEFAULT,
+      vehicleType: VehicleType.motorbike,
+      hourlyRate: 10000,
+      name: null,
+      createdBy: managerId,
+    },
+  });
+
+  console.log('✅ RateTable DEFAULT seeded: car 20000 VND/h, motorbike 10000 VND/h');
 
   // ─── 5. SystemConfig ────────────────────────────────────────────────────
   const systemConfigs = [

@@ -35,9 +35,9 @@ import { CheckInDto, CheckOutDto, ConfirmPaymentDto, LostTicketDto } from './dto
 
 interface CreateSessionInput {
   source: 'WALK_IN' | 'RESERVATION';
-  slotId: number;
-  floorId: number;
-  zone: Zone;
+  slotId?: number | null;
+  floorId?: number | null;
+  zone?: Zone | null;
   vehicleType: VehicleType;
   plateConfirmed: string;
   plateDisplay?: string | null;
@@ -48,6 +48,7 @@ interface CreateSessionInput {
   staffId: string;
   allocationStrategy: string;
   allocationTimeMs: number;
+  identificationMethod?: string | null;
 }
 
 @Injectable()
@@ -264,34 +265,36 @@ export class SessionsService {
       allocationStrategy = 'reservation_fulfillment';
       allocationTimeMs = 0;
     } else {
-      // 13.2: Allocate slot — throws ConflictException if building is full (Req 1.5)
-      const result = await this.allocationService.allocate(laneVehicleType);
-      slot = result.slot;
-      allocationStrategy = result.allocationStrategy;
-      allocationTimeMs = result.allocationTimeMs;
+      // 13.2: No slot assignment — building has no per-slot sensors.
+      // Walk-in vehicles are tracked by lane/floor only, not a physical slot.
+      slot = undefined;
+      allocationStrategy = 'no_slot';
+      allocationTimeMs = 0;
     }
 
-    // ─── Transaction: slot update + session creation ───────────────────────
+    // ─── Transaction: slot update (reservations only) + session creation ───
     let session: any;
     try {
       session = await this.prisma.$transaction(async (tx) => {
-        const expectedStatus = activeReservation ? 'reserved' : 'available';
-        const lockedSlot = await tx.$queryRaw<{ id: number; status: string }[]>`
-          SELECT id, status FROM slots
-          WHERE id = ${slot.id} AND status = ${expectedStatus}::"SlotStatus"
-          FOR UPDATE SKIP LOCKED
-        `;
+        if (slot) {
+          const expectedStatus = activeReservation ? 'reserved' : 'available';
+          const lockedSlot = await tx.$queryRaw<{ id: number; status: string }[]>`
+            SELECT id, status FROM slots
+            WHERE id = ${slot.id} AND status = ${expectedStatus}::"SlotStatus"
+            FOR UPDATE SKIP LOCKED
+          `;
 
-        if (!lockedSlot || lockedSlot.length === 0) {
-          throw new ConflictException(
-            `Slot ${slot.code} is no longer ${expectedStatus}. Please retry.`,
-          );
+          if (!lockedSlot || lockedSlot.length === 0) {
+            throw new ConflictException(
+              `Slot ${slot.code} is no longer ${expectedStatus}. Please retry.`,
+            );
+          }
+
+          await tx.slot.update({
+            where: { id: slot.id },
+            data: { status: 'occupied' },
+          });
         }
-
-        await tx.slot.update({
-          where: { id: slot.id },
-          data: { status: 'occupied' },
-        });
 
         if (reservationId) {
           await tx.reservation.update({
@@ -302,9 +305,9 @@ export class SessionsService {
 
         const newSession = await this.createParkingSession(tx, {
           source: reservationId ? 'RESERVATION' : 'WALK_IN',
-          slotId: slot.id,
-          floorId: slot.floorId,
-          zone: slot.zone,
+          slotId: slot?.id ?? null,
+          floorId: lane.gateLane.floorId ?? null,
+          zone: lane.gateLane.vehicleType === 'car' ? 'A' : 'B',
           vehicleType: laneVehicleType,
           plateConfirmed: plateNumberConfirmed,
           plateDisplay,
@@ -315,20 +318,50 @@ export class SessionsService {
           staffId,
           allocationStrategy,
           allocationTimeMs,
+          identificationMethod: identity.source,
         });
 
+        // ── Gate v1.6: Evidence lifecycle ─────────────────────────────────
         if (dto.ocrEvidenceId) {
+          // Fast path: explicit evidence ID provided (normal OCR flow)
           await (tx as any).ocrEvidence.update({
             where: { id: dto.ocrEvidenceId },
             data: {
               sessionId: newSession.id,
-              confirmedPlate: licensePlate,
+              confirmedPlate: plateNumberConfirmed,
+              wasCorrected: plateNumberOcr ? plateNumberConfirmed !== plateNumberOcr : false,
               vehicleType: laneVehicleType,
+              autoReconciled: false,
               staffId,
               reservationId,
               checkInTime: newSession.checkInTime,
             },
           });
+          this.logger.log(JSON.stringify({
+            event: 'EVIDENCE_LINKED_DIRECTLY',
+            sessionId: newSession.id,
+            evidenceId: dto.ocrEvidenceId,
+            canonicalPlate: plateNumberConfirmed,
+            staffId,
+          }));
+        } else if (identity.source !== 'MANUAL_PLATE') {
+          // Auto-reconciliation: search for the best orphan candidate
+          await this.attemptAutoReconciliation(
+            tx as any,
+            newSession,
+            { canonicalPlate: plateNumberConfirmed, vehicleType: laneVehicleType, checkInTime: newSession.checkInTime },
+            lane.gateLane.cameraId ?? null,
+            staffId,
+            reservationId,
+          );
+        } else {
+          // MANUAL_PLATE: no evidence — session.identificationMethod is the source of truth
+          this.logger.log(JSON.stringify({
+            event: 'EVIDENCE_MANUAL_ENTRY',
+            sessionId: newSession.id,
+            canonicalPlate: plateNumberConfirmed,
+            staffId,
+          }));
         }
 
         return newSession;
@@ -343,11 +376,7 @@ export class SessionsService {
         this.logger.warn(
           `Duplicate active session rejected | licensePlate=${licensePlate} existingSessionId=${duplicateSession?.id ?? 'unknown'} source=db_unique_constraint`,
         );
-        throw new ConflictException(
-          duplicateSession
-            ? `Xe đang trong bãi từ ${this.formatCheckInTime(duplicateSession.checkInTime)}`
-            : 'Xe đang có phiên gửi xe chưa check-out',
-        );
+        throw new ConflictException('Vehicle already inside parking.');
       }
       throw error;
     }
@@ -356,7 +385,7 @@ export class SessionsService {
 
     if (reservationId) {
       this.logger.log(
-        `Check-in with reservation success | reservationId=${reservationId} sessionId=${session.id} licensePlate=${session.licensePlate} slotId=${session.slot.id} staffId=${staffId}`,
+        `Check-in with reservation success | reservationId=${reservationId} sessionId=${session.id} licensePlate=${session.licensePlate} slotId=${session.slot?.id ?? 'none'} staffId=${staffId}`,
       );
     }
 
@@ -373,16 +402,7 @@ export class SessionsService {
         reservationId: session.reservationId,
         identificationMethod: identity.source,
       },
-      slot: {
-        id: session.slot.id,
-        code: session.slot.code,
-        zone: session.slot.zone,
-        floor: {
-          id: session.slot.floor.id,
-          floorNumber: session.slot.floor.floorNumber,
-          name: session.slot.floor.name,
-        },
-      },
+      slot: this.mapSessionSlot(session.slot),
       qr_code: session.qrCode ?? null,
       ticket: {
         sessionId: session.id,
@@ -392,10 +412,10 @@ export class SessionsService {
         licensePlate: session.licensePlate,
         plateDisplay: session.plateDisplay ?? null,
         vehicleType: session.vehicleType,
-        slotCode: session.slot.code,
-        floorName: session.slot.floor.name,
-        floorNumber: session.slot.floor.floorNumber,
-        zone: session.slot.zone,
+        slotCode: session.slot?.code ?? null,
+        floorName: session.floor?.name ?? 'Ground floor',
+        floorNumber: session.floor?.floorNumber ?? 0,
+        zone: session.zone ?? null,
         checkInTime: session.checkInTime,
         buildingName: process.env.PBMS_BUILDING_NAME ?? 'PBMS Building',
         gateName: process.env.PBMS_GATE_NAME ?? 'Main Gate',
@@ -721,11 +741,138 @@ export class SessionsService {
         allocationTimeMs: input.allocationTimeMs,
         floorId: input.floorId,
         zone: input.zone,
+        identificationMethod: input.identificationMethod ?? null,
       } as any,
       include: {
         slot: { include: { floor: true } },
+        floor: true,
       },
     });
+  }
+
+  /**
+   * Gate v1.6: Attempt to find and attach the best orphan OCR evidence
+   * when ocrEvidenceId was not explicitly provided at check-in.
+   *
+   * Scoring:
+   *   Required: same canonical plate + sessionId IS NULL + eventType=check_in + capturedAt within ±2 min
+   *   +2 bonus:  cameraId matches staff gate lane cameraId
+   *   +1 bonus:  vehicleType matches session vehicleType
+   *   Tiebreaker: closest capturedAt to checkInTime
+   */
+  private async attemptAutoReconciliation(
+    tx: { ocrEvidence: { findMany: Function; update: Function } },
+    session: { id: string; checkInTime: Date },
+    criteria: { canonicalPlate: string; vehicleType: string; checkInTime: Date },
+    laneCameraId: string | null,
+    staffId: string,
+    reservationId: string | null,
+  ): Promise<void> {
+    const twoMin = 2 * 60 * 1000;
+    const candidates: Array<{
+      id: string;
+      capturedAt: Date;
+      cameraId: string | null;
+      vehicleType: string | null;
+    }> = await tx.ocrEvidence.findMany({
+      where: {
+        sessionId: null,
+        eventType: 'check_in',
+        canonicalPlate: criteria.canonicalPlate,
+        capturedAt: {
+          gte: new Date(criteria.checkInTime.getTime() - twoMin),
+          lte: new Date(criteria.checkInTime.getTime() + twoMin),
+        },
+      },
+      select: { id: true, capturedAt: true, cameraId: true, vehicleType: true },
+      orderBy: { capturedAt: 'desc' },
+    });
+
+    if (candidates.length === 0) {
+      this.logger.log(JSON.stringify({
+        event: 'EVIDENCE_MISSING',
+        sessionId: session.id,
+        canonicalPlate: criteria.canonicalPlate,
+        staffId,
+      }));
+      return;
+    }
+
+    // Score each candidate
+    const scored = candidates.map((c) => {
+      let score = 0;
+      const matchedBy: string[] = ['plate'];
+      if (laneCameraId && c.cameraId === laneCameraId) { score += 2; matchedBy.push('lane'); }
+      if (c.vehicleType === criteria.vehicleType) { score += 1; matchedBy.push('vehicleType'); }
+      const timeDeltaSeconds = Math.round(
+        Math.abs(c.capturedAt.getTime() - criteria.checkInTime.getTime()) / 1000,
+      );
+      matchedBy.push('timestamp');
+      return { ...c, score, matchedBy, timeDeltaSeconds };
+    });
+
+    // Sort: highest score first, then closest timestamp
+    scored.sort((a, b) =>
+      b.score !== a.score
+        ? b.score - a.score
+        : a.timeDeltaSeconds - b.timeDeltaSeconds,
+    );
+
+    const topScore = scored[0].score;
+    const topCandidates = scored.filter((c) => c.score === topScore);
+
+    if (topCandidates.length > 1) {
+      // Ambiguous: multiple same-score candidates — do NOT auto-link
+      this.logger.warn(JSON.stringify({
+        event: 'EVIDENCE_AMBIGUOUS_MATCH',
+        sessionId: session.id,
+        canonicalPlate: criteria.canonicalPlate,
+        candidateIds: topCandidates.map((c) => c.id),
+        staffId,
+      }));
+      return;
+    }
+
+    // Single winner — auto-link
+    const winner = topCandidates[0];
+    await tx.ocrEvidence.update({
+      where: { id: winner.id },
+      data: {
+        sessionId: session.id,
+        autoReconciled: true,
+        staffId,
+        reservationId,
+        checkInTime: session.checkInTime,
+      },
+    });
+
+    this.logger.log(JSON.stringify({
+      event: 'EVIDENCE_AUTO_RECONCILED',
+      sessionId: session.id,
+      evidenceId: winner.id,
+      canonicalPlate: criteria.canonicalPlate,
+      matchedBy: winner.matchedBy,
+      score: winner.score,
+      timeDeltaSeconds: winner.timeDeltaSeconds,
+      autoReconciled: true,
+      staffId,
+    }));
+  }
+
+  /**
+   * Gate v1.6: Runtime-derive the evidence status from the evidence record
+   * and the session's identificationMethod. No status enum is persisted.
+   */
+  private deriveEvidenceStatus(
+    evidence: { autoReconciled: boolean } | null,
+    identificationMethod: string | null | undefined,
+  ): 'LINKED' | 'AUTO_RECONCILED' | 'MANUAL_ENTRY' | 'MISSING' {
+    if (!evidence) {
+      if (identificationMethod === 'MANUAL_PLATE') return 'MANUAL_ENTRY';
+      return 'MISSING';
+    }
+    if (evidence.autoReconciled) return 'AUTO_RECONCILED';
+    return 'LINKED';
   }
 
   private async notifySessionStarted(session: {
@@ -908,8 +1055,16 @@ export class SessionsService {
     penaltyAmount: number;
     isOvertime: boolean;
     isLostTicket: boolean;
+    identificationMethod?: string | null;
+    plateNumberOcr?: string | null;
+    plateNumberConfirmed?: string | null;
+    checkedInById?: string | null;
+    checkedInBy?: { fullName: string } | null;
+    floorId?: number | null;
+    zone?: Zone | null;
+    floor?: { id: number; floorNumber: number; name: string } | null;
     driver?: { fullName: string; phone: string } | null;
-    reservation?: { driver?: { fullName: string; phone: string } | null } | null;
+    reservation?: { driver?: { fullName: string; phone: string } | null; lockedHourlyRate?: number | null } | null;
     vehicle?: { vehicleUsers?: Array<{ role?: string; user?: { fullName: string; phone: string } }> } | null;
     slot: {
       id: number;
@@ -960,6 +1115,8 @@ export class SessionsService {
       session,
       session.isLostTicket,
       session.checkOutTime ?? new Date(),
+      undefined,
+      session.reservation?.lockedHourlyRate ?? null,
     );
 
     const checkInEvidence = await this.ocrService.getCheckInEvidenceForSession(session.id);
@@ -983,18 +1140,18 @@ export class SessionsService {
         isLostTicket: session.isLostTicket,
         driverName,
         driverPhone,
+        identificationMethod: session.identificationMethod ?? null,
+        plateNumberOcr: session.plateNumberOcr ?? null,
+        plateNumberConfirmed: session.plateNumberConfirmed ?? null,
+        checkedInById: session.checkedInById ?? null,
+        checkedInByName: session.checkedInBy?.fullName ?? null,
+        floorId: session.floorId ?? null,
+        zone: session.zone ?? null,
+        floor: session.floor
+          ? { id: session.floor.id, floorNumber: session.floor.floorNumber, name: session.floor.name }
+          : null,
       },
-      slot: {
-        id: session.slot.id,
-        code: session.slot.code,
-        status: session.slot.status,
-        zone: session.slot.zone,
-        floor: {
-          id: session.slot.floor.id,
-          floorNumber: session.slot.floor.floorNumber,
-          name: session.slot.floor.name,
-        },
-      },
+      slot: this.mapSessionSlot(session.slot),
       fee: this.mapBreakdownToCheckoutFee(breakdown),
       payment: session.payment
         ? {
@@ -1013,6 +1170,7 @@ export class SessionsService {
       checkInEvidence: checkInEvidence
         ? {
             id: checkInEvidence.id,
+            status: this.deriveEvidenceStatus(checkInEvidence, session.identificationMethod),
             thumbnailUrl: checkInEvidence.thumbnailKey
               ? `/api/ocr-evidences/${checkInEvidence.id}/thumbnail`
               : null,
@@ -1023,8 +1181,18 @@ export class SessionsService {
             ocrPlate: checkInEvidence.ocrPlate,
             confirmedPlate: checkInEvidence.confirmedPlate,
             ocrConfidence: checkInEvidence.ocrConfidence,
+            vehicleType: checkInEvidence.vehicleType,
           }
-        : null,
+        : {
+            status: this.deriveEvidenceStatus(null, session.identificationMethod),
+            thumbnailUrl: null,
+            imageUrl: null,
+            capturedAt: null,
+            ocrPlate: null,
+            confirmedPlate: null,
+            ocrConfidence: null,
+            vehicleType: null,
+          },
     };
   }
 
@@ -1189,7 +1357,8 @@ export class SessionsService {
       floorNumber: number;
       name: string;
     };
-  }) {
+  } | null | undefined) {
+    if (!slot) return null;
     return {
       id: slot.id,
       code: slot.code,
@@ -1233,19 +1402,64 @@ export class SessionsService {
       },
       include: {
         slot: { include: { floor: true } },
+        checkOutLane: true,
+        floor: true,
       },
     });
 
     if (!session) {
+      // Fallback: look up the session regardless of status so we can return a
+      // clear, actionable message instead of a cryptic "No active session found".
+      const anySession = await this.prisma.parkingSession.findFirst({
+        where: dto.sessionId
+          ? { OR: [{ id: dto.sessionId }, { sessionCode: dto.sessionId }] }
+          : { licensePlate: dto.licensePlate },
+        select: { sessionCode: true, status: true, licensePlate: true },
+      });
+      if (anySession) {
+        const label: Record<string, string> = {
+          active: 'đang đỗ trong bãi',
+          checkout_pending: 'đang xử lý thanh toán',
+          exit_authorized: 'đã được xác nhận ra cổng',
+          completed: 'đã hoàn tất ra cổng',
+          lost_ticket: 'đang xử lý vé thất lạc',
+        };
+        const state = label[anySession.status] ?? anySession.status;
+        if (anySession.status === 'exit_authorized' || anySession.status === 'completed') {
+          throw new ConflictException(
+            `Xe ${anySession.licensePlate} (${anySession.sessionCode}) ${state}. Không thể checkout lại.`,
+          );
+        }
+        throw new ConflictException(
+          `Phiên ${anySession.sessionCode} hiện đang ${state}, chưa sẵn sàng để checkout.`,
+        );
+      }
       throw new NotFoundException(
-        `No active session found for ${dto.sessionId ? `id: ${dto.sessionId}` : `plate: ${dto.licensePlate}`}`,
+        `Không tìm thấy phiên cho ${dto.sessionId ? `mã ${dto.sessionId}` : `biển số ${dto.licensePlate}`}.`,
       );
     }
     this.gateLanesService.assertVehicleType(lane, session.vehicleType);
 
     // 15.2: Calculate fee breakdown via FeesService
     const now = new Date();
-    const breakdown = await this.feesService.calculate(session, false, now);
+
+    // BR-09/10: Fetch locked rate from reservation if applicable
+    let lockedRate: number | null = null;
+    if (session.reservationId) {
+      const reservation = await this.prisma.reservation.findUnique({
+        where: { id: session.reservationId },
+        select: { lockedHourlyRate: true },
+      });
+      lockedRate = reservation?.lockedHourlyRate ?? null;
+    }
+
+    const breakdown = await this.feesService.calculate(
+      session,
+      false,
+      now,
+      undefined,
+      lockedRate,
+    );
 
     // 15.3: Flag overtime + log warning if duration > threshold
     if (breakdown.isOvertime) {
@@ -1264,6 +1478,7 @@ export class SessionsService {
           penaltyAmount: breakdown.overtimePenalty + breakdown.lostTicketPenalty,
           isOvertime: breakdown.isOvertime,
           isLostTicket: breakdown.isLostTicket,
+          checkOutLaneId: dto.gateLaneId ?? lane.gateLane.id,
         } as any,
       });
 
@@ -1306,17 +1521,10 @@ export class SessionsService {
         isOvertime: breakdown.isOvertime,
         isLostTicket: breakdown.isLostTicket,
       },
-      slot: {
-        id: session.slot.id,
-        code: session.slot.code,
-        status: session.slot.status,
-        zone: session.slot.zone,
-        floor: {
-          id: session.slot.floor.id,
-          floorNumber: session.slot.floor.floorNumber,
-          name: session.slot.floor.name,
-        },
-      },
+      slot: this.mapSessionSlot(session.slot),
+      checkOutLane: session.checkOutLane
+        ? { id: session.checkOutLane.id, code: session.checkOutLane.code, vehicleType: session.checkOutLane.vehicleType }
+        : null,
       breakdown,
       payment: {
         id: payment.id,
@@ -1367,7 +1575,24 @@ export class SessionsService {
     // Recalculate fee at confirmation time (with lost ticket flag)
     const now = new Date();
     const isLost = dto.isLostTicket ?? false;
-    const breakdown = await this.feesService.calculate(session, isLost, now);
+
+    // BR-09/10: Fetch locked rate from reservation if applicable
+    let lockedRate: number | null = null;
+    if (session.reservationId) {
+      const reservation = await this.prisma.reservation.findUnique({
+        where: { id: session.reservationId },
+        select: { lockedHourlyRate: true },
+      });
+      lockedRate = reservation?.lockedHourlyRate ?? null;
+    }
+
+    const breakdown = await this.feesService.calculate(
+      session,
+      isLost,
+      now,
+      undefined,
+      lockedRate,
+    );
     const method = dto.method ?? PaymentMethod.cash;
 
     // 15.4–15.5: Payment confirmation authorizes exit.
@@ -1423,10 +1648,7 @@ export class SessionsService {
         licensePlate: session.licensePlate,
         plateDisplay: session.plateDisplay ?? null,
         vehicleType: session.vehicleType,
-        slot: {
-          code: session.slot.code,
-          floor: session.slot.floor.name,
-        },
+        slot: this.mapSessionSlot(session.slot),
         checkInTime: session.checkInTime,
         checkOutTime: now,
         durationHours: breakdown.roundedHours,
@@ -1506,11 +1728,7 @@ export class SessionsService {
         checkOutTime: updatedSession.checkOutTime,
         checkedOutById: updatedSession.checkedOutById,
       },
-      slot: {
-        id: session.slot.id,
-        code: session.slot.code,
-        status: 'available',
-      },
+      slot: this.mapSessionSlot(session.slot),
     };
   }
 
@@ -1523,6 +1741,7 @@ export class SessionsService {
       where: { id },
       include: {
         slot: { include: { floor: true } },
+        floor: true,
         driver: { select: { id: true, phone: true, fullName: true } },
         checkedInBy: { select: { id: true, phone: true, fullName: true } },
       },
@@ -1583,13 +1802,14 @@ export class SessionsService {
         slot: { include: { floor: true } },
         payment: true,
         reservation: {
-          include: {
+          select: {
             driver: {
               select: {
                 fullName: true,
                 phone: true,
               },
             },
+            lockedHourlyRate: true,
           },
         },
         driver: {
@@ -1610,6 +1830,11 @@ export class SessionsService {
                 },
               },
             },
+          },
+        },
+        checkedInBy: {
+          select: {
+            fullName: true,
           },
         },
       },
@@ -1648,13 +1873,14 @@ export class SessionsService {
         slot: { include: { floor: true } },
         payment: true,
         reservation: {
-          include: {
+          select: {
             driver: {
               select: {
                 fullName: true,
                 phone: true,
               },
             },
+            lockedHourlyRate: true,
           },
         },
         driver: {
@@ -1814,6 +2040,9 @@ export class SessionsService {
       },
       include: {
         slot: { include: { floor: true } },
+        reservation: {
+          select: { lockedHourlyRate: true },
+        },
       },
     });
 
@@ -1836,7 +2065,13 @@ export class SessionsService {
 
     // 24.3: Calculate fee with lost ticket penalty (100k)
     const now = new Date();
-    const breakdown = await this.feesService.calculate(session, true, now);
+    const breakdown = await this.feesService.calculate(
+      session,
+      true,
+      now,
+      undefined,
+      session.reservation?.lockedHourlyRate ?? null,
+    );
 
     this.logger.warn(
       `Lost ticket processed: session ${session.id}, plate ${dto.licensePlate}, ` +
@@ -1852,10 +2087,7 @@ export class SessionsService {
         checkInTime: session.checkInTime,
         isLostTicket: true,
       },
-      slot: {
-        code: session.slot.code,
-        floor: session.slot.floor.name,
-      },
+      slot: this.mapSessionSlot(session.slot),
       breakdown,
     };
   }

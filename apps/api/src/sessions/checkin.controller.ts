@@ -13,6 +13,12 @@ export class CheckinController {
 
   @Post('confirm')
   confirm(@Body() dto: CheckInDto, @CurrentUser('id') staffId: string) {
+    console.log('[GATE_TRACE] CheckinController.confirm (POST /checkin/confirm request body)', {
+      sessionCode: '-',
+      plate: dto.licensePlate,
+      ocrEvidenceId: dto.ocrEvidenceId ?? null,
+      vehicleStatus: '-',
+    })
     return this.sessionsService.checkIn(dto, staffId);
   }
 

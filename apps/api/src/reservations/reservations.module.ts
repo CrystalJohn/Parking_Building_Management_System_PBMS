@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { ConfigMgmtModule } from '../config-mgmt/config-mgmt.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { SlotsModule } from '../slots/slots.module';
@@ -12,6 +13,7 @@ import { ReservationsService } from './reservations.service';
     PrismaModule,
     NotificationsModule,
     SlotsModule, // provides AllocationService
+    ConfigMgmtModule, // provides PricingResolver
   ],
   controllers: [ReservationsController],
   providers: [ReservationsService],

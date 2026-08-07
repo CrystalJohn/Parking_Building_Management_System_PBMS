@@ -60,7 +60,6 @@ export class GateController {
     return this.gateService.verifyPlate({
       canonicalPlate: dto.canonicalPlate,
       ocrEvidenceId: dto.ocrEvidenceId,
-      staffId,
     });
   }
 
@@ -69,6 +68,7 @@ export class GateController {
     console.log(`[GateController] recordOverride called with:`, dto);
     return this.gateService.recordOverride({
       canonicalPlate: dto.canonicalPlate,
+      plateDisplay: dto.plateDisplay,
       vehicleStatus: dto.vehicleStatus,
       recommendedAction: dto.recommendedAction,
       actualAction: dto.actualAction,

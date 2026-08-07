@@ -55,16 +55,19 @@ describe('GateService', () => {
     const result = await service.scanPlate({} as any, {}, 'staff-1');
 
     expect(result).toEqual({
-      mode: 'NEEDS_MANUAL_PLATE',
-      source: 'OCR',
+      displayPlate: '',
+      vehicleType: 'UNKNOWN',
+      canonicalPlate: '',
+      vehicleStatus: 'UNKNOWN',
+      recommendedAction: 'MANUAL_REVIEW',
+      confidence: 0,
       ocrEvidenceId: 'ocr-1',
-      error: 'No plate detected',
     });
     expect(sessionsService.lookupOpenForGateByPlate).not.toHaveBeenCalled();
     expect(vehiclesService.lookupPlate).not.toHaveBeenCalled();
   });
 
-  it('routes OCR scan to CHECK_IN when the plate has no open session', async () => {
+  it('routes OCR scan to CHECK_IN (UNKNOWN) when the plate has no open session', async () => {
     ocrService.recognize.mockResolvedValue({
       ocrEvidenceId: 'ocr-1',
       detectedPlate: '59A-123.45',
@@ -72,26 +75,23 @@ describe('GateService', () => {
       error: null,
     });
     sessionsService.lookupOpenForGateByPlate.mockResolvedValue(null);
-    vehiclesService.lookupPlate.mockResolvedValue({
-      inputPlate: '59A12345',
-      normalizedPlate: '59A12345',
-      matched: false,
-      mode: 'WALK_IN',
-    });
+    reservationsService.findActiveByCanonicalPlate.mockResolvedValue(null);
+    prismaService.ocrEvidence.findUnique.mockResolvedValue({ ocrConfidence: 0.97, vehicleType: null });
 
     const result = await service.scanPlate({} as any, {}, 'staff-1');
 
     expect(sessionsService.lookupOpenForGateByPlate).toHaveBeenCalledWith('59A12345');
-    expect(vehiclesService.lookupPlate).toHaveBeenCalledWith('59A12345');
-    expect(result).toMatchObject({
-      mode: 'CHECK_IN',
-      source: 'OCR',
-      plateConfirmed: '59A12345',
-      plateOcr: '59A-123.45',
+    expect(reservationsService.findActiveByCanonicalPlate).toHaveBeenCalledWith('59A12345');
+    expect(result).toEqual({
+      displayPlate: '59A-123.45',
+      vehicleType: 'CAR',
+      vehicleTypeDetected: null,
+      canonicalPlate: '59A12345',
+      vehicleStatus: 'UNKNOWN',
+      recommendedAction: 'CHECKIN',
       confidence: 0.97,
       ocrEvidenceId: 'ocr-1',
     });
-    expect(result).toMatchObject({ plateDisplay: '59A-123.45' });
   });
 
   it('routes manual resolve to PAYMENT_REQUIRED without calling OCR again', async () => {
@@ -149,12 +149,14 @@ describe('GateService', () => {
         session: { id: 'session-1', status: SessionStatus.active },
       });
 
-      const result = await service.verifyPlate({ canonicalPlate: '43A-272.08', staffId: 'staff-1' });
+      const result = await service.verifyPlate({ canonicalPlate: '43A-272.08' });
 
       expect(sessionsService.lookupOpenForGateByPlate).toHaveBeenCalledWith('43A27208');
       expect(reservationsService.findActiveByCanonicalPlate).not.toHaveBeenCalled();
       expect(result).toEqual({
-        plate: '43A-272.08',
+        displayPlate: '43A-272.08',
+        vehicleType: 'CAR',
+        vehicleTypeDetected: null,
         canonicalPlate: '43A27208',
         vehicleStatus: 'ACTIVE_SESSION',
         recommendedAction: 'CHECKOUT',
@@ -188,12 +190,14 @@ describe('GateService', () => {
       sessionsService.lookupOpenForGateByPlate.mockResolvedValue(null);
       reservationsService.findActiveByCanonicalPlate.mockResolvedValue({ id: 'res-1' });
 
-      const result = await service.verifyPlate({ canonicalPlate: '43A27208', staffId: 'staff-1' });
+      const result = await service.verifyPlate({ canonicalPlate: '43A27208' });
 
       expect(sessionsService.lookupOpenForGateByPlate).toHaveBeenCalledWith('43A27208');
       expect(reservationsService.findActiveByCanonicalPlate).toHaveBeenCalledWith('43A27208');
       expect(result).toEqual({
-        plate: '43A-272.08',
+        displayPlate: '43A-272.08',
+        vehicleType: 'CAR',
+        vehicleTypeDetected: null,
         canonicalPlate: '43A27208',
         vehicleStatus: 'ACTIVE_RESERVATION',
         recommendedAction: 'CHECKIN',
@@ -209,10 +213,12 @@ describe('GateService', () => {
       const result = await service.verifyPlate({ canonicalPlate: '43A27208' });
 
       expect(result).toEqual({
-        plate: '43A-272.08',
+        displayPlate: '43A-272.08',
+        vehicleType: 'CAR',
+        vehicleTypeDetected: null,
         canonicalPlate: '43A27208',
         vehicleStatus: 'UNKNOWN',
-        recommendedAction: 'MANUAL_REVIEW',
+        recommendedAction: 'CHECKIN',
         confidence: null,
       });
     });
@@ -247,7 +253,7 @@ describe('GateService', () => {
 
       expect(prismaService.ocrEvidence.findUnique).toHaveBeenCalledWith({
         where: { id: 'evidence-1' },
-        select: { ocrConfidence: true },
+        select: { ocrConfidence: true, vehicleType: true },
       });
       expect(result).toMatchObject({ confidence: 0.98 });
     });
@@ -279,6 +285,7 @@ describe('GateService', () => {
 
       const result = await service.recordOverride({
         canonicalPlate: '43A27208',
+        plateDisplay: '43A-272.08',
         vehicleStatus: 'ACTIVE_SESSION',
         recommendedAction: 'CHECKOUT',
         actualAction: 'CHECKIN',
@@ -292,6 +299,7 @@ describe('GateService', () => {
         data: {
           staffId: 'staff-1',
           canonicalPlate: '43A27208',
+          plateDisplay: '43A-272.08',
           vehicleStatus: 'ACTIVE_SESSION',
           recommendedAction: 'CHECKOUT',
           actualAction: 'CHECKIN',
@@ -308,6 +316,7 @@ describe('GateService', () => {
 
       await service.recordOverride({
         canonicalPlate: '43A27208',
+        plateDisplay: '43A-272.08',
         vehicleStatus: 'UNKNOWN',
         recommendedAction: 'MANUAL_REVIEW',
         actualAction: 'MANUAL_REVIEW',
@@ -319,6 +328,7 @@ describe('GateService', () => {
         data: {
           staffId: 'staff-1',
           canonicalPlate: '43A27208',
+          plateDisplay: '43A-272.08',
           vehicleStatus: 'UNKNOWN',
           recommendedAction: 'MANUAL_REVIEW',
           actualAction: 'MANUAL_REVIEW',
@@ -334,6 +344,7 @@ describe('GateService', () => {
 
       await service.recordOverride({
         canonicalPlate: '43A27208',
+        plateDisplay: '43A-272.08',
         vehicleStatus: 'ACTIVE_RESERVATION',
         recommendedAction: 'CHECKIN',
         actualAction: 'CHECKIN',
@@ -344,6 +355,7 @@ describe('GateService', () => {
         data: {
           staffId: 'staff-1',
           canonicalPlate: '43A27208',
+          plateDisplay: '43A-272.08',
           vehicleStatus: 'ACTIVE_RESERVATION',
           recommendedAction: 'CHECKIN',
           actualAction: 'CHECKIN',

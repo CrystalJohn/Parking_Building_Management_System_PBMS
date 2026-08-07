@@ -16,6 +16,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { normalizePlateNumber } from '../vehicles/vehicles.service';
 import { PlateFormatter } from '../plates';
 import { AllocationService } from '../slots/allocation.service';
+import { PricingResolver } from '../config-mgmt/pricing-resolver.service';
 import {
   RESERVATION_CHECKIN_TOKEN_REFRESH_MS,
   RESERVATION_CHECKIN_TOKEN_TTL_SECONDS,
@@ -49,6 +50,7 @@ export class ReservationsService {
     private readonly allocationService: AllocationService,
     private readonly jwtService: JwtService,
     private readonly notificationsService: NotificationsService,
+    private readonly resolver: PricingResolver,
   ) {}
 
   /**
@@ -167,6 +169,27 @@ export class ReservationsService {
                 plannedArrivalAt.getTime() + timeoutMinutes * 60_000,
               );
 
+              // BR-06/BR-09: Price lock-in — calculate estimated cost and snapshot
+              const estimatedEnd = new Date(
+                plannedArrivalAt.getTime() + timeoutMinutes * 60_000,
+              );
+              const segmented = await this.resolver.calculateSegmentedCost(
+                vehicle.vehicleType,
+                plannedArrivalAt,
+                estimatedEnd,
+              );
+              const activeRate = await this.resolver.getActiveRate(
+                vehicle.vehicleType,
+                plannedArrivalAt,
+              );
+              const pricing = await this.prisma.pricingConfig.findFirst({
+                where: { vehicleType: vehicle.vehicleType },
+              });
+              const discountPercent = pricing?.reservationDiscountPercent ?? 20;
+              const estimatedCost = Math.round(
+                segmented.totalCost * (1 - discountPercent / 100),
+              );
+
               return tx.reservation.create({
                 data: {
                   driverId,
@@ -175,6 +198,10 @@ export class ReservationsService {
                   vehicleType: vehicle.vehicleType,
                   plannedArrivalAt,
                   expiresAt,
+                  estimatedCost,
+                  lockedRateTableId: activeRate.id,
+                  lockedHourlyRate: activeRate.hourlyRate,
+                  pricedAt: new Date(),
                 },
                 include: {
                   driver: { select: { fullName: true, phone: true } },
@@ -214,6 +241,12 @@ export class ReservationsService {
               vehicleType: reservation.vehicle.vehicleType,
             }
           : null,
+      },
+      pricing: {
+        estimatedCost: reservation.estimatedCost,
+        lockedHourlyRate: reservation.lockedHourlyRate,
+        lockedRateTableId: reservation.lockedRateTableId,
+        pricedAt: reservation.pricedAt,
       },
       slot: {
         id: reservation.slot.id,
