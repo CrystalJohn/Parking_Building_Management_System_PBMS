@@ -94,3 +94,8 @@ demo-commands.md
 
 
 .superpowers/
+
+# Test/Spec files (kept local, not in git)
+*.spec.ts
+*.test.ts
+*.test.tsx

@@ -36,7 +36,10 @@ export class CheckOutDto {
   identificationMethod?: CheckOutIdentificationMethod;
 
   /**
-   * Custom validation: at least one of sessionId or licensePlate must be provided.
-   * Handled at service level for clearer error messages.
+   * Exit lane used at check-out (e.g. car vs motorbike lane on the ground floor).
+   * The building has no per-slot sensors; the checkout gate lane is the unit of exit.
    */
+  @IsOptional()
+  @IsString()
+  gateLaneId?: string;
 }

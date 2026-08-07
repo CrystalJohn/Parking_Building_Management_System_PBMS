@@ -300,7 +300,7 @@ function SessionPreviewCard({
             <PreviewRow label="Plate" value={preview.session.licensePlate} strong />
             <PreviewRow label="Session code" value={preview.session.sessionCode} />
             <PreviewRow label="Vehicle" value={preview.session.vehicleType === 'car' ? 'Car' : 'Motorbike'} />
-            <PreviewRow label="Slot" value={`${preview.slot.code} - Floor ${preview.slot.floor.name}`} />
+            <PreviewRow label="Exit lane" value={preview.checkOutLane ? `${preview.checkOutLane.code} (${preview.checkOutLane.vehicleType === 'car' ? 'Car' : 'Motorbike'})` : 'Ground floor'} />
             <PreviewRow label="Check-in" value={formatDateTimeVN(preview.session.checkInTime)} />
             <PreviewRow label="Current fee" value={VND(preview.fee.total)} strong />
           </dl>
