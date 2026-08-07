@@ -1,18 +1,14 @@
 import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
-import { VehicleType } from '@prisma/client';
+import { GateType } from '@prisma/client';
 
-export class CreateGateLaneDto {
-  @IsOptional()
+export class CreateGateDto {
   @IsString()
+  @MinLength(1)
   @MaxLength(100)
-  name?: string;
+  name!: string;
 
-  @IsEnum(VehicleType)
-  vehicleType!: VehicleType;
-
-  @IsOptional()
-  @IsUUID()
-  gateId?: string | null;
+  @IsEnum(GateType)
+  gateType!: GateType;
 
   @IsOptional()
   @IsInt()
@@ -24,7 +20,7 @@ export class CreateGateLaneDto {
   cameraId?: string;
 }
 
-export class UpdateGateLaneDto {
+export class UpdateGateDto {
   @IsOptional()
   @IsString()
   @MinLength(1)
@@ -32,12 +28,8 @@ export class UpdateGateLaneDto {
   name?: string;
 
   @IsOptional()
-  @IsEnum(VehicleType)
-  vehicleType?: VehicleType;
-
-  @IsOptional()
-  @IsUUID()
-  gateId?: string | null;
+  @IsEnum(GateType)
+  gateType?: GateType;
 
   @IsOptional()
   @IsInt()
@@ -51,9 +43,4 @@ export class UpdateGateLaneDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
-}
-
-export class AssignStaffGateLaneDto {
-  @IsUUID()
-  staffId!: string;
 }

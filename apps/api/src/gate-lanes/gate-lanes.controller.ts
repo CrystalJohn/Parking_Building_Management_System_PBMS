@@ -34,6 +34,12 @@ export class GateLanesController {
     return this.gateLanesService.listLanes();
   }
 
+  @Get('floors')
+  @Roles(Role.manager, Role.admin)
+  listFloors() {
+    return this.gateLanesService.getFloors();
+  }
+
   @Post()
   @Roles(Role.manager, Role.admin)
   create(@Body() dto: CreateGateLaneDto) {
@@ -44,6 +50,12 @@ export class GateLanesController {
   @Roles(Role.manager, Role.admin)
   update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateGateLaneDto) {
     return this.gateLanesService.updateLane(id, dto);
+  }
+
+  @Delete(':id')
+  @Roles(Role.manager, Role.admin)
+  remove(@Param('id', ParseUUIDPipe) id: string) {
+    return this.gateLanesService.deleteLane(id);
   }
 
   @Post(':laneId/assignments')

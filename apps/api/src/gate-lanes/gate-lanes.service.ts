@@ -13,7 +13,11 @@ const laneSelect = {
   code: true,
   name: true,
   vehicleType: true,
+  gateId: true,
+  gate: true,
   cameraId: true,
+  floorId: true,
+  floor: true,
   isActive: true,
   createdAt: true,
   updatedAt: true,
@@ -68,12 +72,34 @@ export class GateLanesService {
       where: { vehicleType: dto.vehicleType },
     });
 
+    // The gate determines the floor: when a lane belongs to a gate, its floor is
+    // the gate's floor (a gate is fixed to one floor by design). The manager does
+    // not pick the floor per lane.
+    let floorId = dto.floorId ?? null;
+    let gateFloorName: string | null = null;
+    if (dto.gateId) {
+      const gate = await this.prisma.gate.findUnique({
+        where: { id: dto.gateId },
+        select: { floorId: true, floor: { select: { floorNumber: true, name: true } } },
+      });
+      if (gate) {
+        floorId = gate.floorId ?? floorId;
+        gateFloorName = gate.floor?.name ?? null;
+      }
+    }
+
+    // Lane name is derived from the gate floor + vehicle type for a consistent
+    // convention (e.g. "T1 Car", "T1 Motorbike"). Managers no longer name lanes freely.
+    const derivedName =
+      dto.name?.trim() ||
+      `${gateFloorName ?? 'Lane'} ${dto.vehicleType === VehicleType.car ? 'Car' : 'Motorbike'}`;
+
     // The manager names a lane; the system owns the immutable technical code.
     for (let attempt = 0; attempt < 10; attempt += 1) {
       const code = `${prefix}-${String(existingCount + attempt + 1).padStart(3, '0')}`;
       try {
         return await this.prisma.gateLane.create({
-          data: { ...dto, code },
+          data: { ...dto, name: derivedName, floorId, code },
           select: laneSelect,
         });
       } catch (error) {
@@ -85,11 +111,32 @@ export class GateLanesService {
   }
 
   async updateLane(id: string, dto: UpdateGateLaneDto) {
+    // If the lane is moved to a different gate, its floor follows the gate's floor.
+    if (dto.gateId !== undefined) {
+      const gate = await this.prisma.gate.findUnique({
+        where: { id: dto.gateId },
+        select: { floorId: true },
+      });
+      if (gate) dto = { ...dto, floorId: gate.floorId ?? null };
+    }
     try {
       return await this.prisma.gateLane.update({ where: { id }, data: dto, select: laneSelect });
     } catch (error) {
       if (this.isNotFoundError(error)) throw new NotFoundException('Gate lane not found.');
       throw error;
+    }
+  }
+
+  /** Building floors (T1/T2/T3) for lane assignment dropdowns. */
+  async getFloors() {
+    return this.prisma.floor.findMany({ orderBy: { floorNumber: 'asc' } });
+  }
+
+  async deleteLane(id: string) {
+    try {
+      await this.prisma.gateLane.delete({ where: { id } });
+    } catch {
+      throw new NotFoundException('Gate lane not found.');
     }
   }
 

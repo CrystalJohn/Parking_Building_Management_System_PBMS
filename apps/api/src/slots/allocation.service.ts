@@ -66,6 +66,7 @@ export class BalancedOccupancyStrategy implements AllocationStrategy {
     return candidates[0];
   }
 
+  // Tính toán tỷ lệ chiếm dụng/đầy theo tầng
   private calculateFloorOccupancy(
     allSlots: (Slot & { floor: Floor })[],
     vehicleType: VehicleType,
@@ -131,6 +132,7 @@ export class LowestFloorStrategy implements AllocationStrategy {
   }
 }
 
+// 3. Random Allocation - Thuật toán phân bổ ngẫu nhiên
 export class RandomStrategy implements AllocationStrategy {
   readonly name = 'random';
 

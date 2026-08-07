@@ -2,15 +2,47 @@ import api from './api'
 
 export type GateVehicleType = 'car' | 'motorbike'
 
+export type GateType = 'CHECK_IN' | 'CHECK_OUT'
+
 export interface GateLane {
   id: string
   code: string
   name: string
   vehicleType: GateVehicleType
+  gateId: string | null
+  gate: { id: string; code: string; name: string; gateType: GateType; floor?: { id: number; floorNumber: number; name: string } | null } | null
+  floorId: number | null
+  floor: { id: number; floorNumber: number; name: string } | null
   cameraId: string | null
   isActive: boolean
   createdAt: string
   updatedAt: string
+}
+
+export interface BuildingFloor {
+  id: number
+  floorNumber: number
+  name: string
+}
+
+export interface Gate {
+  id: string
+  code: string
+  name: string
+  gateType: GateType
+  floorId: number | null
+  floor: { id: number; floorNumber: number; name: string } | null
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+  lanes: Array<{
+    id: string
+    code: string
+    name: string
+    vehicleType: GateVehicleType
+    floorId: number | null
+    isActive: boolean
+  }>
 }
 
 export interface CurrentGateAssignment {
@@ -76,17 +108,41 @@ export async function getGateLanes() {
   return data
 }
 
+export async function getGateLaneFloors() {
+  const { data } = await api.get<BuildingFloor[]>('/gate-lanes/floors')
+  return data
+}
+
+export async function getGates() {
+  const { data } = await api.get<Gate[]>('/gates')
+  return data
+}
+
+export async function createGate(input: { name: string; gateType: GateType; floorId?: number | null; cameraId?: string }) {
+  const { data } = await api.post<Gate>('/gates', input)
+  return data
+}
+
+export async function updateGate(id: string, input: Partial<{ name: string; gateType: GateType; floorId: number | null; cameraId: string | null; isActive: boolean }>) {
+  const { data } = await api.patch<Gate>(`/gates/${id}`, input)
+  return data
+}
+
+export async function deleteGate(id: string) {
+  await api.delete(`/gates/${id}`)
+}
+
 export async function getGateLaneStaff() {
   const { data } = await api.get<GateLaneStaff[]>('/gate-lanes/staff')
   return data
 }
 
-export async function createGateLane(input: { name: string; vehicleType: GateVehicleType; cameraId?: string }) {
+export async function createGateLane(input: { name: string; vehicleType: GateVehicleType; gateId?: string | null; floorId?: number | null; cameraId?: string }) {
   const { data } = await api.post<GateLane>('/gate-lanes', input)
   return data
 }
 
-export async function updateGateLane(id: string, input: Partial<{ name: string; vehicleType: GateVehicleType; cameraId: string | null; isActive: boolean }>) {
+export async function updateGateLane(id: string, input: Partial<{ name: string; vehicleType: GateVehicleType; floorId: number | null; cameraId: string | null; isActive: boolean }>) {
   const { data } = await api.patch<GateLane>(`/gate-lanes/${id}`, input)
   return data
 }
@@ -98,4 +154,8 @@ export async function assignGateLane(laneId: string, staffId: string) {
 
 export async function unassignGateLane(staffId: string) {
   await api.delete(`/gate-lanes/assignments/${staffId}`)
+}
+
+export async function deleteGateLane(id: string) {
+  await api.delete(`/gate-lanes/${id}`)
 }
