@@ -370,7 +370,7 @@ export default function AdminSessions() {
           <Table className="min-w-[860px]">
             <TableHeader>
               <TableRow className="bg-muted/30">
-                <TableHead className="px-4 py-3 w-[160px]">Session / Slot</TableHead>
+                <TableHead className="px-4 py-3 w-[160px]">Session / Floor</TableHead>
                 <TableHead className="px-4 py-3">Vehicle</TableHead>
                 <TableHead className="px-4 py-3">Driver</TableHead>
                 <TableHead className="px-4 py-3 w-[110px]">Status</TableHead>

@@ -7,10 +7,6 @@ export class UpdatePricingDto {
 
   @IsInt()
   @IsPositive()
-  hourlyRate: number;
-
-  @IsInt()
-  @IsPositive()
   overtimePenalty: number;
 
   @IsInt()

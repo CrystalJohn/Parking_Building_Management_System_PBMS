@@ -25,17 +25,37 @@ export class FeesController {
    * 23.1: All authenticated users — get pricing config.
    */
   @Get('pricing')
-  getPricing() {
-    return this.prisma.pricingConfig.findMany({
+  async getPricing() {
+    const configs = await this.prisma.pricingConfig.findMany({
       select: {
         id: true,
         vehicleType: true,
-        hourlyRate: true,
         overtimePenalty: true,
         lostTicketPenalty: true,
         overtimeThresholdHours: true,
       },
+      orderBy: { vehicleType: 'asc' },
     });
+
+    // Attach hourlyRate from RateTable DEFAULT for each vehicle type
+    const result = await Promise.all(
+      configs.map(async (config) => {
+        const rateTable = await this.prisma.rateTable.findFirst({
+          where: {
+            vehicleType: config.vehicleType,
+            type: 'DEFAULT',
+            isActive: true,
+          },
+          select: { hourlyRate: true },
+        });
+        return {
+          ...config,
+          hourlyRate: rateTable?.hourlyRate ?? 0,
+        };
+      }),
+    );
+
+    return result;
   }
 
   /**

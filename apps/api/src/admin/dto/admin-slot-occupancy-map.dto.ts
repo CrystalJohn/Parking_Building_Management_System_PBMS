@@ -64,6 +64,8 @@ export interface SlotOccupancyMapZoneDto {
 export interface SlotOccupancyMapFloorDto {
   floorNumber: number;
   floorName: string;
+  /** True when the floor has no active check-in gate (e.g. closed for maintenance). Its slots are excluded from totals. */
+  closed?: boolean;
   zones: SlotOccupancyMapZoneDto[];
 }
 
@@ -73,4 +75,10 @@ export interface AdminSlotOccupancyMapDto {
   /** Expose thresholds so the frontend can label them without hardcoding */
   thresholds: SlotOccupancyMapThresholdsDto;
   floors: SlotOccupancyMapFloorDto[];
+  /** Total physical slots across floors that currently have an active check-in gate. */
+  totalSlots: number;
+  /** Slots not currently occupied across open floors. */
+  availableSlots: number;
+  /** Floor numbers that are closed (no active check-in gate). */
+  closedFloors: number[];
 }

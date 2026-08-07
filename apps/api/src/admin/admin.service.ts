@@ -74,6 +74,16 @@ export class AdminService {
 
     const today = getHoChiMinhDayRange(now);
 
+    // Determine which floors are open (have an active CHECK_IN gate). Closed
+    // floors are excluded from capacity KPIs so the totals match what users see.
+    const activeCheckInGates = await this.prisma.gate.findMany({
+      where: { gateType: 'CHECK_IN', isActive: true },
+      select: { floor: { select: { floorNumber: true } } },
+    });
+    const openFloorIds = new Set<number>(
+      activeCheckInGates.map((g) => g.floor?.floorNumber).filter((n): n is number => n != null),
+    );
+
     // ── Single raw SQL: compute ALL session + payment + reservation metrics in 1 round-trip ──
     const [slots, metrics] = await Promise.all([
       this.prisma.slot.findMany({
@@ -205,7 +215,7 @@ export class AdminService {
         },
       },
       todayStatus: {
-        slots: buildSlotSummary(slots),
+        slots: buildSlotSummary(slots, openFloorIds),
         openSessions: {
           active: activeSessions,
           checkoutPending,
@@ -673,6 +683,7 @@ export class AdminService {
       },
       include: {
         payment: true,
+        floor: true,
         slot: {
           include: {
             floor: true,
@@ -751,7 +762,7 @@ export class AdminService {
         checkOutTime: session.checkOutTime?.toISOString() ?? null,
         durationMinutes,
         slotCode: session.slot?.code ?? null,
-        floorName: session.slot?.floor?.name ?? null,
+        floorName: session.floor?.name ?? session.slot?.floor?.name ?? null,
         isLostTicket: session.isLostTicket,
         reservationId: session.reservationId ?? null,
         driverName,
@@ -919,6 +930,7 @@ export class AdminService {
     const floors = await this.prisma.floor.findMany({
       orderBy: { floorNumber: 'asc' },
       select: {
+        id: true,
         floorNumber: true,
         name: true,
         slots: {
@@ -934,6 +946,18 @@ export class AdminService {
         },
       },
     });
+
+    // 1b. Determine which floors are "open" — a floor is open only if it has at
+    // least one active CHECK_IN gate. When a floor is closed for maintenance the
+    // manager deactivates its check-in gate, so its slots must be excluded from
+    // the capacity the system shows to users.
+    const activeCheckInGates = await this.prisma.gate.findMany({
+      where: { gateType: 'CHECK_IN', isActive: true },
+      select: { floorId: true },
+    });
+    const openFloorIds = new Set(
+      activeCheckInGates.map((g) => g.floorId).filter((id): id is number => id != null),
+    );
 
     // 2. Fetch all open sessions (vehicle still in-lot) keyed by slotId
     const openSessions = await this.prisma.parkingSession.findMany({
@@ -992,6 +1016,19 @@ export class AdminService {
 
     // 3. Build grouped response
     const floorDtos: SlotOccupancyMapFloorDto[] = floors.map((floor) => {
+      const isOpen = openFloorIds.has(floor.id) || openFloorIds.size === 0;
+
+      // When the floor has no active check-in gate it is closed for maintenance:
+      // report it but exclude its slots from the live capacity totals.
+      if (!isOpen) {
+        return {
+          floorNumber: floor.floorNumber,
+          floorName: floor.name,
+          closed: true,
+          zones: [],
+        };
+      }
+
       const zoneMap = new Map<'A' | 'B', SlotOccupancyMapSlotDto[]>([
         ['A', []],
         ['B', []],
@@ -1058,10 +1095,26 @@ export class AdminService {
       };
     });
 
+    // Capacity totals reflect only open floors (those with an active check-in gate).
+    const openFloors = floors.filter(
+      (f) => openFloorIds.has(f.id) || openFloorIds.size === 0,
+    );
+    const totalSlots = openFloors.reduce((sum, f) => sum + f.slots.length, 0);
+    const occupiedSlots = openFloors.reduce(
+      (sum, f) => sum + f.slots.filter((s) => s.status !== 'available').length,
+      0,
+    );
+    const closedFloors = floors
+      .filter((f) => !(openFloorIds.has(f.id) || openFloorIds.size === 0))
+      .map((f) => f.floorNumber);
+
     return {
       generatedAt: now.toISOString(),
       thresholds: MAP_THRESHOLDS,
       floors: floorDtos,
+      totalSlots,
+      availableSlots: totalSlots - occupiedSlots,
+      closedFloors,
     };
   }
 }
@@ -1241,6 +1294,7 @@ function buildSlotSummary(
     zone: string;
     floor: { floorNumber: number; name: string };
   }[],
+  openFloorIds?: Set<number>,
 ): SlotSummaryDto {
   const totalMetric = makeSlotMetric();
   const byVehicleType = {
@@ -1251,6 +1305,11 @@ function buildSlotSummary(
   const zoneMap = new Map<string, ZoneSlotMetricDto>();
 
   for (const slot of slots) {
+    // Skip slots on floors that are closed (no active check-in gate) so the
+    // capacity KPIs reflect only floors currently accepting vehicles.
+    if (openFloorIds && openFloorIds.size > 0 && !openFloorIds.has(slot.floor.floorNumber)) {
+      continue;
+    }
     addSlot(totalMetric, slot.status);
     addSlot(byVehicleType[slot.vehicleType], slot.status);
 

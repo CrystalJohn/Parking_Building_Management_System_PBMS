@@ -352,6 +352,7 @@ export interface SlotOccupancyMapZone {
 export interface SlotOccupancyMapFloor {
   floorNumber: number
   floorName: string
+  closed?: boolean
   zones: SlotOccupancyMapZone[]
 }
 
@@ -359,6 +360,9 @@ export interface AdminSlotOccupancyMap {
   generatedAt: string
   thresholds: SlotOccupancyMapThresholds
   floors: SlotOccupancyMapFloor[]
+  totalSlots: number
+  availableSlots: number
+  closedFloors: number[]
 }
 
 export async function getAdminSlotOccupancyMap() {

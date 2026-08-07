@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ParkingSession, VehicleType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PricingResolver } from '../config-mgmt/pricing-resolver.service';
 
 export interface FeeBreakdown {
   sessionId: string;
@@ -26,13 +27,17 @@ export interface FeeBreakdown {
 
 @Injectable()
 export class FeesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly resolver: PricingResolver,
+  ) {}
 
   /**
    * 14.1: Calculate fee for a parking session.
    *
    * Logic:
-   * - 14.2: Round up duration to next full hour (Math.ceil)
+   * - BR-05: Segmented cost calculation across rate periods (walk-in)
+   * - BR-09/10: Use locked rate for reservation sessions (no re-resolution)
    * - 14.3: Add overtime penalty when duration > threshold (default 24h)
    * - 14.4: Add lost ticket penalty when flagged
    * - 14.5: Read rates from PricingConfig (not hard-coded)
@@ -42,6 +47,7 @@ export class FeesService {
    * @param isLost - Whether the ticket is lost
    * @param checkOutTime - Override check-out time (defaults to now)
    * @param hasReservationOverride - Explicit reservation flag override
+   * @param lockedRate - For reservation sessions: the snapshotted hourly rate (BR-09)
    */
   async calculate(
     session: Pick<
@@ -51,8 +57,9 @@ export class FeesService {
     isLost: boolean = false,
     checkOutTime?: Date,
     hasReservationOverride?: boolean,
+    lockedRate?: number | null,
   ): Promise<FeeBreakdown> {
-    // 14.5: Read pricing config from DB
+    // 14.5: Read pricing config from DB (global settings)
     const pricing = await this.prisma.pricingConfig.findFirst({
       where: { vehicleType: session.vehicleType },
     });
@@ -66,11 +73,33 @@ export class FeesService {
     const effectiveCheckOut =
       checkOutTime ?? session.checkOutTime ?? new Date();
 
-    // 14.2: Calculate duration and round up to full hours
     const durationMs =
       effectiveCheckOut.getTime() - session.checkInTime.getTime();
     const durationHours = durationMs / (1000 * 60 * 60);
-    const roundedHours = Math.ceil(durationHours);
+
+    let originalBaseFee: number;
+    let hourlyRate: number;
+    let roundedHours: number;
+
+    if (lockedRate != null) {
+      // BR-09/10: Reservation session — use locked rate, no segmentation
+      hourlyRate = lockedRate;
+      roundedHours = Math.ceil(durationHours);
+      originalBaseFee = roundedHours * hourlyRate;
+    } else {
+      // BR-05: Walk-in — segmented cost calculation across rate periods
+      const segmented = await this.resolver.calculateSegmentedCost(
+        session.vehicleType,
+        session.checkInTime,
+        effectiveCheckOut,
+      );
+      hourlyRate = segmented.segments[0]?.rateTable.hourlyRate ?? 0;
+      roundedHours = segmented.segments.reduce(
+        (sum, seg) => sum + Math.ceil(seg.durationHours),
+        0,
+      );
+      originalBaseFee = segmented.totalCost;
+    }
 
     // Check for active subscription
     let isSubscriber = false;
@@ -90,13 +119,13 @@ export class FeesService {
     const hasReservation = hasReservationOverride ?? !!session.reservationId;
     const discountPercent = pricing.reservationDiscountPercent ?? 20;
 
-    // Base fee = rounded hours * hourly rate (waived for subscribers)
-    const originalBaseFee = isSubscriber ? 0 : roundedHours * pricing.hourlyRate;
+    // Apply reservation discount (waived for subscribers)
+    const effectiveBaseFee = isSubscriber ? 0 : originalBaseFee;
     const reservationDiscountAmount =
-      !isSubscriber && hasReservation && originalBaseFee > 0
-        ? Math.round(originalBaseFee * (discountPercent / 100))
+      !isSubscriber && hasReservation && effectiveBaseFee > 0
+        ? Math.round(effectiveBaseFee * (discountPercent / 100))
         : 0;
-    const baseFee = originalBaseFee - reservationDiscountAmount;
+    const baseFee = effectiveBaseFee - reservationDiscountAmount;
 
     // 14.3: Overtime penalty when duration exceeds threshold
     const isOvertime = durationHours > pricing.overtimeThresholdHours;
@@ -115,7 +144,7 @@ export class FeesService {
       durationMs,
       durationHours,
       roundedHours,
-      hourlyRate: pricing.hourlyRate,
+      hourlyRate,
       originalBaseFee,
       reservationDiscountPercent: discountPercent,
       reservationDiscountAmount,
