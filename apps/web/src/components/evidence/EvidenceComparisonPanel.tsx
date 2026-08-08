@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog'
 import { fetchEvidenceImageBlobResult, type EvidenceImageFetchStatus } from '@/lib/sessions-api'
 import { formatDateTimeVN } from '@/lib/date-time'
+import { formatDisplayPlate } from '@/lib/plate-format'
 import { cn } from '@/lib/utils'
 
 export type EvidenceAuditItem = {
@@ -61,7 +62,8 @@ function EvidenceCard({
   const preview = useEvidenceImage(evidence?.thumbnailUrl ?? evidence?.imageUrl ?? null)
   const full = useEvidenceImage(evidence?.imageUrl ?? evidence?.thumbnailUrl ?? null)
   const [open, setOpen] = useState(false)
-  const plate = evidence?.displayPlate ?? evidence?.confirmedPlate ?? evidence?.ocrPlate
+  const rawPlate = evidence?.displayPlate ?? evidence?.confirmedPlate ?? evidence?.ocrPlate
+  const plate = formatDisplayPlate(rawPlate) || rawPlate
   const confidence = evidence?.ocrConfidence != null ? `${Math.round(evidence.ocrConfidence * 100)}%` : 'Not available'
   const capturedAt = evidence?.capturedAt ? formatDateTimeVN(evidence.capturedAt) : 'Not available'
   const staff = evidence?.staffName ?? evidence?.staffPhone ?? 'Not available'

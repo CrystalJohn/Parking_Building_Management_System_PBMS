@@ -309,6 +309,7 @@ model ParkingSession {
   ticketIssuedByStaffId String?       @map("ticket_issued_by_staff_id")
   allocationStrategy    String?       @map("allocation_strategy")
   allocationTimeMs      Int?          @map("allocation_time_ms")
+  lockedHourlyRate      Int?          @map("locked_hourly_rate")
   // 32: Denormalized metrics for research queries (avoid JOINs)
   floorId               Int?          @map("floor_id")
   zone                  Zone?

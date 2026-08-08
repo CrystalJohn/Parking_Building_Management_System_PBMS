@@ -35,8 +35,8 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
-import { getPendingRequests, reviewRequest, getRegistrationHistory, VehicleRegistrationRequest } from '../../api/vehicleRegistrations'
-import { normalizePlateForApi, formatVehicleType } from '../../lib/plate-format'
+import { getPendingRequests, reviewRequest, getRegistrationHistory, type VehicleRegistrationRequest } from '../../api/vehicleRegistrations'
+import { normalizePlateForApi, formatVehicleType, formatDisplayPlate } from '../../lib/plate-format'
 
 interface MatchedVehicleSummary {
   inputPlate: string
@@ -235,7 +235,7 @@ export default function Vehicles() {
                   <TableBody>
                     {pendingRequests.map(req => (
                       <TableRow key={req.id}>
-                        <TableCell className="font-mono font-medium">{req.plateDisplay ?? req.plateNumber}</TableCell>
+                        <TableCell className="font-mono font-medium">{formatDisplayPlate(req.plateDisplay ?? req.plateNumber)}</TableCell>
                         <TableCell className="font-medium">{formatVehicleType(req.vehicleType)}</TableCell>
                         <TableCell>
                           <div className="font-medium">{req.driver?.fullName || 'Unnamed'}</div>
@@ -445,7 +445,7 @@ export default function Vehicles() {
                         <span className="text-xs font-medium text-muted-foreground block mb-2">Plate Number</span>
                         <div className="inline-block bg-white dark:bg-slate-950 border-2 border-slate-900 dark:border-slate-700 rounded-md px-4 py-1.5 shadow-sm">
                           <span className="font-mono font-black text-xl text-slate-900 dark:text-slate-100 tracking-wider">
-                            {vehicleData.vehicle.plateDisplay ?? vehicleData.vehicle.plateNumber}
+                            {formatDisplayPlate(vehicleData.vehicle.plateDisplay ?? vehicleData.vehicle.plateNumber)}
                           </span>
                         </div>
                       </div>
@@ -606,8 +606,8 @@ export default function Vehicles() {
               <div>
                 <DialogTitle className="text-lg font-bold flex items-center gap-2">
                   <span>Vehicle Verification Documents (3 Photos)</span>
-                  {selectedViewerRequest?.plateNumber && (
-                    <Badge className="font-mono text-xs font-bold">{selectedViewerRequest.plateDisplay ?? selectedViewerRequest.plateNumber}</Badge>
+                  {selectedViewerRequest && (
+                    <Badge className="font-mono text-xs font-bold">{formatDisplayPlate(selectedViewerRequest.plateDisplay ?? selectedViewerRequest.plateNumber)}</Badge>
                   )}
                 </DialogTitle>
                 <DialogDescription className="mt-1 text-xs">

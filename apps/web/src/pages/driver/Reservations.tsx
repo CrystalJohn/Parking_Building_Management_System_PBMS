@@ -218,7 +218,7 @@ export default function Reservations() {
   }
 
   const handleVehicleRequest = async () => {
-    const plate = requestPlate.trim().toUpperCase().replace(/\s+/g, '')
+    const plate = requestPlate.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
     if (!plate) {
       setActionError('Vui lòng nhập biển số xe.')
       return
@@ -1625,8 +1625,11 @@ function ReserveVehicleForm({
                     </div>
 
                     <div className="flex items-center justify-between border-b pb-2">
-                      <span className="font-semibold text-emerald-600 dark:text-emerald-400">Pre-booked Hourly Rate (-20%):</span>
-                      <span className="font-mono font-extrabold text-emerald-600 dark:text-emerald-400">
+                      <div>
+                        <span className="font-semibold text-emerald-600 dark:text-emerald-400 block">Pre-booked Hourly Rate (-20%):</span>
+                        <span className="text-[10px] text-muted-foreground font-medium">★ Permanently locked for this session</span>
+                      </div>
+                      <span className="font-mono font-extrabold text-emerald-600 dark:text-emerald-400 text-sm">
                         {discountedRate.toLocaleString('vi-VN')} VNĐ/h
                       </span>
                     </div>

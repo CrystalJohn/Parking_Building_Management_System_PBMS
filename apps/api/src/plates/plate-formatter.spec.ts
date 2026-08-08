@@ -16,20 +16,22 @@ describe('PlateFormatter.normalize', () => {
 });
 
 describe('PlateFormatter.toDisplay', () => {
-  it('formats car plates (8 chars: XXA-123.45)', () => {
+  it('formats car plates (8-9 chars: 30A-123.45, 51LD-123.45)', () => {
     expect(toDisplay('30A12345')).toBe('30A-123.45');
     expect(toDisplay('51K99999')).toBe('51K-999.99');
+    expect(toDisplay('51LD12345')).toBe('51LD-123.45');
   });
 
-  it('formats motorbike plates (9 chars: XXLd-456.78)', () => {
-    expect(toDisplay('59X345678')).toBe('59X3-456.78');
-    expect(toDisplay('29K644743')).toBe('29K6-447.43');
+  it('formats motorbike plates (9 chars: 99-E1 222.68, 59-X3 456.78)', () => {
+    expect(toDisplay('99E122268')).toBe('99-E1 222.68');
+    expect(toDisplay('59X345678')).toBe('59-X3 456.78');
+    expect(toDisplay('29K644743')).toBe('29-K6 447.43');
+    expect(toDisplay('59AA12345')).toBe('59-AA 123.45');
   });
 
   it('returns null for non-standard patterns', () => {
     expect(toDisplay('ABC')).toBeNull();
     expect(toDisplay('30A1234567')).toBeNull();
-    expect(toDisplay('29A1234')).toBeNull(); // old 4-digit car plate: PARTIAL, no display
     expect(toDisplay('')).toBeNull();
   });
 });

@@ -9,7 +9,7 @@ import {
   type AdminSessionEvidence,
 } from '../../lib/admin-api'
 import { formatDateTimeVN } from '../../lib/date-time'
-import { formatVehicleType } from '../../lib/plate-format'
+import { formatVehicleType, formatDisplayPlate } from '../../lib/plate-format'
 import { EvidenceComparisonPanel } from '@/components/evidence/EvidenceComparisonPanel'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -424,7 +424,7 @@ export default function AdminSessions() {
 
                     {/* Vehicle */}
                     <TableCell className="px-4 py-3">
-                      <div className="font-semibold tracking-wide">{item.plateDisplay ?? item.licensePlate}</div>
+                      <div className="font-semibold tracking-wide font-mono">{formatDisplayPlate(item.plateDisplay ?? item.licensePlate)}</div>
                       <div className="mt-0.5 text-xs text-muted-foreground">
                         {formatVehicleType(item.vehicleType)}
                       </div>

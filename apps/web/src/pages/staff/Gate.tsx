@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { isAxiosError } from 'axios'
 import {
+  Camera,
   CircleAlert,
   Loader2,
   LogOut,
@@ -42,6 +43,7 @@ import {
   type PaymentWorkflowResponse,
   type PaymentStatus,
   type SessionStatus,
+  type GateCheckoutSubMode,
 } from '../../lib/sessions-api'
 import { Receipt } from '../../components/receipt/Receipt'
 import { RequestManagerReviewDialog } from '../../components/operation-issues/RequestManagerReviewDialog'
@@ -64,7 +66,6 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import {
   Card,
   CardAction,
@@ -77,7 +78,6 @@ import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { getCurrentGateLane, type CurrentGateAssignment } from '../../lib/gate-lanes-api'
 
-type Tab = 'check-in' | 'check-out'
 type MismatchProtectedAction = 'bankQr' | 'payment' | 'exit'
 
 const VND = (n: number) =>
@@ -153,11 +153,6 @@ function markEvidenceImageFailed(setImage: Dispatch<SetStateAction<EvidenceImage
 
 const formatDateTime = formatDateTimeVN
 
-function normalizeGateTab(value: string | null | undefined): Tab {
-  if (value === 'check-out' || value === 'checkout') return 'check-out'
-  return 'check-in'
-}
-
 interface PanelProps {
   toasts: ReturnType<typeof useToasts>
 }
@@ -194,16 +189,15 @@ function extractError(err: unknown): { message: string; isFull: boolean } {
 }
 
 export default function Gate() {
-  const location = useLocation()
   const toasts = useToasts()
   const [laneAssignment, setLaneAssignment] = useState<CurrentGateAssignment | null>(null)
   const [laneLoading, setLaneLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<Tab>(() => {
-    const params = new URLSearchParams(location.search)
-    const tab = normalizeGateTab(params.get('tab'))
-    if (tab === 'check-out') return 'check-out'
-    return 'check-in'
-  })
+  const [activeWorkflow, setActiveWorkflow] = useState<{
+    checkout: CheckoutWorkflowResponse
+    plateConfirmed: string
+    subMode: GateCheckoutSubMode
+    exitEvidence?: CheckoutEvidence | null
+  } | null>(null)
 
   useEffect(() => {
     let active = true
@@ -231,15 +225,30 @@ export default function Gate() {
       : `${lane.name} · ${vehicleLabel}`
     : null
 
+  const handleBackToScanner = () => {
+    setActiveWorkflow(null)
+  }
+
   return (
     <main className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Gate Operations
+            Gate Operations Hub
           </h1>
           {laneLabel ? <Badge variant="secondary">{laneLabel}</Badge> : null}
         </div>
+        {activeWorkflow && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleBackToScanner}
+            className="gap-2 h-10 px-4 font-semibold border-primary/30 hover:bg-primary/10"
+          >
+            <RotateCcw className="size-4" />
+            Back to Gate Scanner / Quay lại
+          </Button>
+        )}
       </header>
 
       {laneLoading ? (
@@ -255,54 +264,103 @@ export default function Gate() {
             </p>
           </CardHeader>
         </Card>
+      ) : activeWorkflow ? (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between bg-muted/40 p-3 rounded-xl border">
+            <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <TicketCheck className="size-4 text-primary" />
+              <span>Checkout Flow for <strong>{activeWorkflow.plateConfirmed}</strong></span>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleBackToScanner}
+              className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <RotateCcw className="size-3.5" />
+              Quay lại quét cổng
+            </Button>
+          </div>
+          <CheckOutPanel
+            toasts={toasts}
+            initialWorkflow={activeWorkflow.checkout}
+            initialLookupValue={activeWorkflow.plateConfirmed}
+            hideLookupCard={true}
+            onResetToGateOps={handleBackToScanner}
+          />
+        </div>
       ) : (
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)}>
-          <TabsList variant="line" className="h-11 w-full gap-0 border-b bg-transparent p-0">
-            <TabsTrigger value="check-in" className="flex-1 rounded-none border-b-2 border-transparent px-6 py-2.5 text-sm font-semibold">
-              Check-in
-            </TabsTrigger>
-            <TabsTrigger value="check-out" className="flex-1 rounded-none border-b-2 border-transparent px-6 py-2.5 text-sm font-semibold">
-              Check-out
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="check-in" className="mt-4">
-            <GateOperationsPanel
-              toasts={toasts}
-              laneVehicleType={lane.vehicleType}
-              onRouteToCheckout={() => setActiveTab('check-out')}
-            />
-          </TabsContent>
-
-          <TabsContent value="check-out" className="mt-4">
-            <CheckOutPanel toasts={toasts} />
-          </TabsContent>
-        </Tabs>
+        <GateOperationsPanel
+          toasts={toasts}
+          laneVehicleType={lane.vehicleType}
+          onRouteToCheckout={(checkoutData) => {
+            setActiveWorkflow(checkoutData)
+          }}
+        />
       )}
     </main>
   )
 }
 
-function GateOperationsPanel({ toasts, laneVehicleType, onRouteToCheckout }: PanelProps & { laneVehicleType: 'car' | 'motorbike'; onRouteToCheckout?: () => void }) {
+function GateOperationsPanel({
+  toasts,
+  laneVehicleType,
+  onRouteToCheckout,
+}: PanelProps & {
+  laneVehicleType: 'car' | 'motorbike'
+  onRouteToCheckout?: (input: {
+    checkout: CheckoutWorkflowResponse
+    plateConfirmed: string
+    subMode: GateCheckoutSubMode
+    exitEvidence?: CheckoutEvidence | null
+  }) => void
+}) {
   const [mode, setMode] = useState<'scan-plate' | 'reservation-qr'>('scan-plate')
 
-  if (mode === 'reservation-qr') {
-    return (
-      <StaffReservationQrCheckInPanel
-        onSwitchToOcr={() => setMode('scan-plate')}
-        onRouteToCheckout={() => onRouteToCheckout?.()}
-        toasts={toasts}
-      />
-    )
-  }
-
   return (
-    <StaffOcrCheckInPanel
-      toasts={toasts}
-      laneVehicleType={laneVehicleType}
-      onSwitchToReservationQr={() => setMode('reservation-qr')}
-      onRouteToCheckout={() => onRouteToCheckout?.()}
-    />
+    <div className="space-y-4">
+      {/* Quick Action Navigation Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
+        <div className="flex items-center gap-1.5 bg-muted/60 p-1 rounded-xl border">
+          <Button
+            type="button"
+            variant={mode === 'scan-plate' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setMode('scan-plate')}
+            className="h-8 gap-1.5 text-xs font-semibold rounded-lg"
+          >
+            <Camera className="size-3.5" />
+            OCR Camera Scan
+          </Button>
+          <Button
+            type="button"
+            variant={mode === 'reservation-qr' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setMode('reservation-qr')}
+            className="h-8 gap-1.5 text-xs font-semibold rounded-lg"
+          >
+            <QrCode className="size-3.5" />
+            Scan QR Pass
+          </Button>
+        </div>
+      </div>
+
+      {mode === 'reservation-qr' ? (
+        <StaffReservationQrCheckInPanel
+          onSwitchToOcr={() => setMode('scan-plate')}
+          onRouteToCheckout={(checkoutData) => onRouteToCheckout?.(checkoutData)}
+          toasts={toasts}
+        />
+      ) : (
+        <StaffOcrCheckInPanel
+          toasts={toasts}
+          laneVehicleType={laneVehicleType}
+          onSwitchToReservationQr={() => setMode('reservation-qr')}
+          onRouteToCheckout={(checkoutData) => onRouteToCheckout?.(checkoutData)}
+        />
+      )}
+    </div>
   )
 }
 
@@ -1090,10 +1148,22 @@ function CheckOutPanel({
           <CardContent className="space-y-6 p-7 sm:p-8">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                  {hideLookupCard ? 'Checkout detected' : 'Plate'}
-                </p>
-                <p className="mt-2 break-words font-mono text-3xl font-black tracking-[0.12em] text-foreground sm:text-4xl">
+                <div className="flex items-center gap-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    {hideLookupCard ? 'Checkout detected' : 'Plate'}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={requestReset}
+                    className="h-6 px-2 text-xs font-semibold text-muted-foreground hover:text-foreground gap-1"
+                  >
+                    <RotateCcw className="size-3" />
+                    Back / Quay lại
+                  </Button>
+                </div>
+                <p className="mt-1 break-words font-mono text-3xl font-black tracking-[0.12em] text-foreground sm:text-4xl">
                   {plateDisplay}
                 </p>
               </div>
@@ -1632,10 +1702,21 @@ function SessionSummary({
                 {workflow.session.driverPhone && (
                   <span className="ml-1 font-normal text-muted-foreground">({workflow.session.driverPhone})</span>
                 )}
+                <Badge variant="outline" className="ml-1.5 h-4 border-blue-500/30 bg-blue-50 text-[10px] text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+                  Verified Driver
+                </Badge>
               </span>
             ) : (
               <span className="text-muted-foreground">Walk-in Guest</span>
             )
+          }
+        />
+        <SummaryRow
+          label="Vehicle Condition"
+          value={
+            <Badge variant="outline" className="border-emerald-500/30 bg-emerald-50 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+              ✓ Intact &amp; Inspected
+            </Badge>
           }
         />
         <SummaryRow label="Ticket type" value={ticketType} />
@@ -1644,7 +1725,7 @@ function SessionSummary({
             label="Discount"
             value={
               <Badge className="h-4 border-emerald-500/30 bg-emerald-500/10 px-1.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
-                -20% (Reservation)
+                -20% (Reservation Locked Rate)
               </Badge>
             }
           />

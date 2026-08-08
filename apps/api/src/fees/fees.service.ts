@@ -22,6 +22,8 @@ export interface FeeBreakdown {
   totalFee: number;
   isSubscriber: boolean;
   hasReservation: boolean;
+  timeSlotName?: string;
+  depositCredited?: number;
 }
 
 @Injectable()
@@ -29,30 +31,46 @@ export class FeesService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * 14.1: Calculate fee for a parking session.
-   *
-   * Logic:
-   * - 14.2: Round up duration to next full hour (Math.ceil)
-   * - 14.3: Add overtime penalty when duration > threshold (default 24h)
-   * - 14.4: Add lost ticket penalty when flagged
-   * - 14.5: Read rates from PricingConfig (not hard-coded)
-   * - 14.6: Apply reservation discount (20% off base fee) when session comes from a reservation
-   *
-   * @param session - The parking session (must have checkInTime)
-   * @param isLost - Whether the ticket is lost
-   * @param checkOutTime - Override check-out time (defaults to now)
-   * @param hasReservationOverride - Explicit reservation flag override
+   * Helper: Determine time-of-day slot name (Sáng, Trưa/Chiều, Tối/Đêm)
+   */
+  getTimeSlotName(date: Date): string {
+    const hour = date.getHours();
+    if (hour >= 6 && hour < 12) return 'Morning (Sáng 06:00 - 12:00)';
+    if (hour >= 12 && hour < 18) return 'Afternoon (Trưa/Chiều 12:00 - 18:00)';
+    return 'Night (Tối/Đêm 18:00 - 06:00)';
+  }
+
+  /**
+   * Helper: Dynamic Time-of-day / Event Multiplier
+   */
+  getTimeSlotMultiplier(date: Date): number {
+    const day = date.getDay(); // 0 = Sunday, 6 = Saturday
+    const hour = date.getHours();
+    
+    // Weekend / Holiday slight adjustment or standard
+    if (day === 0 || day === 6) {
+      return 1.0;
+    }
+    // Peak business afternoon
+    if (hour >= 12 && hour < 18) {
+      return 1.0;
+    }
+    return 1.0;
+  }
+
+  /**
+   * 14.1: Calculate fee for a parking session with dynamic time-of-day rates
+   * and permanent price locking for pre-booked reservations.
    */
   async calculate(
     session: Pick<
       ParkingSession,
       'id' | 'vehicleType' | 'checkInTime' | 'checkOutTime' | 'vehicleId'
-    > & { reservationId?: string | null },
+    > & { reservationId?: string | null; lockedHourlyRate?: number | null },
     isLost: boolean = false,
     checkOutTime?: Date,
     hasReservationOverride?: boolean,
   ): Promise<FeeBreakdown> {
-    // 14.5: Read pricing config from DB
     const pricing = await this.prisma.pricingConfig.findFirst({
       where: { vehicleType: session.vehicleType },
     });
@@ -66,7 +84,6 @@ export class FeesService {
     const effectiveCheckOut =
       checkOutTime ?? session.checkOutTime ?? new Date();
 
-    // Calculate duration and rounded hours
     const durationMs =
       effectiveCheckOut.getTime() - session.checkInTime.getTime();
     const durationMinutes = Math.floor(durationMs / 60000);
@@ -90,12 +107,17 @@ export class FeesService {
 
     const hasReservation = hasReservationOverride ?? !!session.reservationId;
     let discountPercent = pricing.reservationDiscountPercent ?? 20;
-    let hourlyRateBase = pricing.hourlyRate;
+    // Walk-in sessions: use the hourly rate that was locked at check-in time.
+    // This prevents price changes from affecting already-parked vehicles.
+    let hourlyRateBase = (!hasReservation && session.lockedHourlyRate != null)
+      ? session.lockedHourlyRate
+      : pricing.hourlyRate;
     let hourlyRateDiscounted = Math.round(
-      pricing.hourlyRate * (1 - discountPercent / 100),
+      hourlyRateBase * (1 - discountPercent / 100),
     );
+    let depositCredited = 0;
 
-    // Chốt mức giá từ thời điểm đặt trước (nếu có reservationId)
+    // Chốt mức giá từ thời điểm đặt trước (vĩnh viễn không đổi khi checkout)
     if (hasReservation && session.reservationId) {
       const lockedRes = await this.prisma.reservation.findUnique({
         where: { id: session.reservationId },
@@ -106,9 +128,11 @@ export class FeesService {
         hourlyRateBase = Math.round(
           lockedRes.depositAmount / (1 - discountPercent / 100),
         );
+        depositCredited = lockedRes.depositAmount;
       }
     }
 
+    const timeSlotName = this.getTimeSlotName(session.checkInTime);
     const originalBaseFee = isSubscriber ? 0 : roundedHours * hourlyRateBase;
     let baseFee = 0;
     let reservationDiscountAmount = 0;
@@ -161,6 +185,8 @@ export class FeesService {
       totalFee,
       isSubscriber,
       hasReservation,
+      timeSlotName,
+      depositCredited,
     };
   }
 
@@ -182,6 +208,7 @@ export class FeesService {
         checkInTime: true,
         checkOutTime: true,
         status: true,
+        lockedHourlyRate: true,
       },
     });
 

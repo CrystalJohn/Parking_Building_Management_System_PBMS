@@ -33,27 +33,9 @@ export interface PlateScanResult {
 }
 
 export function formatVietnamesePlate(raw: string): string {
-  const clean = (raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-
-  const motorbike = clean.match(/^(\d{2})([A-Z]\d)(\d{3})(\d{2})$/);
-  if (motorbike) {
-    return `${motorbike[1]}${motorbike[2]}-${motorbike[3]}.${motorbike[4]}`;
-  }
-
-  const motorbikeWithExtraProvinceDigit = clean.match(
-    /^(\d{2})\d([A-Z]\d)(\d{3})(\d{2})$/,
-  );
-  if (motorbikeWithExtraProvinceDigit) {
-    return `${motorbikeWithExtraProvinceDigit[1]}${motorbikeWithExtraProvinceDigit[2]}-${motorbikeWithExtraProvinceDigit[3]}.${motorbikeWithExtraProvinceDigit[4]}`;
-  }
-
-  const match = clean.match(/^(\d{2})([A-Z]{1,2}\d?)(\d{5})$/);
-  if (match) return `${match[1]}${match[2]}-${match[3]}`;
-
-  const oldCar = clean.match(/^(\d{2})([A-Z]{1,2}\d?)(\d{4})$/);
-  if (oldCar) return `${oldCar[1]}${oldCar[2]}-${oldCar[3]}`;
-
-  return clean;
+  const display = toDisplay(raw);
+  if (display) return display;
+  return (raw || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
 @Injectable()
@@ -71,26 +53,23 @@ export class PlateRecognitionService {
 
     if (!token) {
       this.logger.warn(
-        'PLATE_RECOGNIZER_API_TOKEN is not configured. Returning fallback plate recognition result.',
+        'PLATE_RECOGNIZER_API_TOKEN is not configured. Prompting manual plate entry.',
       );
-      const mockPlate = '59A12345';
-      const canonical = normalize(mockPlate);
-      const display = toDisplay(canonical);
       return {
-        plate: formatVietnamesePlate(mockPlate),
-        rawPlate: mockPlate,
-        canonicalPlate: canonical,
-        displayPlate: display,
-        score: 0.95,
-        dscore: 0.95,
+        plate: null,
+        rawPlate: null,
+        canonicalPlate: null,
+        displayPlate: null,
+        score: 0,
+        dscore: 0,
         region: 'vn',
-        candidates: [{ plate: formatVietnamesePlate(mockPlate), score: 0.95 }],
-        vehicleType: 'car',
-        processingTime: 0.05,
-        providerFilename: 'fallback.jpg',
+        candidates: [],
+        vehicleType: null,
+        processingTime: 0.01,
+        providerFilename: 'manual_required.jpg',
         providerTimestamp: new Date().toISOString(),
         plateBox: null,
-        rawResponse: { mock: true },
+        rawResponse: { tokenConfigured: false },
       };
     }
 

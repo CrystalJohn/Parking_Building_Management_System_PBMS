@@ -37,6 +37,7 @@ import {
 } from '../../lib/admin-api'
 import { type OperationIssue } from '../../lib/operation-issues-api'
 import { formatDateTimeVN } from '../../lib/date-time'
+import { formatDisplayPlate } from '../../lib/plate-format'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/card'
 import { Badge } from '../../components/ui/badge'
 import { Button } from '../../components/ui/button'
@@ -524,7 +525,7 @@ function SlotInspectModal({ slot }: { slot: SlotOccupancyMapSlot }) {
                     <dl className="space-y-2">
                       <InspectRow label="Driver" value={slot.reservation.driverName || 'N/A'} />
                       <InspectRow label="Phone" value={slot.reservation.driverPhone} />
-                      <InspectRow label="Plate number" value={slot.reservation.plateNumber} mono />
+                      <InspectRow label="Plate number" value={formatDisplayPlate(slot.reservation.plateNumber)} mono />
                       <InspectRow label="Vehicle type" value={titleCase(slot.reservation.vehicleType)} />
                       <InspectRow label="Reserved at" value={formatDateTimeVN(slot.reservation.reservedAt)} />
                       <InspectRow label="Expires at" value={formatDateTimeVN(slot.reservation.expiresAt)} />
@@ -571,7 +572,7 @@ function SlotInspectModal({ slot }: { slot: SlotOccupancyMapSlot }) {
 
               <dl className="space-y-2">
                 <InspectRow label="Session code" value={session.sessionCode} mono />
-                <InspectRow label="License plate" value={session.plate} mono />
+                <InspectRow label="License plate" value={formatDisplayPlate(session.plate)} mono />
                 <InspectRow label="Vehicle type" value={titleCase(slot.vehicleType)} />
                 <InspectRow label="Check-in time" value={formatDateTimeVN(session.checkInTime)} />
                 <InspectRow
@@ -781,8 +782,8 @@ export function OperationsQueueCard({
                 className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-white/10 dark:bg-slate-950/60"
               >
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-foreground">
-                    {issue.plateNumber ?? issue.session?.plateNumberConfirmed ?? issue.session?.licensePlate ?? 'Manual review'}
+                  <p className="truncate text-sm font-semibold text-foreground font-mono">
+                    {formatDisplayPlate(issue.plateNumber ?? issue.session?.plateNumberConfirmed ?? issue.session?.licensePlate) || 'Manual review'}
                   </p>
                   <p className="mt-0.5 truncate text-xs font-semibold text-muted-foreground">
                     {titleCase(issue.type.replace(/_/g, ' '))} · {issue.status.replace(/_/g, ' ')}
@@ -881,7 +882,7 @@ export function PaymentMonitoringCard({
                     {item.sessionCode ?? 'Not linked'}
                   </p>
                   <p className="mt-1 text-xs font-semibold text-muted-foreground">
-                    {item.plateNumber ?? 'Unknown plate'} - {item.locationLabel}
+                    {formatDisplayPlate(item.plateNumber) || 'Unknown plate'} - {item.locationLabel}
                   </p>
                 </div>
                 <StatusBadge tone={riskTone(item.risk)} label={item.risk} />
@@ -950,7 +951,7 @@ export function CurrentParkedCard({
 
           <DetailGrid
             rows={[
-              ['Plate number', paymentIssue?.plateNumber ?? slot.session?.plate ?? 'Unavailable'],
+              ['Plate number', formatDisplayPlate(paymentIssue?.plateNumber ?? slot.session?.plate) || 'Unavailable'],
               ['Vehicle type', titleCase(slot.vehicleType)],
               ['Session code', paymentIssue?.sessionCode ?? slot.session?.sessionCode ?? 'Unavailable'],
               ['Check-in time', slot.session ? formatDateTimeVN(slot.session.checkInTime) : 'Unavailable'],

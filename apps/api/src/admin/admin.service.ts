@@ -8,6 +8,7 @@ import {
   VehicleType,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { toDisplay } from '../plates';
 import type { AdminOperationsFlagsDto, AdminOperationFlagDto } from './dto/admin-flags.dto';
 import type {
   AdminPendingPaymentItemDto,
@@ -746,6 +747,7 @@ export class AdminService {
         sessionCode: session.sessionCode,
         status: session.status,
         licensePlate: session.licensePlate,
+        plateDisplay: toDisplay(session.licensePlate) ?? session.licensePlate,
         vehicleType: session.vehicleType,
         checkInTime: session.checkInTime.toISOString(),
         checkOutTime: session.checkOutTime?.toISOString() ?? null,

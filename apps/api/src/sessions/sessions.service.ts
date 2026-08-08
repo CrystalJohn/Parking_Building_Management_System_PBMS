@@ -48,6 +48,8 @@ interface CreateSessionInput {
   staffId: string;
   allocationStrategy: string;
   allocationTimeMs: number;
+  /** Hourly rate locked at check-in time — used for fee calc at checkout regardless of later config changes */
+  lockedHourlyRate?: number | null;
 }
 
 @Injectable()
@@ -98,7 +100,7 @@ export class SessionsService {
       id: s.id,
       sessionCode: s.sessionCode,
       licensePlate: s.licensePlate,
-      plateDisplay: s.plateDisplay ?? null,
+      plateDisplay: PlateFormatter.toDisplay(s.plateDisplay ?? s.licensePlate) ?? s.licensePlate,
       vehicleType: s.vehicleType,
       status: s.status,
       checkInTime: s.checkInTime,
@@ -271,6 +273,13 @@ export class SessionsService {
       allocationTimeMs = result.allocationTimeMs;
     }
 
+    // Lock the current hourly rate at check-in time (walk-in sessions only).
+    // This ensures fee calculation always uses the price at entry, not any future config change.
+    const pricingAtCheckIn = !reservationId
+      ? await this.prisma.pricingConfig.findFirst({ where: { vehicleType: laneVehicleType } })
+      : null;
+    const lockedHourlyRate = pricingAtCheckIn?.hourlyRate ?? null;
+
     // ─── Transaction: slot update + session creation ───────────────────────
     let session: any;
     try {
@@ -315,6 +324,7 @@ export class SessionsService {
           staffId,
           allocationStrategy,
           allocationTimeMs,
+          lockedHourlyRate,
         });
 
         if (dto.ocrEvidenceId) {
@@ -720,6 +730,7 @@ export class SessionsService {
         checkedInById: input.staffId,
         allocationStrategy: input.allocationStrategy,
         allocationTimeMs: input.allocationTimeMs,
+        lockedHourlyRate: input.lockedHourlyRate ?? null,
         floorId: input.floorId,
         zone: input.zone,
       } as any,
@@ -909,6 +920,7 @@ export class SessionsService {
     penaltyAmount: number;
     isOvertime: boolean;
     isLostTicket: boolean;
+    lockedHourlyRate?: number | null;
     driver?: { fullName: string; phone: string } | null;
     reservation?: { driver?: { fullName: string; phone: string } | null } | null;
     vehicle?: { vehicleUsers?: Array<{ role?: string; user?: { fullName: string; phone: string } }> } | null;

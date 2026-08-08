@@ -5,6 +5,7 @@ export interface AdminSessionHistoryItemDto {
   sessionCode: string | null;
   status: SessionStatus;
   licensePlate: string;
+  plateDisplay?: string | null;
   vehicleType: VehicleType;
   checkInTime: string;
   checkOutTime: string | null;
