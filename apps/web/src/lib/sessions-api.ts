@@ -390,6 +390,7 @@ interface BackendLookupCheckoutResponse {
   fee: FeeBreakdown
   payment: PaymentInfo | null
   checkInEvidence: CheckInEvidence | null
+  exitEvidence?: CheckoutEvidence | null
 }
 
 interface BackendCheckOutResponse {
@@ -429,6 +430,8 @@ interface BackendCheckOutResponse {
     qrCode?: string | null
     expiredAt?: string | null
   }
+  checkInEvidence?: CheckInEvidence | null
+  exitEvidence?: CheckoutEvidence | null
 }
 
 interface BackendConfirmPaymentResponse {
@@ -500,7 +503,8 @@ function mapBackendCheckout(data: BackendCheckOutResponse): CheckoutWorkflowResp
       ...data.payment,
       sessionId: data.session.id,
     },
-    checkInEvidence: null,
+    checkInEvidence: data.checkInEvidence ?? null,
+    exitEvidence: data.exitEvidence ?? null,
   }
 }
 

@@ -963,6 +963,7 @@ export class SessionsService {
     );
 
     const checkInEvidence = await this.ocrService.getCheckInEvidenceForSession(session.id);
+    const checkOutEvidence = await this.ocrService.getCheckOutEvidenceForSession(session.id);
 
     return {
       session: {
@@ -1023,6 +1024,21 @@ export class SessionsService {
             ocrPlate: checkInEvidence.ocrPlate,
             confirmedPlate: checkInEvidence.confirmedPlate,
             ocrConfidence: checkInEvidence.ocrConfidence,
+          }
+        : null,
+      exitEvidence: checkOutEvidence
+        ? {
+            id: checkOutEvidence.id,
+            thumbnailUrl: checkOutEvidence.thumbnailKey
+              ? `/api/ocr-evidences/${checkOutEvidence.id}/thumbnail`
+              : null,
+            imageUrl: checkOutEvidence.imageKey
+              ? `/api/ocr-evidences/${checkOutEvidence.id}/image`
+              : null,
+            capturedAt: checkOutEvidence.capturedAt,
+            ocrPlate: checkOutEvidence.ocrPlate,
+            confirmedPlate: checkOutEvidence.confirmedPlate,
+            ocrConfidence: checkOutEvidence.ocrConfidence,
           }
         : null,
     };

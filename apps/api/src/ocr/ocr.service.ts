@@ -195,6 +195,31 @@ export class OcrService {
     return evidence;
   }
 
+  async getCheckOutEvidenceForSession(sessionId: string) {
+    const evidence = await (this.prisma as any).ocrEvidence.findFirst({
+      where: {
+        sessionId,
+        eventType: 'check_out',
+      },
+      select: {
+        id: true,
+        thumbnailKey: true,
+        imageKey: true,
+        capturedAt: true,
+        ocrPlate: true,
+        confirmedPlate: true,
+        rawPlate: true,
+        canonicalPlate: true,
+        displayPlate: true,
+        ocrConfidence: true,
+        providerFilename: true,
+      },
+      orderBy: { capturedAt: 'desc' },
+    });
+
+    return evidence;
+  }
+
   private async createEvidenceRecord(
     data: Record<string, unknown>,
     imageBuffer: Buffer,
