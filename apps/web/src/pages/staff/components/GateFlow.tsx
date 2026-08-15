@@ -8,6 +8,7 @@ import {
   type LookupResult,
   type SessionSummary,
 } from '../../../lib/sessions-api'
+import { useToasts } from '../../../lib/use-toasts'
 import { useSessionLookup } from '../hooks/useSessionLookup'
 import { SmartGateInput, type ResolvedInput } from './SmartGateInput'
 
@@ -134,7 +135,7 @@ export function GateFlow({ toasts, checkInPanel, checkOutPanel }: GateFlowProps)
       return (
         <Card>
           <CardContent className="p-5">
-            <SmartGateInput onResolved={handleResolved} isLoading isError={toasts.showError} />
+            <SmartGateInput onResolved={handleResolved} isLoading onError={toasts.showError} />
             <FlowSkeleton />
           </CardContent>
         </Card>

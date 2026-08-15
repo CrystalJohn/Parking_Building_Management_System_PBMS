@@ -203,7 +203,7 @@ describe('SessionsService', () => {
         { provide: VehicleIdentificationService, useValue: vehicleIdentificationService },
         { provide: JwtService, useValue: jwtService },
         { provide: NotificationsService, useValue: notificationsService },
-        { provide: OcrService, useValue: { getCheckInEvidenceForSession: jest.fn().mockResolvedValue(null), linkEvidenceToCheckout: jest.fn().mockResolvedValue(null) } },
+        { provide: OcrService, useValue: { getCheckInEvidenceForSession: jest.fn().mockResolvedValue(null), getCheckOutEvidenceForSession: jest.fn().mockResolvedValue(null), linkEvidenceToCheckout: jest.fn().mockResolvedValue(null) } },
         { provide: OcrEvidenceStorageService, useValue: {} },
         { provide: GateLanesService, useValue: gateLanesService },
       ],

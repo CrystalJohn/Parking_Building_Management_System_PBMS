@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { QRScanner } from '../../../components/qr-scanner/QRScanner'
 import { Camera, Loader2, QrCode, Search } from 'lucide-react'
 import { Button } from '../../../components/ui/button'
-import { scanGatePlate, type GateScanResponse } from '../../../lib/sessions-api'
+import { scanGatePlate } from '../../../lib/sessions-api'
 import { normalizePlateForApi } from '../../../lib/plate-format'
 
 export type ResolvedInput = { type: 'qr' | 'plate'; value: string }
@@ -104,14 +104,17 @@ export function SmartGateInput({ onResolved, isLoading, onError }: SmartGateInpu
       if (!blob) throw new Error('Cannot prepare image for OCR')
       stopCamera()
 
-      const response: GateScanResponse = await scanGatePlate({
+      const response = await scanGatePlate({
         image: blob,
         cameraId: CAMERA_ID,
         buildingName: BUILDING_NAME,
         gateName: GATE_NAME,
       })
-      const plate =
-        response.plateDisplay || response.plateConfirmed || response.canonicalPlate || ''
+      if (response.mode === 'NEEDS_MANUAL_PLATE') {
+        onError?.('Could not read the plate clearly. Type the plate below.')
+        return
+      }
+      const plate = response.plateDisplay || response.plateConfirmed || ''
       if (!plate) {
         onError?.('Could not read the plate clearly. Type the plate below.')
         return
