@@ -138,6 +138,13 @@ export class SessionsController {
     return this.sessionsService.lookupForCheckout({ sessionCode, licensePlate }, staffId!);
   }
 
+  @Get('lookup')
+  @UseGuards(RolesGuard)
+  @Roles(Role.staff)
+  lookupSessionStatus(@Query('query') query?: string) {
+    return this.sessionsService.lookupSessionStatus(query);
+  }
+
   /**
    * GET /sessions/my-active
    * Driver only — list own active sessions.

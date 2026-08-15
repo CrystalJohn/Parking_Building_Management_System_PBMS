@@ -1704,6 +1704,72 @@ export class SessionsService {
     return this.buildCheckoutLookupPreview(session);
   }
 
+  async lookupSessionStatus(rawQuery?: string) {
+    const query = (rawQuery ?? '').trim();
+    if (!query) {
+      return { status: 'none' as const };
+    }
+
+    const UUID_RE =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+    const activeStates = [
+      SessionStatus.active,
+      SessionStatus.checkout_pending,
+      SessionStatus.exit_authorized,
+    ];
+
+    if (UUID_RE.test(query)) {
+      const session = await this.prisma.parkingSession.findFirst({
+        where: { id: query, status: { in: activeStates } },
+      });
+      if (!session) return { status: 'none' as const };
+      return { status: 'active' as const, session: this.mapToSessionSummary(session) };
+    }
+
+    const normalizedPlate = normalizePlateNumber(query);
+    if (normalizedPlate) {
+      const sessions = await this.prisma.parkingSession.findMany({
+        where: {
+          status: { in: activeStates },
+          OR: [{ licensePlate: normalizedPlate }, { plateNumberConfirmed: normalizedPlate }],
+        },
+        orderBy: { checkInTime: 'desc' },
+      });
+      if (sessions.length === 0) return { status: 'none' as const };
+      if (sessions.length === 1) {
+        return { status: 'active' as const, session: this.mapToSessionSummary(sessions[0]) };
+      }
+      return {
+        status: 'ambiguous' as const,
+        sessions: sessions.map((s) => this.mapToSessionSummary(s)),
+      };
+    }
+
+    return { status: 'none' as const };
+  }
+
+  private mapToSessionSummary(session: {
+    id: string;
+    licensePlate: string;
+    plateDisplay?: string | null;
+    vehicleType: VehicleType;
+    checkInTime: Date;
+    status: SessionStatus;
+    allocationStrategy?: string | null;
+  }) {
+    return {
+      id: session.id,
+      licensePlate: session.licensePlate,
+      plateDisplay: session.plateDisplay ?? null,
+      vehicleType: session.vehicleType,
+      checkInTime: session.checkInTime.toISOString(),
+      status: session.status,
+      allocationStrategy: session.allocationStrategy ?? null,
+      allocationTimeMs: null,
+    };
+  }
+
   /**
    * 23.3 / 23.4: List sessions for a specific driver, filtered by status.
    */

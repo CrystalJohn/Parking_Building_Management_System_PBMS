@@ -783,3 +783,24 @@ export async function fetchEvidenceImageBlobResult(url: string): Promise<Evidenc
     return { url: null, status: 'failed' }
   }
 }
+
+// ─── Unified gate-flow status probe ───────────────────────────────────────────
+// Mirrors GET /sessions/lookup. Returns whether a scanned/entered value maps to
+// an ACTIVE parking session so the UI can route to check-in (none) or check-out
+// (active) in a single call. Does NOT perform any lifecycle mutation.
+
+export type LookupStatus = 'none' | 'active' | 'ambiguous'
+
+export interface LookupResult {
+  status: LookupStatus
+  session?: SessionSummary
+  sessions?: SessionSummary[]
+  vehicle?: { plate: string }
+}
+
+export async function lookupSession(query: string): Promise<LookupResult> {
+  const { data } = await api.get<LookupResult>('/sessions/lookup', {
+    params: { query },
+  })
+  return data
+}
