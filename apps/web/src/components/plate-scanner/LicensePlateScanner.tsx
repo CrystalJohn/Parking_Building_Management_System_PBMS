@@ -3,6 +3,7 @@ import { scanPlate } from '../../lib/plate-recognition-api'
 
 interface LicensePlateScannerProps {
   onDetected: (plate: string) => void
+  onCaptured?: (plate: string, imageBlob: Blob, imageUrl: string) => void
   onClose: () => void
 }
 
@@ -110,7 +111,7 @@ const SIGNAL_REFRESH_MS = 400
 
 type ScanState = 'initializing' | 'ready' | 'scanning' | 'done' | 'error'
 
-export function LicensePlateScanner({ onDetected, onClose }: LicensePlateScannerProps) {
+export function LicensePlateScanner({ onDetected, onCaptured, onClose }: LicensePlateScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const overlayRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -315,6 +316,8 @@ export function LicensePlateScanner({ onDetected, onClose }: LicensePlateScanner
         setScore(result.score)
         setState('done')
         setStatusMsg(`Detected: ${result.plate}`)
+        const imageUrl = URL.createObjectURL(blob)
+        onCaptured?.(result.plate, blob, imageUrl)
         // Auto-fill immediately — Plate Recognizer confidence is always near-perfect
         onDetected(result.plate)
       } else {

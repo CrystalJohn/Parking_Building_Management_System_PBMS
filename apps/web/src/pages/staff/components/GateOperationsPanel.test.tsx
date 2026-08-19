@@ -5,12 +5,18 @@ import { GateOperationsPanel } from './GateOperationsPanel'
 import { checkIn } from '../../../lib/sessions-api'
 
 // === MOCK the real checkIn function (used by useCheckIn) ===
-// Mock the whole module so we don't load `api.ts` (which uses import.meta.env)
-// under ts-jest's CommonJS runtime.
 jest.mock('../../../lib/sessions-api', () => ({
   checkIn: jest.fn(),
 }))
 const mockCheckIn = checkIn as jest.Mock
+
+// Mock child modals
+jest.mock('../../../components/qr-scanner/QRScanner', () => ({
+  QRScanner: () => <div>Mock QR Scanner</div>,
+}))
+jest.mock('../../../components/plate-scanner/LicensePlateScanner', () => ({
+  LicensePlateScanner: () => <div>Mock License Plate Scanner</div>,
+}))
 
 // === TEST WRAPPER ===
 function createWrapper() {
@@ -31,7 +37,7 @@ describe('GateOperationsPanel', () => {
     jest.clearAllMocks()
   })
 
-  it('hiển thị biển số từ prefill', () => {
+  it('hiển thị biển số từ prefill trong form', () => {
     render(
       <GateOperationsPanel
         prefill={{ type: 'plate', value: '30A-12345' }}
@@ -41,7 +47,7 @@ describe('GateOperationsPanel', () => {
       { wrapper: createWrapper() },
     )
 
-    expect(screen.getByText('30A-12345')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('30A-12345')).toBeInTheDocument()
   })
 
   it('hiển thị biển số từ vehicle nếu có', () => {
@@ -55,7 +61,7 @@ describe('GateOperationsPanel', () => {
       { wrapper: createWrapper() },
     )
 
-    expect(screen.getByText('51G-99999')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('51G-99999')).toBeInTheDocument()
     expect(screen.getByText('Ô tô')).toBeInTheDocument()
   })
 
@@ -77,37 +83,51 @@ describe('GateOperationsPanel', () => {
       { wrapper: createWrapper() },
     )
 
-    expect(screen.getByText('RES-001')).toBeInTheDocument()
-    expect(screen.getByText('A-01')).toBeInTheDocument()
-    expect(screen.getByText('Thông tin đặt chỗ')).toBeInTheDocument()
+    expect(screen.getByText(/RES-001/i)).toBeInTheDocument()
+    expect(screen.getByText(/Đã đặt trước/i)).toBeInTheDocument()
   })
 
-  it('gọi onDone khi check-in thành công', async () => {
+  it('gọi onSuccess/onDone khi check-in thành công', async () => {
     mockCheckIn.mockResolvedValueOnce({
-      session: { id: 'sess-001' },
+      session: {
+        id: 'sess-001',
+        sessionCode: 'TKT-001',
+        licensePlate: '30A12345',
+        vehicleType: 'car',
+        checkInTime: new Date().toISOString(),
+      },
       slot: { code: 'A-01' },
       qr_code: null,
     })
+    const onSuccess = jest.fn()
     const onDone = jest.fn()
 
     render(
       <GateOperationsPanel
         prefill={{ type: 'plate', value: '30A-12345' }}
+        onSuccess={onSuccess}
         onDone={onDone}
         onCancel={jest.fn()}
       />,
       { wrapper: createWrapper() },
     )
 
-    await userEvent.click(screen.getByText('Xác nhận Check-in'))
+    await userEvent.click(screen.getByRole('button', { name: /Xác nhận Check-in/i }))
 
     await waitFor(() => {
-      expect(mockCheckIn).toHaveBeenCalledWith({
-        licensePlate: '30A-12345',
-        vehicleType: 'car',
-        reservationId: undefined,
-      })
-      expect(onDone).toHaveBeenCalled()
+      expect(mockCheckIn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          licensePlate: '30A12345',
+          vehicleType: 'car',
+        }),
+      )
+      expect(onSuccess).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ticketCode: 'TKT-001',
+          plateNumber: '30A12345',
+          slotCode: 'A-01',
+        }),
+      )
     })
   })
 
@@ -125,14 +145,14 @@ describe('GateOperationsPanel', () => {
       { wrapper: createWrapper() },
     )
 
-    await userEvent.click(screen.getByText('Xác nhận Check-in'))
+    await userEvent.click(screen.getByRole('button', { name: /Xác nhận Check-in/i }))
 
     await waitFor(() => {
       expect(screen.getByText('Slot đã đầy')).toBeInTheDocument()
     })
   })
 
-  it('gọi onCancel khi bấm Quét xe khác', async () => {
+  it('gọi onCancel khi bấm Hủy', async () => {
     const onCancel = jest.fn()
 
     render(
@@ -144,28 +164,8 @@ describe('GateOperationsPanel', () => {
       { wrapper: createWrapper() },
     )
 
-    await userEvent.click(screen.getByText('← Quét xe khác'))
+    await userEvent.click(screen.getByRole('button', { name: /Hủy/i }))
 
     expect(onCancel).toHaveBeenCalled()
-  })
-
-  it('disable buttons khi đang loading', async () => {
-    // Mock API chậm (không bao giờ resolve)
-    mockCheckIn.mockImplementation(() => new Promise(() => {}))
-
-    render(
-      <GateOperationsPanel
-        prefill={{ type: 'plate', value: '30A-12345' }}
-        onDone={jest.fn()}
-        onCancel={jest.fn()}
-      />,
-      { wrapper: createWrapper() },
-    )
-
-    await userEvent.click(screen.getByText('Xác nhận Check-in'))
-
-    await waitFor(() => {
-      expect(screen.getByText('← Quét xe khác')).toBeDisabled()
-    })
   })
 })

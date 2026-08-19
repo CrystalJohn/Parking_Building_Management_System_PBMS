@@ -1,0 +1,56 @@
+/* 58mm Thermal Ticket Print Styles */
+
+@media print {
+  @page {
+    size: 58mm auto;
+    margin: 0mm;
+  }
+
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Hide everything except the ticket print target */
+  body * {
+    visibility: hidden;
+  }
+
+  #printable-ticket,
+  #printable-ticket * {
+    visibility: visible;
+  }
+
+  #printable-ticket {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 58mm !important;
+    max-width: 58mm !important;
+    padding: 2mm 3mm !important;
+    margin: 0 auto !important;
+    box-sizing: border-box !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-family: 'Courier New', Courier, monospace, sans-serif !important;
+    font-size: 9pt !important;
+    line-height: 1.25 !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+}
+
+.ticket-58mm {
+  width: 58mm;
+  max-width: 58mm;
+  box-sizing: border-box;
+  font-family: 'Courier New', Courier, monospace, sans-serif;
+  color: #000000;
+  background-color: #ffffff;
+}
